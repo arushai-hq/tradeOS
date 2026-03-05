@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "startup_blocks_until_clean",
+    "description": "Startup reconciliation must run before any trading task and abort boot on mismatch",
+    "prompt": "Write the startup reconciliation function for TradeOS that blocks trading from starting until positions match the broker. If any mismatch is found, startup must abort — no trading tasks should be created. Show how reconcile_on_startup() integrates with the main() coroutine.",
+    "expectations": [
+      {
+        "text": "reconcile_on_startup() is awaited before any asyncio.create_task() call",
+        "key": "awaited_before_create_task"
+      },
+      {
+        "text": "Uses asyncio.to_thread(kite.positions) — not kite.positions() directly in the event loop",
+        "key": "uses_to_thread_for_positions"
+      },
+      {
+        "text": "Raises ReconciliationMismatchError (or SystemExit/equivalent) when mismatches found — does not silently continue",
+        "key": "raises_on_mismatch"
+      },
+      {
+        "text": "Logs structured event at CRITICAL level on mismatch (not just WARNING)",
+        "key": "logs_critical_on_mismatch"
+      },
+      {
+        "text": "Returns cleanly (True or None) when no mismatches — trading proceeds normally",
+        "key": "returns_clean_when_matched"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "compare_broker_vs_local",
+    "description": "Comparison algorithm must correctly identify qty_mismatch, ghost_position, and missing_local cases",
+    "prompt": "Write the position comparison function for TradeOS that takes broker positions (from kite.positions()['net']) and local positions (from shared_state['position_state']) and returns a list of mismatches. Show examples of: a qty_mismatch (broker has 10, local has 5), a ghost_position (broker has 10, local has 0), and a missing_local (broker has 0, local has 10).",
+    "expectations": [
+      {
+        "text": "Detects qty_mismatch: broker_qty != local_qty when both are non-zero",
+        "key": "detects_qty_mismatch"
+      },
+      {
+        "text": "Detects ghost_position: broker_qty != 0 but no local record (local_qty == 0)",
+        "key": "detects_ghost_position"
+      },
+      {
+        "text": "Detects missing_local: local_qty != 0 but broker_qty == 0",
+        "key": "detects_missing_local"
+      },
+      {
+        "text": "Ghost positions are flagged as severity='critical', other mismatches as severity='warning'",
+        "key": "ghost_severity_critical"
+      },
+      {
+        "text": "Returns empty list (not None or exception) when positions are clean",
+        "key": "empty_list_when_clean"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "mismatch_locks_instrument_only",
+    "description": "A mismatch on one instrument must lock ONLY that instrument, not halt all trading",
+    "prompt": "Show how TradeOS handles a position mismatch on RELIANCE when INFY is trading cleanly. The mismatch should lock RELIANCE but INFY signals must continue. Show the instrument lock in shared_state['locked_instruments'] and the signal_processor gate that checks it.",
+    "expectations": [
+      {
+        "text": "locked_instruments is a set in shared_state — only the mismatched token is added",
+        "key": "locked_instruments_is_set"
+      },
+      {
+        "text": "signal_processor checks 'token in shared_state[locked_instruments]' and skips locked instruments",
+        "key": "signal_processor_checks_lock"
+      },
+      {
+        "text": "Unlocked instruments (INFY) continue to generate signals during the lock",
+        "key": "unlocked_instruments_continue"
+      },
+      {
+        "text": "Sends Telegram WARNING alert with instrument name and mismatch details",
+        "key": "telegram_warning_on_lock"
+      },
+      {
+        "text": "Lock persists — not cleared until reconciliation confirms clean or manual unlock",
+        "key": "lock_not_auto_cleared"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "auto_adjust_disabled_by_default",
+    "description": "Auto-adjust must be gated by config flag and disabled by default; manual mode is default",
+    "prompt": "Write the mismatch handler for TradeOS that applies either manual lock mode or auto-adjust mode depending on config. The default (when config key is absent) must be manual mode. Show both code paths and demonstrate that auto-adjust NEVER applies to ghost positions even when enabled.",
+    "expectations": [
+      {
+        "text": "Checks config.get('reconciliation', {}).get('auto_adjust', False) — defaults to False",
+        "key": "auto_adjust_defaults_false"
+      },
+      {
+        "text": "Manual mode: locks instrument, logs warning, sends alert — does NOT modify local state",
+        "key": "manual_mode_locks_only"
+      },
+      {
+        "text": "Auto-adjust mode: updates local quantity to match broker — does NOT lock the instrument",
+        "key": "auto_adjust_updates_qty"
+      },
+      {
+        "text": "Ghost positions always use manual mode regardless of auto_adjust setting",
+        "key": "ghost_never_auto_adjusted"
+      },
+      {
+        "text": "Auto-adjust logs a WARNING (not INFO) — it's an anomaly correction, not a normal event",
+        "key": "auto_adjust_logs_warning"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "ghost_position_close_protocol",
+    "description": "Ghost positions must be logged CRITICAL, sent to Telegram, and never auto-closed",
+    "prompt": "Write the ghost position handler for TradeOS. A ghost position means the broker shows an open position that the TradeOS system has no record of. Show the full handling: detection, logging, Telegram alert, locking, and explain why auto-closing is dangerous.",
+    "expectations": [
+      {
+        "text": "Logs CRITICAL event 'ghost_position_detected' with instrument and broker_qty",
+        "key": "logs_critical_ghost"
+      },
+      {
+        "text": "Sends Telegram CRITICAL alert (not just warning) for ghost position",
+        "key": "telegram_critical_for_ghost"
+      },
+      {
+        "text": "Locks the instrument in shared_state['locked_instruments']",
+        "key": "locks_ghost_instrument"
+      },
+      {
+        "text": "Marks position in shared_state with is_ghost=True flag — does NOT place any close order",
+        "key": "no_auto_close_order"
+      },
+      {
+        "text": "Explains why auto-closing is dangerous: could be a hedge or manual safety trade; unexpected P&L impact",
+        "key": "explains_no_auto_close"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "scheduled_recon_every_30_min",
+    "description": "Scheduled reconciler must run every 30 minutes and never halt trading on error",
+    "prompt": "Write the scheduled_reconciler task for TradeOS that runs position reconciliation every 30 minutes. If a reconciliation call fails (e.g. network error), it must log the error and wait for the next cycle — it must never crash or halt trading for other instruments.",
+    "expectations": [
+      {
+        "text": "Uses asyncio.sleep(1800) — exactly 30 minutes between reconciliation cycles",
+        "key": "thirty_minute_interval"
+      },
+      {
+        "text": "try/except wraps the reconcile call — errors are logged but do not crash the scheduled reconciler",
+        "key": "continues_on_error"
+      },
+      {
+        "text": "Does NOT raise on mismatch during scheduled recon — locks instrument and continues",
+        "key": "no_raise_on_scheduled_mismatch"
+      },
+      {
+        "text": "Uses asyncio.to_thread(kite.positions) inside the reconcile call — blocking I/O rule",
+        "key": "uses_to_thread"
+      },
+      {
+        "text": "Logs 'reconciliation_start' and 'reconciliation_complete' events with trigger='scheduled'",
+        "key": "logs_trigger_scheduled"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "post_disruption_pauses_signal_processor",
+    "description": "Post-disruption reconciliation must pause signal_processor via recon_in_progress flag",
+    "prompt": "Write the post-disruption reconciliation flow for TradeOS that runs after a WebSocket reconnect. During reconciliation, the signal_processor must not process any ticks. Show both: (1) the function that sets shared_state['recon_in_progress'] and runs reconciliation, and (2) the gate inside signal_processor that checks the flag.",
+    "expectations": [
+      {
+        "text": "Sets shared_state['recon_in_progress'] = True BEFORE calling reconcile_positions()",
+        "key": "sets_flag_before_recon"
+      },
+      {
+        "text": "Uses try/finally to ensure recon_in_progress is reset to False even if reconciliation throws",
+        "key": "finally_clears_flag"
+      },
+      {
+        "text": "signal_processor checks shared_state.get('recon_in_progress', False) and skips ticks when True",
+        "key": "signal_processor_skips_during_recon"
+      },
+      {
+        "text": "Logs 'post_disruption_reconciliation_start' and 'post_disruption_reconciliation_complete'",
+        "key": "logs_post_disruption_events"
+      },
+      {
+        "text": "After reconciliation completes, signal_processor resumes automatically — no manual restart needed",
+        "key": "auto_resume_after_recon"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "lock_persists_across_reconnect",
+    "description": "Instrument lock must survive WebSocket reconnect and task restart — only cleared by successful reconciliation",
+    "prompt": "Explain and demonstrate that instrument locks in TradeOS persist across WebSocket reconnects and task restarts. Show the shared_state['locked_instruments'] set lifecycle: when it is initialised (once in main()), when locks are added (on mismatch), when they are cleared (only on successful reconciliation), and why WebSocket reconnect does NOT clear them.",
+    "expectations": [
+      {
+        "text": "locked_instruments is initialised once in main() / _init_shared_state() — never reset on reconnect",
+        "key": "initialised_once_in_main"
+      },
+      {
+        "text": "WebSocket reconnect does NOT clear locked_instruments — reconnect handler does not touch the lock set",
+        "key": "reconnect_does_not_clear_locks"
+      },
+      {
+        "text": "Locks are cleared only by _clear_lock_if_resolved() after a clean reconciliation",
+        "key": "cleared_only_by_successful_recon"
+      },
+      {
+        "text": "After reconnect, system runs post-disruption reconciliation — only if positions match does it unlock",
+        "key": "post_reconnect_recon_before_unlock"
+      },
+      {
+        "text": "Explains that a mismatch before reconnect may still exist after reconnect — must verify, not assume",
+        "key": "explains_persistence_reason"
+      }
+    ]
+  }
+]

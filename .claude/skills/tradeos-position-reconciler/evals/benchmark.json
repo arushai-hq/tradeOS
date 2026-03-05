@@ -1,0 +1,838 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-position-reconciler",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T17:28:51Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 164.9,
+        "tokens": 61256,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "awaited_before_create_task",
+          "text": "reconcile_on_startup() is awaited before any asyncio.create_task() call",
+          "passed": true,
+          "evidence": "In main() (line 370), 'await reconcile_on_startup(shared_state, kite, config)' is inside a try/except block. If ReconciliationMismatchError is raised, sys.exit(1) fires before the function ever reaches the asyncio.create_task() calls at lines 389-413. When reconciliation is clean, control falls through the try block and the first asyncio.create_task() call only appears after the entire try/except block completes. The await is strictly before every create_task() call."
+        },
+        {
+          "key": "uses_to_thread_for_positions",
+          "text": "Uses asyncio.to_thread(kite.positions) \u2014 not kite.positions() directly in the event loop",
+          "passed": true,
+          "evidence": "_fetch_positions_with_retry() at line 78 uses 'return await asyncio.to_thread(kite.positions)' \u2014 passing the bound method object (not its return value) to asyncio.to_thread, which invokes it in a thread pool executor. kite.positions is never called directly in the event loop. This satisfies the D6 non-blocking I/O rule."
+        },
+        {
+          "key": "raises_on_mismatch",
+          "text": "Raises ReconciliationMismatchError (or SystemExit/equivalent) when mismatches found \u2014 does not silently continue",
+          "passed": true,
+          "evidence": "reconcile_on_startup() at lines 331-340: when reconcile_positions() returns False (mismatches exist), the function raises ReconciliationMismatchError with a descriptive message. In main(), this exception is caught at line 371, log.critical is called, then sys.exit(1) is invoked \u2014 no trading tasks are ever created. The system cannot silently continue past a startup mismatch."
+        },
+        {
+          "key": "logs_critical_on_mismatch",
+          "text": "Logs structured event at CRITICAL level on mismatch (not just WARNING)",
+          "passed": true,
+          "evidence": "reconcile_on_startup() at lines 332-335 calls log.critical('reconciliation_mismatch_on_startup', reason='Position mismatch found at startup. Aborting.', locked_instruments=...) whenever is_clean is False \u2014 covering all mismatch types (qty_mismatch, missing_local, ghost_position). Additionally, _handle_ghost_position() (line 258) calls log.critical('ghost_position_detected', ...) for ghost-type mismatches specifically. Both use structlog structured key-value events."
+        },
+        {
+          "key": "returns_clean_when_matched",
+          "text": "Returns cleanly (True or None) when no mismatches \u2014 trading proceeds normally",
+          "passed": true,
+          "evidence": "reconcile_on_startup() at lines 342-343: when reconcile_positions() returns True (no mismatches), log.info('reconciliation_complete', trigger='startup', status='clean') is called and the function returns None implicitly (no raise, no sys.exit). main() then proceeds past the try/except block and all six asyncio.create_task() calls execute normally. Trading tasks are started as expected."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 77.1,
+        "tokens": 36053,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "detects_qty_mismatch",
+          "text": "Detects qty_mismatch: broker_qty != local_qty when both are non-zero",
+          "passed": true,
+          "evidence": "Scenario 1 (RELIANCE broker=10, local=5): _compare_positions returns [{\"mismatch_type\": \"qty_mismatch\", \"broker_qty\": 10, \"local_qty\": 5, \"severity\": \"warning\"}]. Pass 1 of the algorithm iterates broker_by_token; when local_pos['quantity'] (5) != broker_pos['quantity'] (10) a qty_mismatch record is appended."
+        },
+        {
+          "key": "detects_ghost_position",
+          "text": "Detects ghost_position: broker_qty != 0 but no local record (local_qty == 0)",
+          "passed": true,
+          "evidence": "Scenario 2 (INFY broker=10, local_positions={}): _compare_positions returns [{\"mismatch_type\": \"ghost_position\", \"broker_qty\": 10, \"local_qty\": 0, \"severity\": \"critical\"}]. When local_positions.get(token) is None (or has quantity==0) a ghost_position record with local_qty=0 is appended."
+        },
+        {
+          "key": "detects_missing_local",
+          "text": "Detects missing_local: local_qty != 0 but broker_qty == 0",
+          "passed": true,
+          "evidence": "Scenario 3 (TCS local=10, broker positions list is empty): _compare_positions returns [{\"mismatch_type\": \"missing_local\", \"broker_qty\": 0, \"local_qty\": 10, \"severity\": \"warning\"}]. Pass 2 of the algorithm walks local_positions; when token not in broker_by_token and local_qty != 0, a missing_local record with broker_qty=0 is appended."
+        },
+        {
+          "key": "ghost_severity_critical",
+          "text": "Ghost positions are flagged as severity='critical', other mismatches as severity='warning'",
+          "passed": true,
+          "evidence": "ghost_position records are constructed with \"severity\": \"critical\" (line 65 of solution.py). qty_mismatch records are constructed with \"severity\": \"warning\" (line 76). missing_local records are constructed with \"severity\": \"warning\" (line 89). All three verified by running the script."
+        },
+        {
+          "key": "empty_list_when_clean",
+          "text": "Returns empty list (not None or exception) when positions are clean",
+          "passed": true,
+          "evidence": "Scenario 4 (HDFCBANK broker=5, local=5): _compare_positions returns []. The function initialises mismatches=[] and returns it directly; no mismatch conditions trigger when quantities agree, so the return value is an empty list, not None."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 129.8,
+        "tokens": 47306,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "locked_instruments_is_set",
+          "text": "locked_instruments is a set in shared_state \u2014 only the mismatched token is added",
+          "passed": true,
+          "evidence": "type=set, contents={738561}, RELIANCE_in_set=True, INFY_in_set=False"
+        },
+        {
+          "key": "signal_processor_checks_lock",
+          "text": "signal_processor checks 'token in shared_state[locked_instruments]' and skips locked instruments",
+          "passed": true,
+          "evidence": "rejected_locked_count=2, rejected_tokens={738561}, RELIANCE_rejected=True"
+        },
+        {
+          "key": "unlocked_instruments_continue",
+          "text": "Unlocked instruments (INFY) continue to generate signals during the lock",
+          "passed": true,
+          "evidence": "INFY_signals=2, RELIANCE_signals=0, INFY_generated=True, RELIANCE_generated=False"
+        },
+        {
+          "key": "telegram_warning_on_lock",
+          "text": "Sends Telegram WARNING alert with instrument name and mismatch details",
+          "passed": true,
+          "evidence": "warning_count_for_RELIANCE=2, has_qty_info=True, first_warning=Position mismatch: RELIANCE \u2014 locked pending review\nType: qty_mismatch\nBroker qty: 10\nLocal qty: 5"
+        },
+        {
+          "key": "lock_not_auto_cleared",
+          "text": "Lock persists \u2014 not cleared until reconciliation confirms clean or manual unlock",
+          "passed": true,
+          "evidence": "locked_before_2nd_recon={738561}, locked_after_2nd_recon={738561}, lock_persisted_while_mismatch=True, final_locked_after_clean_recon=set(), cleared_only_on_clean=True"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 163.6,
+        "tokens": 50137,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "auto_adjust_defaults_false",
+          "text": "Checks config.get('reconciliation', {}).get('auto_adjust', False) \u2014 defaults to False",
+          "passed": true,
+          "evidence": "_handle_mismatch() line 236: `auto_adjust_enabled: bool = config.get(\"reconciliation\", {}).get(\"auto_adjust\", False)`. The trailing `False` default means any absent config key resolves to manual mode. When config is `{}` or missing the `reconciliation` key entirely, auto_adjust_enabled is False and _handle_mismatch_manual() is invoked. Demonstrated in demo_manual_mode_default() (config_empty = {}) and demo_manual_mode_explicit_false() (config_disabled = {\"reconciliation\": {\"auto_adjust\": False}})."
+        },
+        {
+          "key": "manual_mode_locks_only",
+          "text": "Manual mode: locks instrument, logs warning, sends alert \u2014 does NOT modify local state",
+          "passed": true,
+          "evidence": "_handle_mismatch_manual() lines 65-113: (1) adds token to shared_state[\"locked_instruments\"] via .add(token), (2) calls log.warning/log.critical with resolution=\"manual_lock\", (3) calls send_warning_alert or send_critical_alert. There is NO write to shared_state[\"position_state\"] anywhere in this function \u2014 local state is intentionally left unchanged for the operator to resolve. Verified by demo assertion: `local_qty_unchanged = state[\"position_state\"][738561][\"quantity\"] == 10` passes after calling _handle_mismatch with empty config."
+        },
+        {
+          "key": "auto_adjust_updates_qty",
+          "text": "Auto-adjust mode: updates local quantity to match broker \u2014 does NOT lock the instrument",
+          "passed": true,
+          "evidence": "_handle_mismatch_auto_adjust() lines 120-166: (1) for qty_mismatch with non-zero broker_qty, line 149 sets shared_state[\"position_state\"][token][\"quantity\"] = mismatch[\"broker_qty\"]; (2) for broker_qty == 0, line 144 pops the token from position_state; (3) there is NO call to shared_state[\"locked_instruments\"].add() anywhere in this function \u2014 the instrument is not locked. Verified by demo_auto_adjust_updates_qty() assertions: not_locked=True and qty_updated=True (qty set to 7 matching broker)."
+        },
+        {
+          "key": "ghost_never_auto_adjusted",
+          "text": "Ghost positions always use manual mode regardless of auto_adjust setting",
+          "passed": true,
+          "evidence": "Two-layer defence: (1) _handle_mismatch() lines 230-233 checks mismatch_type == 'ghost_position' FIRST, before reading auto_adjust from config \u2014 it immediately calls _handle_ghost_position() and returns, so the auto_adjust branch is never reached for ghosts; (2) _handle_mismatch_auto_adjust() lines 136-139 contains a secondary guard that also falls back to _handle_mismatch_manual() if mtype == 'ghost_position'. demo_ghost_never_auto_adjusted() sets auto_adjust=True in config but sends a ghost_position mismatch \u2014 the instrument is locked (True) and a ghost marker with is_ghost=True is written, confirming manual handling was applied not silent state adoption."
+        },
+        {
+          "key": "auto_adjust_logs_warning",
+          "text": "Auto-adjust logs a WARNING (not INFO) \u2014 it's an anomaly correction, not a normal event",
+          "passed": true,
+          "evidence": "_handle_mismatch_auto_adjust() lines 154-162: `log.warning(\"position_auto_adjusted\", ...)` \u2014 structlog's .warning() method is used, not .info(). The inline comment on line 154 explicitly states: 'WARNING \u2014 not INFO \u2014 because an automatic state correction is an anomaly, not a normal event. Operators need visibility of every auto-correction.' demo_auto_adjust_logs_warning() verifies this either by capturing the structlog event level at runtime or by inspecting the source via inspect.getsource() confirming log.warning is called with the 'position_auto_adjusted' event key."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 158.1,
+        "tokens": 47438,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "logs_critical_ghost",
+          "text": "Logs CRITICAL event 'ghost_position_detected' with instrument and broker_qty",
+          "passed": true,
+          "evidence": "In handle_ghost_position() at Step 3: log.critical('ghost_position_detected', instrument=symbol, instrument_token=token, broker_qty=broker_qty, local_qty=0, action='instrument_locked_awaiting_manual_resolution', auto_close_attempted=False, is_ghost=True). The event name is exactly 'ghost_position_detected', includes both 'instrument' (symbol) and 'broker_qty' fields, and uses log.critical() not log.warning()."
+        },
+        {
+          "key": "telegram_critical_for_ghost",
+          "text": "Sends Telegram CRITICAL alert (not just warning) for ghost position",
+          "passed": true,
+          "evidence": "In handle_ghost_position() at Step 4: await send_critical_alert(...) is called, which is explicitly documented as the CRITICAL-level Telegram alert helper (prefixes message with [CRITICAL]). send_warning_alert() is deliberately NOT used for ghost positions. The function is async and awaited, consistent with non-blocking I/O rules. The alert message includes symbol, broker_qty, the fact that TradeOS has NOT auto-closed the position, and a step-by-step operator action guide."
+        },
+        {
+          "key": "locks_ghost_instrument",
+          "text": "Locks the instrument in shared_state['locked_instruments']",
+          "passed": true,
+          "evidence": "In handle_ghost_position() at Step 1: lock_instrument(shared_state, token=token, symbol=symbol, reason='ghost_position_detected') is called, which executes shared_state['locked_instruments'].add(token). The lock is the very first action taken \u2014 before logging or alerting \u2014 so no signal can slip through during the handler execution. The _demo_ghost_handling() function verifies this: 'RELIANCE locked: True (expected: True)'. The lock_instrument() helper also logs a structured 'instrument_locked' warning event."
+        },
+        {
+          "key": "no_auto_close_order",
+          "text": "Marks position in shared_state with is_ghost=True flag \u2014 does NOT place any close order",
+          "passed": true,
+          "evidence": "In handle_ghost_position() at Step 2: shared_state['position_state'][token] is set to a dict containing 'is_ghost': True. No kite.place_order() call is made anywhere in the ghost handler. The function signature takes only shared_state and mismatch \u2014 there is no kite parameter, making it structurally impossible to place a broker order. The demo verifies: \"is_ghost flag: True (expected: True)\". The docstring explicitly states 'NO close order is placed here.'"
+        },
+        {
+          "key": "explains_no_auto_close",
+          "text": "Explains why auto-closing is dangerous: could be a hedge or manual safety trade; unexpected P&L impact",
+          "passed": true,
+          "evidence": "The module-level docstring provides a four-point explanation: (1) The ghost could be a HEDGE \u2014 operator may have manually sold futures to hedge an equity long; auto-closing removes the hedge while the underlying is still open. (2) Unexpected P&L impact \u2014 auto-closing a large short at market could move the price against us and create a loss exceeding the daily loss limit. (3) Unknown average_price \u2014 any P&L calculation before placing a close order would be wrong. (4) Exchange risk \u2014 cannot infer product type (MIS vs CNC) intent from a ghost, so auto-squaring as MIS could be incorrect. The Telegram alert message also surfaces this rationale directly to the operator: 'this position may be a hedge or manual safety trade. Closing it blindly could create unexpected P&L impact or expose a correlated position.'"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 151.8,
+        "tokens": 54647,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "thirty_minute_interval",
+          "text": "Uses asyncio.sleep(1800) \u2014 exactly 30 minutes between reconciliation cycles",
+          "passed": true,
+          "evidence": "Constant RECONCILIATION_INTERVAL_SECONDS = 1800 is defined at module level. scheduled_reconciler calls 'await asyncio.sleep(RECONCILIATION_INTERVAL_SECONDS)' at the top of the while True loop, giving exactly 30 minutes between cycles."
+        },
+        {
+          "key": "continues_on_error",
+          "text": "try/except wraps the reconcile call \u2014 errors are logged but do not crash the scheduled reconciler",
+          "passed": true,
+          "evidence": "Inside scheduled_reconciler's while True loop, the call to reconcile_positions() is wrapped in try/except Exception as e. The except block calls log.error('scheduled_reconciliation_failed', ...) and does NOT re-raise, so the loop continues and the next cycle fires after another 1800 seconds."
+        },
+        {
+          "key": "no_raise_on_scheduled_mismatch",
+          "text": "Does NOT raise on mismatch during scheduled recon \u2014 locks instrument and continues",
+          "passed": true,
+          "evidence": "reconcile_positions() is called with mode='scheduled'. Inside reconcile_positions, the raise ReconciliationMismatchError branch is guarded by 'if mode == \"startup\"', so it only fires on startup. For mode='scheduled' the function calls _handle_mismatch() (which locks the instrument) then returns False without raising."
+        },
+        {
+          "key": "uses_to_thread",
+          "text": "Uses asyncio.to_thread(kite.positions) inside the reconcile call \u2014 blocking I/O rule",
+          "passed": true,
+          "evidence": "_fetch_positions_with_retry() uses 'await asyncio.to_thread(kite.positions)' on every attempt. This helper is called by reconcile_positions(), which is called by scheduled_reconciler. The blocking REST call never touches the event loop directly."
+        },
+        {
+          "key": "logs_trigger_scheduled",
+          "text": "Logs 'reconciliation_start' and 'reconciliation_complete' events with trigger='scheduled'",
+          "passed": true,
+          "evidence": "scheduled_reconciler emits 'log.info(\"reconciliation_start\", trigger=\"scheduled\")' before calling reconcile_positions, and 'log.info(\"reconciliation_complete\", trigger=\"scheduled\", result=..., locked_instrument_count=...)' after the call returns successfully. Both events use structlog for structured JSON output."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 168.8,
+        "tokens": 50682,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "sets_flag_before_recon",
+          "text": "Sets shared_state['recon_in_progress'] = True BEFORE calling reconcile_positions()",
+          "passed": true,
+          "evidence": "Line 274: `shared_state[\"recon_in_progress\"] = True  # <- sets_flag_before_recon` appears at the top of post_disruption_reconcile(), before the try block and before the await reconcile_positions() call on line 290. The flag is set unconditionally and immediately, ensuring signal_processor sees it on any tick that arrives after the flag is set."
+        },
+        {
+          "key": "finally_clears_flag",
+          "text": "Uses try/finally to ensure recon_in_progress is reset to False even if reconciliation throws",
+          "passed": true,
+          "evidence": "Lines 285-329: post_disruption_reconcile() wraps the reconcile_positions() call in a try/except/finally block. The finally clause on line 317 unconditionally executes `shared_state[\"recon_in_progress\"] = False  # <- finally_clears_flag`. The except clause catches and logs errors without re-raising, and the finally block still executes regardless of whether an exception occurred or not."
+        },
+        {
+          "key": "signal_processor_skips_during_recon",
+          "text": "signal_processor checks shared_state.get('recon_in_progress', False) and skips ticks when True",
+          "passed": true,
+          "evidence": "Lines 368-374: inside signal_processor_fn()'s while True loop, Gate A reads `if shared_state.get(\"recon_in_progress\", False):  # <- signal_processor_skips_during_recon` and calls `continue` to discard the tick without generating any signal. The .get() with default False ensures the gate is safe even if the key is absent in shared_state at startup."
+        },
+        {
+          "key": "logs_post_disruption_events",
+          "text": "Logs 'post_disruption_reconciliation_start' and 'post_disruption_reconciliation_complete'",
+          "passed": true,
+          "evidence": "Line 278: `log.warning(\"post_disruption_reconciliation_start\", ...)` is emitted immediately after setting the flag. Lines 296, 302, and 327: `log.info/warning(\"post_disruption_reconciliation_complete\", ...)` is emitted in all three outcome paths \u2014 clean result (line 296), mismatches found (line 302), and unconditionally in the finally block (line 327) \u2014 ensuring the completion event is always logged."
+        },
+        {
+          "key": "auto_resume_after_recon",
+          "text": "After reconciliation completes, signal_processor resumes automatically \u2014 no manual restart needed",
+          "passed": true,
+          "evidence": "The design ensures automatic resumption through two mechanisms: (1) post_disruption_reconcile() always clears recon_in_progress to False in the finally block (line 323), so the gate in signal_processor_fn() evaluates to False on the next tick; (2) signal_processor_fn() is a long-running while True coroutine that never exits \u2014 it processes the next tick from tick_queue automatically. Lines 265-266 in the docstring explicitly state: 'signal_processor_fn() automatically resumes processing ticks from the queue; no manual restart or intervention is needed.' Line 354 also marks this: `restart, no manual intervention required.  <- auto_resume_after_recon`."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 191.2,
+        "tokens": 49629,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "initialised_once_in_main",
+          "text": "locked_instruments is initialised once in main() / _init_shared_state() \u2014 never reset on reconnect",
+          "passed": true,
+          "evidence": "_init_shared_state() creates shared_state['locked_instruments'] = set() (Python id=4400558400) exactly once before any asyncio task is created. After a WebSocket reconnect, id(shared_state['locked_instruments']) is unchanged. ws_on_connect() and ws_on_disconnect() do not touch the set at all. Source: instrument-lock-mechanism.md \u2014 'The lock set lives in shared_state which is initialised once in main() and never reset during reconnects or task restarts.'"
+        },
+        {
+          "key": "reconnect_does_not_clear_locks",
+          "text": "WebSocket reconnect does NOT clear locked_instruments \u2014 reconnect handler does not touch the lock set",
+          "passed": true,
+          "evidence": "ws_on_connect() sets shared_state['ws_connected'] = True only. ws_on_disconnect() sets shared_state['ws_connected'] = False only. Neither function contains any reference to shared_state['locked_instruments']. Locked instruments before reconnect = True (set id 4400558400), unchanged after reconnect. Source: instrument-lock-mechanism.md \u2014 'A WebSocket reconnect does NOT clear locks. This is intentional.'"
+        },
+        {
+          "key": "cleared_only_by_successful_recon",
+          "text": "Locks are cleared only by _clear_lock_if_resolved() after a clean reconciliation",
+          "passed": true,
+          "evidence": "_clear_lock_if_resolved() calls shared_state['locked_instruments'].discard(token) and is called only from inside reconcile_positions() on a clean pass (no mismatches). Step 5 confirmed: post_disruption_reconcile() with still-mismatched positions left RELIANCE locked = True. Step 6 confirmed: after operator resolved the mismatch, a clean reconciliation cleared the lock; RELIANCE unlocked = True. Source: instrument-lock-mechanism.md \u2014 'The only ways to unlock an instrument: 1. Successful reconciliation clears the lock if positions now match.'"
+        },
+        {
+          "key": "post_reconnect_recon_before_unlock",
+          "text": "After reconnect, system runs post-disruption reconciliation \u2014 only if positions match does it unlock",
+          "passed": true,
+          "evidence": "ws_on_connect() does NOT unlock. post_disruption_reconcile() is called after reconnect; it sets shared_state['recon_in_progress'] = True, calls reconcile_positions(), and only if that returns True (clean) does _clear_lock_if_resolved() run. Step 3: reconnect alone did not unlock RELIANCE. Step 5: post_disruption_reconcile with mismatch still present did not unlock. Step 6: post_disruption_reconcile with clean positions did unlock. Source: reconciliation-triggers.md Trigger 3 + instrument-lock-mechanism.md."
+        },
+        {
+          "key": "explains_persistence_reason",
+          "text": "Explains that a mismatch before reconnect may still exist after reconnect \u2014 must verify, not assume",
+          "passed": true,
+          "evidence": "A position mismatch is a discrepancy between broker position quantities (kite.positions()) and local shared_state['position_state'] quantities. This discrepancy is NOT caused by the WebSocket being down, and it is NOT resolved by reconnecting. The WebSocket carries live tick data (prices/volumes) \u2014 it does not determine or repair position state. Therefore: reconnecting the WebSocket does not change kite.positions() nor shared_state['position_state'], so the mismatch remains. post_disruption_reconcile() must call kite.positions() again and compare freshly \u2014 only a clean comparison result justifies clearing the lock. This was confirmed in Step 5 of the demonstration: the WebSocket was reconnected (ws_on_connect called), but RELIANCE remained locked because post_disruption_reconcile still saw a qty mismatch (broker=50, local=100). The lock was cleared only in Step 6 after the quantities matched. Source: instrument-lock-mechanism.md \u2014 'A mismatch detected before a reconnect is still unresolved after reconnect \u2014 the lock must remain until a fresh reconciliation confirms clean state.'"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 154.7,
+        "tokens": 49100,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "awaited_before_create_task",
+          "text": "reconcile_on_startup() is awaited before any asyncio.create_task() call",
+          "passed": true,
+          "evidence": "In main(), line 435 executes `await reconcile_on_startup(kite)` inside a try/except block. The first asyncio.create_task() call does not appear until line 455 (`task_ws = asyncio.create_task(...)`). If reconcile_on_startup() raises ReconciliationMismatchError, the except block at line 436 catches it and `raise SystemExit(1)` at line 445 terminates startup \u2014 no create_task() call is ever reached. The ordering is structurally enforced: the try/except wraps only the await, and all create_task() calls are outside and below that block."
+        },
+        {
+          "key": "uses_to_thread_for_positions",
+          "text": "Uses asyncio.to_thread(kite.positions) \u2014 not kite.positions() directly in the event loop",
+          "passed": true,
+          "evidence": "Line 243: `raw_broker: Dict[str, Any] = await asyncio.to_thread(kite.positions)` \u2014 the method reference `kite.positions` (no parentheses) is passed as the callable to asyncio.to_thread(), which then invokes it in a worker thread outside the event loop. This correctly offloads the blocking synchronous REST call without blocking the event loop, satisfying D6 (Async Architecture). Additionally, `load_local_positions` (also blocking file I/O) is wrapped identically at line 268: `await asyncio.to_thread(load_local_positions)`."
+        },
+        {
+          "key": "raises_on_mismatch",
+          "text": "Raises ReconciliationMismatchError (or SystemExit/equivalent) when mismatches found \u2014 does not silently continue",
+          "passed": true,
+          "evidence": "Line 318: `raise ReconciliationMismatchError(mismatches)` \u2014 a dedicated, domain-specific exception class is defined at lines 51-66 and raised unconditionally when _compute_mismatches() returns a non-empty list. The exception carries the list of PositionMismatch objects for inspection. In main(), the exception is caught at line 436 and immediately re-raised as SystemExit(1) at line 445, aborting startup. There is no code path that suppresses the exception and allows trading to continue."
+        },
+        {
+          "key": "logs_critical_on_mismatch",
+          "text": "Logs structured event at CRITICAL level on mismatch (not just WARNING)",
+          "passed": true,
+          "evidence": "Two CRITICAL log calls are made inside the `if mismatches:` branch. Lines 298-305: `log.critical('reconciliation_mismatch_detected', phase='startup', mismatch_count=len(mismatches), mismatches=mismatch_details, action='instruments_locked_startup_aborted', resolution='manual_intervention_required')`. Lines 309-316 (loop): `log.critical('instrument_locked', symbol=mismatch.symbol, reason='position_mismatch', local_qty=..., broker_qty=...)` \u2014 one per mismatched instrument. Both use the structlog `.critical()` method which maps to log level CRITICAL (50), not WARNING (30) or ERROR (40). The logger is configured as a structured JSON emitter via structlog.configure()."
+        },
+        {
+          "key": "returns_clean_when_matched",
+          "text": "Returns cleanly (True or None) when no mismatches \u2014 trading proceeds normally",
+          "passed": true,
+          "evidence": "Line 330: `return True` \u2014 when _compute_mismatches() returns an empty list, the `if mismatches:` block (lines 294-318) is skipped entirely. The function logs `reconciliation_clean` at INFO level (lines 323-329) and returns `True`. Back in main(), the `try/except` block (lines 434-445) completes without raising, execution falls through to line 450, and all five asyncio.create_task() calls at lines 455-469 are executed. Trading proceeds normally."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 87.1,
+        "tokens": 34017,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "detects_qty_mismatch",
+          "text": "Detects qty_mismatch: broker_qty != local_qty when both are non-zero",
+          "passed": true,
+          "evidence": "Example 1 and Example 5: RELIANCE with broker_qty=10, local_qty=5 produces {'symbol': 'RELIANCE', 'mismatch_type': 'qty_mismatch', 'broker_qty': 10, 'local_qty': 5, 'severity': 'warning'}. The _classify() function returns 'qty_mismatch' when both broker_qty != 0 and local_qty != 0 and they differ."
+        },
+        {
+          "key": "detects_ghost_position",
+          "text": "Detects ghost_position: broker_qty != 0 but no local record (local_qty == 0)",
+          "passed": true,
+          "evidence": "Example 2 and Example 5: INFY with broker_qty=10, local absent (resolved to 0) produces {'symbol': 'INFY', 'mismatch_type': 'ghost_position', 'broker_qty': 10, 'local_qty': 0, 'severity': 'critical'}. The local_map.get(symbol, 0) default handles symbols missing from local entirely."
+        },
+        {
+          "key": "detects_missing_local",
+          "text": "Detects missing_local: local_qty != 0 but broker_qty == 0",
+          "passed": true,
+          "evidence": "Example 3 and Example 5: HDFCBANK with broker_qty=0 (absent from broker list, resolved to 0), local_qty=10 produces {'symbol': 'HDFCBANK', 'mismatch_type': 'missing_local', 'broker_qty': 0, 'local_qty': 10, 'severity': 'warning'}. The broker_map.get(symbol, 0) default handles symbols absent from broker."
+        },
+        {
+          "key": "ghost_severity_critical",
+          "text": "Ghost positions are flagged as severity='critical', other mismatches as severity='warning'",
+          "passed": true,
+          "evidence": "All three mismatch types confirmed: ghost_position -> severity='critical' (INFY example), qty_mismatch -> severity='warning' (RELIANCE example), missing_local -> severity='warning' (HDFCBANK example). The _classify() function assigns 'critical' exclusively to the ghost_position branch and 'warning' to all others."
+        },
+        {
+          "key": "empty_list_when_clean",
+          "text": "Returns empty list (not None or exception) when positions are clean",
+          "passed": true,
+          "evidence": "Example 4: broker=[{tradingsymbol:'TCS', quantity:5}, {tradingsymbol:'WIPRO', quantity:0}], local=[{tradingsymbol:'TCS', quantity:5}] returns []. The function initialises mismatches=[] and skips the continue branch when broker_qty == local_qty, including the case where WIPRO is 0 at broker and absent (0) locally. Return type is always list."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 92.5,
+        "tokens": 33901,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "locked_instruments_is_set",
+          "text": "locked_instruments is a set in shared_state \u2014 only the mismatched token is added",
+          "passed": true,
+          "evidence": "shared_state['locked_instruments'] is initialised as set() at module level. lock_handler() calls shared_state['locked_instruments'].add(token) using the set .add() API, which ensures only unique tokens are stored. After the RELIANCE mismatch, locked_instruments == {738561} \u2014 only the RELIANCE token. INFY token 408065 is absent. Verified by runtime assertion: assert RELIANCE_TOKEN in locked and assert INFY_TOKEN not in locked."
+        },
+        {
+          "key": "signal_processor_checks_lock",
+          "text": "signal_processor checks 'token in shared_state[locked_instruments]' and skips locked instruments",
+          "passed": true,
+          "evidence": "signal_processor() has Gate 1 as its first statement: 'if token in shared_state[\"locked_instruments\"]: ... return None'. When RELIANCE tick (token=738561) arrives, the gate fires, logs tick_skipped_instrument_locked, and returns None without executing any strategy logic. Confirmed by runtime output: 'signal_processor result for RELIANCE: None'."
+        },
+        {
+          "key": "unlocked_instruments_continue",
+          "text": "Unlocked instruments (INFY) continue to generate signals during the lock",
+          "passed": true,
+          "evidence": "When INFY tick (token=408065) arrives while RELIANCE is locked, the lock gate is NOT triggered (408065 not in {738561}). The processor proceeds to signal logic and returns {'strategy': 's1', 'symbol': 'INFY', 'token': 408065, 'action': 'BUY', 'price': 1855.0, ...}. Confirmed by runtime output and assertion: assert result_infy is not None."
+        },
+        {
+          "key": "telegram_warning_on_lock",
+          "text": "Sends Telegram WARNING alert with instrument name and mismatch details",
+          "passed": true,
+          "evidence": "lock_handler() calls send_telegram_alert(level='WARNING', message='[TradeOS D7] Position mismatch detected \u2014 instrument locked. symbol=RELIANCE token=738561 local_qty=10 broker_qty=0. Instrument will NOT trade until reconciliation confirms clean state or manual unlock is issued.'). Runtime log shows [WARNING] telegram_alert_sent with the full message. One WARNING entry confirmed in shared_state['telegram_messages']."
+        },
+        {
+          "key": "lock_not_auto_cleared",
+          "text": "Lock persists \u2014 not cleared until reconciliation confirms clean or manual unlock",
+          "passed": true,
+          "evidence": "After the INFY signal is generated (Step 3), the lock is checked again in Step 4. shared_state['locked_instruments'] still contains {738561}. There is no timer, TTL, or automatic cleanup code anywhere in lock_handler or signal_processor. The only removal path is manual_unlock(), which requires an explicit operator call with an authorized_by argument \u2014 demonstrating that human or reconciliation confirmation is the sole unlock mechanism."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 127.1,
+        "tokens": 38999,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "auto_adjust_defaults_false",
+          "text": "Checks config.get('reconciliation', {}).get('auto_adjust', False) \u2014 defaults to False",
+          "passed": true,
+          "evidence": "Line 96: self._auto_adjust_enabled: bool = (config.get('reconciliation', {}).get('auto_adjust', False)). The exact pattern is used. Demo _demo_manual_lock_default passes empty config {} and asserts handler._auto_adjust_enabled is False \u2014 confirmed by assertion at line 342 and passing demo run."
+        },
+        {
+          "key": "manual_mode_locks_only",
+          "text": "Manual mode: locks instrument, logs warning, sends alert \u2014 does NOT modify local state",
+          "passed": true,
+          "evidence": "Method _manual_lock (line 137): calls position.lock() to lock the instrument; logs at log.warning with event 'reconciliation_mismatch_manual_lock'; calls send_telegram_alert; returns ReconciliationResult with local_qty_after == position.quantity (unchanged). The demo _demo_manual_lock_default asserts result.local_qty_after == 30 (unchanged from 30) and result.locked is True. Confirmed passing in runtime output."
+        },
+        {
+          "key": "auto_adjust_updates_qty",
+          "text": "Auto-adjust mode: updates local quantity to match broker \u2014 does NOT lock the instrument",
+          "passed": true,
+          "evidence": "Method _auto_adjust (line 185): sets position.quantity = mismatch.broker_qty (line 201); position.lock() is never called; returns ReconciliationResult with locked=False. Demo _demo_quantity_mismatch_auto_adjust asserts result.locked is False and result.local_qty_after == 45 (broker value). Confirmed passing in runtime output with log event 'reconciliation_mismatch_auto_adjusted'."
+        },
+        {
+          "key": "ghost_never_auto_adjusted",
+          "text": "Ghost positions always use manual mode regardless of auto_adjust setting",
+          "passed": true,
+          "evidence": "Lines 114-116: if mismatch.kind == MismatchKind.GHOST_POSITION: return await self._manual_lock(mismatch, position). This early-return happens before the auto_adjust branch check at line 128, so ghost positions always skip auto_adjust even when _auto_adjust_enabled is True. Demo _demo_ghost_never_auto_adjusted sets auto_adjust=True in config, asserts handler._auto_adjust_enabled is True, then asserts result.mode_used == 'manual_lock' and result.local_qty_after == 100 (unchanged). Confirmed passing in runtime output."
+        },
+        {
+          "key": "auto_adjust_logs_warning",
+          "text": "Auto-adjust logs a WARNING (not INFO) \u2014 it's an anomaly correction, not a normal event",
+          "passed": true,
+          "evidence": "Line 206: log.warning('reconciliation_mismatch_auto_adjusted', ...) \u2014 uses log.warning explicitly, not log.info. Confirmed in runtime JSON output: level field is 'warning' for the 'reconciliation_mismatch_auto_adjusted' event: {\"event\": \"reconciliation_mismatch_auto_adjusted\", \"level\": \"warning\", ...}."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 128.5,
+        "tokens": 50970,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "logs_critical_ghost",
+          "text": "Logs CRITICAL event 'ghost_position_detected' with instrument and broker_qty",
+          "passed": true,
+          "evidence": "In GhostPositionHandler.handle_ghost() at line 270: log.critical('ghost_position_detected', instrument=instrument, broker_qty=broker_qty, ...). Uses structlog configured with JSONRenderer so every log line is a structured JSON object. The event name is exactly 'ghost_position_detected' and both 'instrument' and 'broker_qty' are passed as keyword arguments."
+        },
+        {
+          "key": "telegram_critical_for_ghost",
+          "text": "Sends Telegram CRITICAL alert (not just warning) for ghost position",
+          "passed": true,
+          "evidence": "In handle_ghost() at line 288-300: _format_ghost_position_alert() builds a message whose first line is 'CRITICAL \u2014 Ghost Position Detected'. The message is dispatched via _send_telegram_critical() which POSTs to the Telegram Bot API sendMessage endpoint using httpx.AsyncClient. The function name, the message header text, and the inline comment ('Step 2 \u2014 Telegram CRITICAL alert') all confirm CRITICAL severity, not merely a warning."
+        },
+        {
+          "key": "locks_ghost_instrument",
+          "text": "Locks the instrument in shared_state['locked_instruments']",
+          "passed": true,
+          "evidence": "In handle_ghost() at line 305: self._state['locked_instruments'].add(instrument). The shared_state['locked_instruments'] set is initialised in __init__() at line 202 if not already present. The demo at line 457 asserts that every ghost symbol is present in locked_instruments, confirming the lock is applied before handle_ghost() returns."
+        },
+        {
+          "key": "no_auto_close_order",
+          "text": "Marks position in shared_state with is_ghost=True flag \u2014 does NOT place any close order",
+          "passed": true,
+          "evidence": "In handle_ghost() at lines 338-347: ghost_record is built with 'is_ghost': True and 'auto_close_attempted': False, then stored at self._state['ghost_positions'][instrument]. No order placement call (e.g. kite.place_order, paper_trader.submit, execute_order) exists anywhere in the file. The demo assertions at lines 453-454 verify is_ghost is True and auto_close_attempted is False for every ghost position processed."
+        },
+        {
+          "key": "explains_no_auto_close",
+          "text": "Explains why auto-closing is dangerous: could be a hedge or manual safety trade; unexpected P&L impact",
+          "passed": true,
+          "evidence": "The module-level docstring (lines 14-49) contains a section titled 'WHY AUTO-CLOSING A GHOST POSITION IS DANGEROUS' with four named reasons: (a) hedge or manual safety trade, (b) different strategy/session causing unexpected realised loss, (c) unsolicited order creates unexpected P&L impact including position inversion, (d) regulatory risk from RMS rejection. The inline comment block at lines 315-336 inside handle_ghost() repeats the hedge and unexpected P&L arguments in context. Both the reason field logged to structlog and the Telegram alert message body also warn against auto-closing."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 118.5,
+        "tokens": 38255,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "thirty_minute_interval",
+          "text": "Uses asyncio.sleep(1800) \u2014 exactly 30 minutes between reconciliation cycles",
+          "passed": true,
+          "evidence": "RECONCILE_INTERVAL_SECONDS = 1800 (line 33) used directly in the loop: `await asyncio.sleep(RECONCILE_INTERVAL_SECONDS)` (line 327 inside ScheduledReconciler.start()). The constant is equal to exactly 1800 seconds = 30 minutes."
+        },
+        {
+          "key": "continues_on_error",
+          "text": "try/except wraps the reconcile call \u2014 errors are logged but do not crash the scheduled reconciler",
+          "passed": true,
+          "evidence": "ScheduledReconciler._run_once() (lines 345-360) wraps `await self._reconciler.reconcile(trigger='scheduled')` in try/except. asyncio.CancelledError is re-raised (legitimate shutdown). All other exceptions are caught as `except Exception as exc`, logged with `log.error('scheduled_reconcile_error', ..., action='continuing_loop')`, and the loop continues. The while loop in start() never exits on error."
+        },
+        {
+          "key": "no_raise_on_scheduled_mismatch",
+          "text": "Does NOT raise on mismatch during scheduled recon \u2014 locks instrument and continues",
+          "passed": true,
+          "evidence": "In PositionReconciler.reconcile() (lines 163-205), mismatches are iterated and each triggers `self._store.lock_instrument(symbol)` plus a `log.warning('reconciliation_mismatch', ...)`. No exception is raised. The method returns a ReconciliationResult normally. The scheduled loop therefore proceeds to the next `asyncio.sleep(1800)` uninterrupted."
+        },
+        {
+          "key": "uses_to_thread",
+          "text": "Uses asyncio.to_thread(kite.positions) inside the reconcile call \u2014 blocking I/O rule",
+          "passed": true,
+          "evidence": "Line 155: `raw_broker = await asyncio.to_thread(self._kite.positions)` \u2014 the blocking KiteConnect REST call is dispatched to a thread pool, satisfying D6 (no blocking I/O on the asyncio event loop)."
+        },
+        {
+          "key": "logs_trigger_scheduled",
+          "text": "Logs 'reconciliation_start' and 'reconciliation_complete' events with trigger='scheduled'",
+          "passed": true,
+          "evidence": "Lines 147-150: `log.info('reconciliation_start', trigger=trigger, timestamp=timestamp)` and lines 195-204: `log.info('reconciliation_complete', trigger=trigger, ...)`. The ScheduledReconciler always calls `self._reconciler.reconcile(trigger='scheduled')` (line 346), so both log events carry trigger='scheduled' on every scheduled cycle."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 74.4,
+        "tokens": 31117,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "sets_flag_before_recon",
+          "text": "Sets shared_state['recon_in_progress'] = True BEFORE calling reconcile_positions()",
+          "passed": true,
+          "evidence": "In reconcile_positions(), line 'shared_state[\"recon_in_progress\"] = True' appears at the very top of the function body, before any await call or broker I/O (fetch_broker_positions is called only after the flag is set). on_websocket_reconnect() then awaits reconcile_positions(), so the flag is guaranteed to be set before any reconciliation work begins."
+        },
+        {
+          "key": "finally_clears_flag",
+          "text": "Uses try/finally to ensure recon_in_progress is reset to False even if reconciliation throws",
+          "passed": true,
+          "evidence": "reconcile_positions() wraps all broker I/O and comparison logic in a try/except/finally block. The finally clause unconditionally executes 'shared_state[\"recon_in_progress\"] = False', ensuring the gate is released whether reconciliation succeeds, raises an exception, or is cancelled."
+        },
+        {
+          "key": "signal_processor_skips_during_recon",
+          "text": "signal_processor checks shared_state.get('recon_in_progress', False) and skips ticks when True",
+          "passed": true,
+          "evidence": "At the top of the tick-processing loop in signal_processor(), the guard 'if shared_state.get(\"recon_in_progress\", False):' is evaluated for every tick. When True, the tick is discarded with a structured log line and the loop continues \u2014 no signal logic executes. The default False means the check is safe even before the key is ever set."
+        },
+        {
+          "key": "logs_post_disruption_events",
+          "text": "Logs 'post_disruption_reconciliation_start' and 'post_disruption_reconciliation_complete'",
+          "passed": true,
+          "evidence": "reconcile_positions() calls log.info('post_disruption_reconciliation_start', reason='websocket_reconnect', ...) immediately after setting the flag, and log.info('post_disruption_reconciliation_complete', mismatch_count=..., synced_positions=...) at the end of the try block after all comparisons are done. Both events are logged with structured key/value fields using structlog."
+        },
+        {
+          "key": "auto_resume_after_recon",
+          "text": "After reconciliation completes, signal_processor resumes automatically \u2014 no manual restart needed",
+          "passed": true,
+          "evidence": "signal_processor() runs in an infinite while-True loop as a background asyncio Task. It checks 'shared_state.get(\"recon_in_progress\", False)' on each iteration. Once reconcile_positions() clears the flag in its finally block, the very next tick dequeued will pass the gate check and be processed normally \u2014 the task never stops, sleeps indefinitely, or requires any external restart signal."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 172.4,
+        "tokens": 63117,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "initialised_once_in_main",
+          "text": "locked_instruments is initialised once in main() / _init_shared_state() \u2014 never reset on reconnect",
+          "passed": true,
+          "evidence": "_init_shared_state() is the sole function that creates shared_state['locked_instruments'] = set(). It is called once from main() before any task is created. The demo captures id(shared_state['locked_instruments']) at creation time and asserts the same id throughout all phases, proving the set object is never replaced. The log line 'shared_state_initialised' fires exactly once. No other code path contains an assignment to shared_state['locked_instruments']."
+        },
+        {
+          "key": "reconnect_does_not_clear_locks",
+          "text": "WebSocket reconnect does NOT clear locked_instruments \u2014 reconnect handler does not touch the lock set",
+          "passed": true,
+          "evidence": "_on_reconnect() contains zero reads or writes to shared_state['locked_instruments'] except to log its current value for observability. The handler captures 'locks_before_recon = set(shared_state[\"locked_instruments\"])' and immediately asserts 'shared_state[\"locked_instruments\"] == locks_before_recon' to document and enforce this invariant. PHASE C assertions confirm: locks_before_reconnect ({738561}) == locks_after_reconnect ({738561}), and the set's object identity (id) is unchanged after _on_reconnect() returns."
+        },
+        {
+          "key": "cleared_only_by_successful_recon",
+          "text": "Locks are cleared only by _clear_lock_if_resolved() after a clean reconciliation",
+          "passed": true,
+          "evidence": "_clear_lock_if_resolved() is the single function that calls shared_state['locked_instruments'].discard(token). It is called exclusively from _run_reconciliation() at the point where local_qty == broker_qty is confirmed for a previously locked instrument. No other function in the codebase calls discard() or removes items from the lock set. PHASE D-b demonstrates the lock being removed when _run_reconciliation() with broker_post_reconnect_resolved confirms RELIANCE qty=10 matches local qty=10, and the log 'instrument_lock_cleared reason=reconciliation_confirmed_clean' is emitted."
+        },
+        {
+          "key": "post_reconnect_recon_before_unlock",
+          "text": "After reconnect, system runs post-disruption reconciliation \u2014 only if positions match does it unlock",
+          "passed": true,
+          "evidence": "_on_reconnect() explicitly logs 'post_reconnect_reconciliation_starting' and triggers a reconciliation before any unlock is permitted. PHASE D-a demonstrates that when the broker snapshot still shows a mismatch (RELIANCE broker_qty=0 vs local_qty=10) the lock is preserved \u2014 the assertion 'RELIANCE must remain locked \u2014 reconciliation still shows mismatch' passes. PHASE D-b demonstrates that only when the broker snapshot matches (RELIANCE broker_qty=10 == local_qty=10) does _clear_lock_if_resolved() fire and remove the lock. The reconciliation audit trail shows Run 2 (post_disruption, mismatch) and Run 3 (post_disruption, clean) in sequence."
+        },
+        {
+          "key": "explains_persistence_reason",
+          "text": "Explains that a mismatch before reconnect may still exist after reconnect \u2014 must verify, not assume",
+          "passed": true,
+          "evidence": "The module docstring states: 'A position mismatch that was detected before a WebSocket disconnect does NOT automatically resolve itself during the outage. When the WebSocket comes back up, the broker's actual position state is unknown until we explicitly query it. If we cleared the lock on reconnect we would silently allow the strategy to resume trading on an instrument that may still have an unresolved discrepancy \u2014 a phantom long or short that the system does not know about \u2014 which can lead to uncontrolled double-sizing or opposite-direction trades that magnify a loss. The only safe assumption after reconnect is: the mismatch may still exist \u2014 verify before allowing trading.' The _on_reconnect() log field 'explanation' repeats this inline: 'A mismatch that existed before the disconnect may still exist. We verify first, then and only then unlock if positions match.' The final summary printed to stdout enumerates property 5: 'A mismatch before reconnect may still exist after reconnect \u2014 system verifies, does not assume.'"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 150.6625,
+        "stddev": 34.3213,
+        "min": 77.1,
+        "max": 191.2
+      },
+      "tokens": {
+        "mean": 49643.5,
+        "stddev": 7133.7951,
+        "min": 36053,
+        "max": 61256
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 119.4,
+        "stddev": 33.7848,
+        "min": 74.4,
+        "max": 172.4
+      },
+      "tokens": {
+        "mean": 42434.5,
+        "stddev": 10994.0313,
+        "min": 31117,
+        "max": 63117
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+31.3",
+      "tokens": "+7209"
+    }
+  },
+  "notes": []
+}
