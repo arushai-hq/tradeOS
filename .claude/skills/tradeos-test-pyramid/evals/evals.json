@@ -1,0 +1,309 @@
+{
+  "skill_name": "tradeos-test-pyramid",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write the unit test for kill switch Level 2 firing when daily loss exceeds 3%",
+      "expected_output": "Uses shared_state fixture, sets daily_pnl_pct=-0.031, calls risk_watchdog check, asserts kill_switch.level==2, asserts open positions closed, uses pytest.mark.asyncio, mocks kite.cancel_order() and kite.place_order()",
+      "assertions": [
+        {
+          "id": "uses_shared_state_fixture",
+          "description": "Test uses the shared_state fixture (not a raw dict created inline)",
+          "type": "contains_pattern",
+          "pattern": "shared_state"
+        },
+        {
+          "id": "sets_correct_threshold",
+          "description": "Test sets daily_pnl_pct to a value that triggers Level 2 (e.g., -0.031 or -0.030)",
+          "type": "contains_pattern",
+          "pattern": "-0.03"
+        },
+        {
+          "id": "asserts_level_2",
+          "description": "Test asserts kill switch level == 2",
+          "type": "contains_pattern",
+          "pattern": "level.*2|== 2|==2"
+        },
+        {
+          "id": "uses_asyncio_mark",
+          "description": "Test is marked with pytest.mark.asyncio (it's async)",
+          "type": "contains_pattern",
+          "pattern": "asyncio"
+        },
+        {
+          "id": "mocks_kite_methods",
+          "description": "Test mocks kite.cancel_order() or kite.place_order() (not hitting real API)",
+          "type": "contains_pattern",
+          "pattern": "cancel_order|mock_kite|MagicMock"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Write parametrized tests for RSI entry condition boundaries for S1 long signal",
+      "expected_output": "@pytest.mark.parametrize with values 54,55,70,71; 54 and 71 assert no signal; 55 and 70 assert signal; all other conditions held constant via fixtures",
+      "assertions": [
+        {
+          "id": "uses_parametrize",
+          "description": "Test uses @pytest.mark.parametrize decorator",
+          "type": "contains_pattern",
+          "pattern": "parametrize"
+        },
+        {
+          "id": "includes_boundary_values",
+          "description": "Test includes boundary values 54, 55, 70, 71",
+          "type": "contains_pattern",
+          "pattern": "54.*55|55.*54"
+        },
+        {
+          "id": "tests_both_pass_fail",
+          "description": "Test covers both passing (signal) and failing (no signal) cases",
+          "type": "contains_pattern",
+          "pattern": "False.*True|True.*False|no.*signal|signal.*none"
+        },
+        {
+          "id": "rsi_in_range_passes",
+          "description": "RSI 55 and 70 produce a signal (True or non-None)",
+          "type": "contains_pattern",
+          "pattern": "55.*True|70.*True|True.*55|True.*70"
+        },
+        {
+          "id": "rsi_out_of_range_fails",
+          "description": "RSI 54 and 71 do not produce a signal (False or None)",
+          "type": "contains_pattern",
+          "pattern": "54.*False|71.*False|False.*54|False.*71"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Write the conftest.py with all 5 mandatory shared fixtures",
+      "expected_output": "shared_state, kill_switch, mock_kite, valid_tick, ist_now all defined correctly; mock_kite uses MagicMock; valid_tick has all required Zerodha fields; ist_now returns timezone-aware datetime in Asia/Kolkata",
+      "assertions": [
+        {
+          "id": "has_all_5_fixtures",
+          "description": "All 5 fixtures present: shared_state, kill_switch, mock_kite, valid_tick, ist_now",
+          "type": "contains_pattern",
+          "pattern": "shared_state"
+        },
+        {
+          "id": "mock_kite_uses_magicmock",
+          "description": "mock_kite fixture uses MagicMock (not a real KiteConnect instance)",
+          "type": "contains_pattern",
+          "pattern": "MagicMock"
+        },
+        {
+          "id": "valid_tick_has_exchange_timestamp",
+          "description": "valid_tick includes exchange_timestamp field (critical for Gate 4)",
+          "type": "contains_pattern",
+          "pattern": "exchange_timestamp"
+        },
+        {
+          "id": "ist_now_uses_kolkata_timezone",
+          "description": "ist_now returns datetime in Asia/Kolkata timezone",
+          "type": "contains_pattern",
+          "pattern": "Asia/Kolkata|Kolkata"
+        },
+        {
+          "id": "shared_state_has_locked_instruments_set",
+          "description": "shared_state fixture includes locked_instruments as a set()",
+          "type": "contains_pattern",
+          "pattern": "locked_instruments"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Write the simulation test that validates S1 meets all 7 Layer 3 criteria using backtesting.py",
+      "expected_output": "Runs backtesting.py with 1yr data, extracts Sharpe/WinRate/MaxDrawdown/ProfitFactor/TradeCount, asserts all 7 thresholds, fails test with clear message if any single criterion missed",
+      "assertions": [
+        {
+          "id": "asserts_sharpe_above_1pt2",
+          "description": "Test asserts Sharpe Ratio > 1.2",
+          "type": "contains_pattern",
+          "pattern": "1\\.2|sharpe"
+        },
+        {
+          "id": "asserts_win_rate_above_45pct",
+          "description": "Test asserts Win Rate > 45%",
+          "type": "contains_pattern",
+          "pattern": "0\\.45|45|win_rate|Win Rate"
+        },
+        {
+          "id": "asserts_max_drawdown_below_15pct",
+          "description": "Test asserts Max Drawdown < 15%",
+          "type": "contains_pattern",
+          "pattern": "0\\.15|15|drawdown|Drawdown"
+        },
+        {
+          "id": "asserts_min_100_trades",
+          "description": "Test asserts minimum 100 trades for statistical significance",
+          "type": "contains_pattern",
+          "pattern": "100|trade.*count|# Trades"
+        },
+        {
+          "id": "uses_backtesting_library",
+          "description": "Test imports and uses backtesting.py (Backtest class)",
+          "type": "contains_pattern",
+          "pattern": "Backtest|backtesting"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Write the live deployment gate function that checks all criteria before allowing mode: live",
+      "expected_output": "Checks all 10 gate conditions, returns True only if ALL pass, on False logs exactly which criteria failed, never modifies settings.yaml itself — returns decision only, raises LiveGateClosedError with failure reasons if not ready",
+      "assertions": [
+        {
+          "id": "checks_all_10_conditions",
+          "description": "Function checks all 10 gate conditions (layers 1-3 + coverage + weeks + monte carlo)",
+          "type": "contains_pattern",
+          "pattern": "layer1|layer2|layer3|sharpe|coverage"
+        },
+        {
+          "id": "raises_livegatelosederror",
+          "description": "Function raises LiveGateClosedError (or similar named exception) when gate is closed",
+          "type": "contains_pattern",
+          "pattern": "LiveGate|gate.*closed|GateClosed"
+        },
+        {
+          "id": "never_modifies_settings",
+          "description": "Function never writes to settings.yaml (no file I/O or yaml.dump)",
+          "type": "not_contains_pattern",
+          "pattern": "settings\\.yaml.*write|yaml\\.dump.*settings|open.*settings.*yaml.*w"
+        },
+        {
+          "id": "logs_failed_conditions",
+          "description": "On failure, function logs or reports which specific conditions failed",
+          "type": "contains_pattern",
+          "pattern": "failed.*condition|condition.*failed|failed_conditions"
+        },
+        {
+          "id": "returns_decision_object",
+          "description": "Function returns a result object or bool, not void — callers can check the result",
+          "type": "contains_pattern",
+          "pattern": "return.*True|return.*False|return.*result|return.*gate"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Write the Monte Carlo test that runs 1000 trade sequences and validates 95th percentile drawdown < 20%",
+      "expected_output": "Samples from historical trade outcomes with replacement, runs 1000 sequences, calculates max drawdown per sequence, asserts np.percentile(drawdowns, 95) < 0.20, asserts np.percentile(returns, 5) > 0",
+      "assertions": [
+        {
+          "id": "runs_1000_simulations",
+          "description": "Test runs exactly 1000 Monte Carlo sequences",
+          "type": "contains_pattern",
+          "pattern": "1000"
+        },
+        {
+          "id": "uses_sampling_with_replacement",
+          "description": "Test samples trade returns with replacement (numpy choice or equivalent)",
+          "type": "contains_pattern",
+          "pattern": "replace=True|choice|resample|bootstrap"
+        },
+        {
+          "id": "asserts_p95_drawdown",
+          "description": "Test asserts 95th percentile max drawdown < 20%",
+          "type": "contains_pattern",
+          "pattern": "percentile.*95|95.*percentile|0\\.20|p95"
+        },
+        {
+          "id": "asserts_p5_return_positive",
+          "description": "Test asserts 5th percentile return is positive (positive expectancy)",
+          "type": "contains_pattern",
+          "pattern": "percentile.*5[^0]|5.*percentile|> 0|positive"
+        },
+        {
+          "id": "calculates_per_sequence_drawdown",
+          "description": "Test computes max drawdown for each sequence (not just overall)",
+          "type": "contains_pattern",
+          "pattern": "drawdown|max.*draw|cumulative"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Write an integration test for order lifecycle that does not hit the real Zerodha API",
+      "expected_output": "Uses mock_kite fixture throughout; kite.place_order() returns controlled order_id; kite.orders() returns staged order status progressions; tests full CREATED→FILLED lifecycle without network calls",
+      "assertions": [
+        {
+          "id": "uses_mock_kite_fixture",
+          "description": "Test uses mock_kite fixture (not real KiteConnect)",
+          "type": "contains_pattern",
+          "pattern": "mock_kite"
+        },
+        {
+          "id": "stages_order_status_progression",
+          "description": "Test stages mock order status sequences (OPEN → COMPLETE or similar)",
+          "type": "contains_pattern",
+          "pattern": "OPEN|COMPLETE|side_effect|return_value"
+        },
+        {
+          "id": "tests_full_lifecycle",
+          "description": "Test verifies full CREATED→FILLED lifecycle (or equivalent terminal state)",
+          "type": "contains_pattern",
+          "pattern": "FILLED|COMPLETE|terminal|lifecycle|CREATED"
+        },
+        {
+          "id": "no_real_network_calls",
+          "description": "Test does not use real KiteConnect credentials or URLs",
+          "type": "not_contains_pattern",
+          "pattern": "kite_api_key|api_secret|access_token.*real|kite\\.trade"
+        },
+        {
+          "id": "verifies_state_machine_state",
+          "description": "Test asserts the order state machine reached the expected state",
+          "type": "contains_pattern",
+          "pattern": "state.*FILLED|FILLED.*state|order_state|state_machine"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "Write the simulation test that proves kill switch reduces max drawdown by more than 50%",
+      "expected_output": "Runs S1 backtest twice — once with kill switch disabled, once enabled; compares max_drawdown between runs; asserts drawdown_with_ks < drawdown_without_ks * 0.5; logs both drawdown values for audit trail",
+      "assertions": [
+        {
+          "id": "runs_two_backtest_variants",
+          "description": "Test runs two backtest variants (with and without kill switch)",
+          "type": "contains_pattern",
+          "pattern": "no_ks|without.*ks|ks.*disabled|with_ks|kill_switch.*False|kill_switch.*True"
+        },
+        {
+          "id": "asserts_50pct_reduction",
+          "description": "Test asserts kill switch reduces max drawdown by > 50% (drawdown_with_ks < drawdown_without_ks * 0.5)",
+          "type": "contains_pattern",
+          "pattern": "0\\.5|50.*percent|50%|half"
+        },
+        {
+          "id": "compares_drawdown_values",
+          "description": "Test extracts and compares max drawdown from both runs",
+          "type": "contains_pattern",
+          "pattern": "drawdown.*ks|ks.*drawdown|Max.*Drawdown|max_drawdown"
+        },
+        {
+          "id": "logs_both_values",
+          "description": "Test logs or prints both drawdown values for audit trail",
+          "type": "contains_pattern",
+          "pattern": "log\\.|print|f\".*drawdown|f'.*drawdown"
+        },
+        {
+          "id": "uses_backtesting_library",
+          "description": "Test uses backtesting.py (Backtest class) for the simulation",
+          "type": "contains_pattern",
+          "pattern": "Backtest|backtesting"
+        }
+      ],
+      "files": []
+    }
+  ]
+}

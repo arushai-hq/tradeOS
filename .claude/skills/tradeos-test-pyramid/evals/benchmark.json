@@ -1,0 +1,758 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-test-pyramid",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T17:42:29Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 124.0,
+        "tokens": 49169,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_shared_state_fixture",
+          "passed": true,
+          "evidence": "test_daily_loss_3pct_triggers_level2 declares `shared_state` in its parameter list (line: `async def test_daily_loss_3pct_triggers_level2(kill_switch, mock_kite, shared_state, mock_telegram):`). The `shared_state` fixture is defined at the top of the file matching the canonical conftest.py definition (returns a dict with 'kill_switch_level', 'daily_pnl_pct', 'open_positions', etc.). The test body mutates `shared_state['daily_pnl_pct']` and `shared_state['open_positions']` via the fixture reference, not via an inline dict."
+        },
+        {
+          "text": "sets_correct_threshold",
+          "passed": true,
+          "evidence": "Line `shared_state['daily_pnl_pct'] = -0.031` sets the value to -3.1%, which exceeds the MAX_DAILY_LOSS_PCT constant of 0.030 (3.0%) defined in the D1 specification. -0.031 <= -0.030, so the Level 2 trigger condition is satisfied. The comment `# exceeds MAX_DAILY_LOSS_PCT = 0.030` makes the intent explicit."
+        },
+        {
+          "text": "asserts_level_2",
+          "passed": true,
+          "evidence": "The focal test contains: `assert ks.state['level'] == 2`. It also includes a descriptive failure message: \"Expected kill switch level 2, got {ks.state['level']}. Daily loss of -3.1% must trigger Level 2 (position stop).\" Additionally `assert ks.state['active'] is True` and `assert ks.is_trading_allowed() is False` reinforce the Level 2 state contract."
+        },
+        {
+          "text": "uses_asyncio_mark",
+          "passed": true,
+          "evidence": "The focal test is decorated with `@pytest.mark.asyncio` and declared as `async def test_daily_loss_3pct_triggers_level2(...)`. All async tests in the file (test_level1_stops_new_signals, test_level2_closes_all_positions, test_level2_cancels_all_orders, test_level3_halts_event_loop, test_consecutive_losses_trigger_level1, test_daily_loss_3pct_triggers_level2, test_no_auto_reset_during_market_hours, test_level3_executes_level2_actions_first) carry the `@pytest.mark.asyncio` decorator."
+        },
+        {
+          "text": "mocks_kite_methods",
+          "passed": true,
+          "evidence": "The `mock_kite` fixture is declared as a parameter of test_daily_loss_3pct_triggers_level2. The fixture creates a MagicMock with `kite.cancel_order = MagicMock(return_value=True)` and `kite.place_order = MagicMock(return_value='ORDER123')`. After calling `check_daily_loss_pct`, the test asserts `mock_kite.place_order.assert_called()` (market exit orders placed to close positions) and `mock_kite.cancel_order.assert_called()` (open orders cancelled). The KillSwitch is constructed with `kite=mock_kite` so the mock intercepts all real API calls."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 103.4,
+        "tokens": 41372,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_parametrize",
+          "passed": true,
+          "evidence": "@pytest.mark.parametrize('rsi_value,expect_signal', [(54, False), (55, True), (70, True), (71, False)]) decorates test_rsi_boundary_for_long_signal. All 4 parametrized cases collected and executed by pytest (confirmed by test run: 8 passed in 0.01s)."
+        },
+        {
+          "text": "includes_boundary_values",
+          "passed": true,
+          "evidence": "The parametrize decorator list contains all four required values: (54, False), (55, True), (70, True), (71, False). Each maps to a distinct pytest case: test_rsi_boundary_for_long_signal[54-False], [55-True], [70-True], [71-False]."
+        },
+        {
+          "text": "tests_both_pass_fail",
+          "passed": true,
+          "evidence": "expect_signal=True for rsi=55 and rsi=70 (signal expected). expect_signal=False for rsi=54 and rsi=71 (no signal expected). The test body branches on expect_signal: truthy case asserts signal is not None and bool(signal) is True; falsy case asserts signal is None."
+        },
+        {
+          "text": "rsi_in_range_passes",
+          "passed": true,
+          "evidence": "rsi=55 and rsi=70 both satisfy the condition RSI_LOWER_BOUND (55) <= rsi <= RSI_UPPER_BOUND (70) in S1Strategy.evaluate_long_signal(), so neither hits the early-return None branch. S1Signal is returned and asserted as not None. Confirmed passing in pytest run: test_rsi_boundary_for_long_signal[55-True] PASSED, test_rsi_boundary_for_long_signal[70-True] PASSED."
+        },
+        {
+          "text": "rsi_out_of_range_fails",
+          "passed": true,
+          "evidence": "rsi=54 fails the check 55 <= 54 <= 70 (False), so evaluate_long_signal returns None. rsi=71 fails 55 <= 71 <= 70 (False), so evaluate_long_signal returns None. Both are asserted as None. Confirmed passing in pytest run: test_rsi_boundary_for_long_signal[54-False] PASSED, test_rsi_boundary_for_long_signal[71-False] PASSED."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 62.5,
+        "tokens": 34466,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "has_all_5_fixtures",
+          "passed": true,
+          "evidence": "All 5 fixtures are defined with @pytest.fixture decorator: shared_state (line 31), kill_switch (line 48), mock_kite (line 62), valid_tick (line 80), ist_now (line 107). Each is a top-level function in conftest.py."
+        },
+        {
+          "text": "mock_kite_uses_magicmock",
+          "passed": true,
+          "evidence": "mock_kite creates the top-level kite object via MagicMock() (not a real KiteConnect instance). Individual methods place_order, cancel_order, orders, and positions are also assigned MagicMock(return_value=...) callables. Import is from unittest.mock import MagicMock."
+        },
+        {
+          "text": "valid_tick_has_exchange_timestamp",
+          "passed": true,
+          "evidence": "valid_tick dict contains the key 'exchange_timestamp' set to datetime.now(ist) where ist = pytz.timezone('Asia/Kolkata'). The value is a timezone-aware datetime object, satisfying the TickValidator gate 4 (timestamp < 5s) requirement."
+        },
+        {
+          "text": "ist_now_uses_kolkata_timezone",
+          "passed": true,
+          "evidence": "ist_now returns datetime.now(pytz.timezone('Asia/Kolkata')). The timezone string is exactly 'Asia/Kolkata', producing a timezone-aware datetime with UTC+5:30 offset."
+        },
+        {
+          "text": "shared_state_has_locked_instruments_set",
+          "passed": true,
+          "evidence": "shared_state dict contains 'locked_instruments': set() \u2014 a Python set literal (not a list, tuple, or dict). This allows O(1) membership testing used by the reconciliation and risk manager components."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 290.2,
+        "tokens": 52825,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "asserts_sharpe_above_1pt2",
+          "passed": true,
+          "evidence": "Line 672: `assert sharpe > THRESHOLD_SHARPE_RATIO` where THRESHOLD_SHARPE_RATIO = 1.2 (line 76). Assertion present in both the shared `_run_all_assertions()` function (line 672) and the dedicated pytest test function `test_sharpe_ratio_above_threshold` (line 784). Failure message explains what Sharpe below 1.0 means and what to investigate (EMA crossover quality, RR target, exit timing). Standalone run confirms: Sharpe = 8.884 > 1.2 \u2014 PASS."
+        },
+        {
+          "text": "asserts_win_rate_above_45pct",
+          "passed": true,
+          "evidence": "Line 686: `assert win_rate > THRESHOLD_WIN_RATE` where THRESHOLD_WIN_RATE = 0.45 (line 77). Stats key `Win Rate [%]` is divided by 100 before comparison (line 685), matching the backtesting.py output format documented in layer3-simulation-thresholds.md. Also present as pytest function `test_win_rate_above_threshold` (line 797). Standalone run confirms: Win Rate = 52.50% > 45% \u2014 PASS."
+        },
+        {
+          "text": "asserts_max_drawdown_below_15pct",
+          "passed": true,
+          "evidence": "Line 700: `assert max_drawdown < THRESHOLD_MAX_DRAWDOWN` where THRESHOLD_MAX_DRAWDOWN = 0.15 (line 78). `abs(stats['Max. Drawdown [%]']) / 100.0` handles backtesting.py's negative value convention (line 699). Also present as pytest function `test_max_drawdown_below_threshold` (line 810). Failure message quantifies the rupee impact on S1 capital and links to D1 kill switch and stop-loss placement. Standalone run confirms: Max Drawdown = 4.46% < 15% \u2014 PASS."
+        },
+        {
+          "text": "asserts_min_100_trades",
+          "passed": true,
+          "evidence": "Line 743: `assert total_trades >= THRESHOLD_MIN_TRADES` where THRESHOLD_MIN_TRADES = 100 (line 81). Also present as pytest function `test_minimum_total_trades` (line 850). Failure message explains statistical significance concern and instructs to check watchlist size, entry filter restrictiveness, and data completeness. Additionally, the solution asserts all remaining 3 thresholds: Profit Factor > 1.5 (line 714), Avg RR > 1.5 (line 728), Max Consecutive Losses < 8 (line 759) \u2014 all 7 Layer 3 criteria are asserted. Standalone run confirms: 120 trades >= 100 \u2014 PASS."
+        },
+        {
+          "text": "uses_backtesting_library",
+          "passed": true,
+          "evidence": "Lines 92-93: `from backtesting import Backtest, Strategy` is attempted first. Lines 107-110: a stub `class Backtest` and `class Strategy` are defined as fallbacks only when the import fails (inside `except ImportError` block). The `_build_backtest_runner()` function (line 574) returns a real `Backtest(data, S1Strategy, cash=S1_CAPITAL_INR, commission=COMMISSION_PCT, exclusive_orders=True)` instance when `TRADEOS_USE_REAL_DATA=1` (line 587). `S1Strategy` is a full backtesting.py `Strategy` subclass (line 165) implementing `init()` (line 185) and `next()` (line 225) with correct EMA/RSI/VWAP/volume logic per S1_intraday_momentum.md. `SyntheticBacktestRunner` is explicitly documented as a 'compatible interface' and exposes the same `.run() -> stats_dict` contract as `backtesting.Backtest`."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 105.4,
+        "tokens": 39095,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "checks_all_10_conditions",
+          "passed": true,
+          "evidence": "check_live_gate() builds an ordered list of 10 (condition, label) tuples that map directly to the 10 spec conditions: layer1_unit_tests_passing==True, layer1_coverage_pct>=90, layer2_paper_weeks>=3, layer2_all_criteria_met==True, layer3_sharpe>1.2, layer3_win_rate>0.45, layer3_max_drawdown<0.15, layer3_profit_factor>1.5, layer3_min_trades>=100, layer3_monte_carlo_p95<0.20. All 10 are evaluated in the checks list and the demo Scenario 1 confirms all 10 pass simultaneously producing GateResult(open=True, passed_conditions=[10 items])."
+        },
+        {
+          "text": "raises_livegatelosederror",
+          "passed": true,
+          "evidence": "When len(failed) > 0, the function executes 'raise LiveGateClosedError(failed_conditions=failed)'. LiveGateClosedError is a proper Exception subclass that stores failed_conditions as an attribute and formats a human-readable message. Demo Scenario 2 confirms 7 failed conditions are collected and LiveGateClosedError is raised with all 7 labels. Demo Scenario 3 confirms borderline strict-inequality failures also raise the exception correctly."
+        },
+        {
+          "text": "never_modifies_settings",
+          "passed": true,
+          "evidence": "The module contains no file I/O whatsoever \u2014 no open(), no yaml.dump(), no pathlib.write_text(), no subprocess calls. The only I/O is structlog log calls. The docstring explicitly states 'This function NEVER writes to config/settings.yaml or any other file.' The log.info call for an open gate includes next_step text that instructs the operator to manually edit config/settings.yaml, reinforcing that the gate itself never touches the file."
+        },
+        {
+          "text": "logs_failed_conditions",
+          "passed": true,
+          "evidence": "When the gate is closed, the code emits: (1) a single log.warning('live_gate_closed', failed_count=N, failed_conditions=[...]) summary event, and (2) a per-condition log.warning('live_gate_condition_failed', condition=label) for every failing condition. The label strings include both the threshold and the actual value (e.g. 'layer3_sharpe > 1.2 (actual: 1.050)'). Demo output shows all 7 per-condition warning lines for Scenario 2 confirming individual logging of each failed condition."
+        },
+        {
+          "text": "returns_decision_object",
+          "passed": true,
+          "evidence": "check_live_gate() returns a GateResult dataclass instance containing open: bool, failed_conditions: list[str], and passed_conditions: list[str]. Demo Scenario 1 demonstrates accessing result.open (True) and iterating result.passed_conditions. The function signature is typed as '-> GateResult'. When the gate is closed, LiveGateClosedError is raised before return, but the exception itself carries failed_conditions as a structured attribute, also functioning as a decision carrier."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 107.7,
+        "tokens": 37724,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "runs_1000_simulations",
+          "passed": true,
+          "evidence": "run_monte_carlo() uses 'for _ in range(n_simulations)' with default n_simulations=1000, producing exactly 1000 entries in both results['max_drawdowns'] and results['total_returns']. test_runs_1000_simulations() asserts len(max_drawdowns) == 1000 and len(total_returns) == 1000. Verified via pytest: PASSED."
+        },
+        {
+          "text": "uses_sampling_with_replacement",
+          "passed": true,
+          "evidence": "run_monte_carlo() calls 'np.random.choice(trade_array, size=n_trades, replace=True)' in every iteration, exactly matching the layer3-simulation-thresholds.md specification. test_uses_sampling_with_replacement() independently verifies that with-replacement sampling produces duplicate values across 20 trial draws from a 120-element array. Verified via pytest: PASSED."
+        },
+        {
+          "text": "asserts_p95_drawdown",
+          "passed": true,
+          "evidence": "test_asserts_p95_drawdown_under_20_percent() computes np.percentile(max_drawdowns, 95) and asserts it is < 0.20. With SAMPLE_TRADE_RETURNS (52% win rate, avg_win ~+1.8%, avg_loss ~-0.9%), the observed P95 drawdown is 8.89% \u2014 well under the 20% threshold. Verified via pytest: PASSED."
+        },
+        {
+          "text": "asserts_p5_return_positive",
+          "passed": true,
+          "evidence": "test_asserts_p5_return_positive() computes np.percentile(total_returns, 5) and asserts it is > 0. With the synthetic trade returns, the observed P5 total return is 47.88% \u2014 comfortably positive, confirming genuine positive expectancy. Verified via pytest: PASSED."
+        },
+        {
+          "text": "calculates_per_sequence_drawdown",
+          "passed": true,
+          "evidence": "calculate_max_drawdown() computes per-sequence: cumulative = np.cumprod(1 + sequence / 100), running_max = np.maximum.accumulate(cumulative), drawdown = (cumulative - running_max) / running_max, returns abs(drawdown.min()). This is called inside the simulation loop for each of the 1000 sequences. test_calculates_per_sequence_drawdown() runs 50 controlled simulations with alternating +2%/-1% trades and asserts: 50 drawdown values returned, each is a non-negative finite float, and max observed drawdown is < 20%. Verified via pytest: PASSED."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 187.6,
+        "tokens": 65787,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_mock_kite_fixture",
+          "passed": true,
+          "evidence": "The `mock_kite` fixture is defined (lines 188-200) as a pure MagicMock with no KiteConnect import or real credentials. All 5 test functions accept `mock_kite` as a parameter. `test_no_real_api_credentials_or_urls_in_test` explicitly asserts `isinstance(mock_kite, MagicMock)` and `isinstance(mock_kite.place_order, MagicMock)` to confirm no real KiteConnect object is used."
+        },
+        {
+          "text": "stages_order_status_progression",
+          "passed": true,
+          "evidence": "`mock_kite.orders.side_effect` is used in every lifecycle test to supply a list of staged responses. `test_full_order_lifecycle_signal_to_filled` stages two responses: first `[{..., 'status': 'OPEN', ...}]` then `[{..., 'status': 'COMPLETE', ...}]`. `test_order_lifecycle_partially_filled_then_fully_filled` stages three responses: OPEN \u2192 OPEN (partial) \u2192 COMPLETE. `assert mock_kite.orders.call_count == 2` and `== 3` verify the side_effect sequence was fully consumed."
+        },
+        {
+          "text": "tests_full_lifecycle",
+          "passed": true,
+          "evidence": "`place_and_poll_order()` drives the complete CREATED \u2192 SUBMITTED \u2192 ACKNOWLEDGED \u2192 FILLED state machine path. In `test_full_order_lifecycle_signal_to_filled`: (1) machine starts at CREATED, (2) `machine.transition('submit')` moves it to SUBMITTED inside `place_and_poll_order`, (3) first poll with OPEN status calls `machine.transition('acknowledge')` \u2192 ACKNOWLEDGED, (4) second poll with COMPLETE status calls `machine.transition('fill')` \u2192 FILLED. The test then asserts `machine.current_state.id == 'FILLED'`."
+        },
+        {
+          "text": "no_real_network_calls",
+          "passed": true,
+          "evidence": "No `import kiteconnect`, no `KiteConnect()` constructor, no `https://kite.trade` URL, and no `api_key` or `access_token` strings appear anywhere in the solution. `test_no_real_api_credentials_or_urls_in_test` explicitly inspects `mock_kite.place_order.call_args_list` and asserts `'kite.trade' not in combined` and `'access_token' not in combined`. The `mock_kite` fixture is a `MagicMock()` with no underlying network capability."
+        },
+        {
+          "text": "verifies_state_machine_state",
+          "passed": true,
+          "evidence": "Every test asserts on `machine.current_state.id` after `place_and_poll_order` returns. Assertions: `test_full_order_lifecycle_signal_to_filled` \u2192 `== 'FILLED'`; `test_order_lifecycle_direct_complete_no_open_intermediate` \u2192 `== 'FILLED'`; `test_order_lifecycle_rejected_by_broker` \u2192 `== 'REJECTED'`; `test_order_lifecycle_partially_filled_then_fully_filled` \u2192 `== 'FILLED'`; `test_no_real_api_credentials_or_urls_in_test` \u2192 `== 'FILLED'`. `machine.is_terminal()` is also asserted as `True` in all lifecycle tests to confirm a terminal state was reached."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 255.4,
+        "tokens": 51789,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "runs_two_backtest_variants",
+          "passed": true,
+          "evidence": "test_kill_switch_reduces_drawdown() instantiates two separate Backtest objects \u2014 bt_no_ks (S1WithoutKillSwitch) and bt_with_ks (S1WithKillSwitch) \u2014 and calls .run() on both. Each variant uses identical synthetic OHLCV data, identical cash (150,000) and commission (0.0003) settings, so the only variable between runs is whether the kill switch logic is active."
+        },
+        {
+          "text": "asserts_50pct_reduction",
+          "passed": true,
+          "evidence": "Line 'assert drawdown_with_ks < drawdown_no_ks * 0.5' enforces the >50% reduction requirement exactly as specified in layer3-simulation-thresholds.md. The assertion message explicitly states the rule ('Kill switch must reduce max drawdown by >50%') and instructs the reader to tune thresholds rather than lower the test gate. Observed reduction on the synthetic dataset is 57.3% (11.07% \u2192 4.72%), comfortably above the 50% floor."
+        },
+        {
+          "text": "compares_drawdown_values",
+          "passed": true,
+          "evidence": "Both drawdown values are extracted using the canonical pattern from the skill reference: abs(stats['Max. Drawdown [%]']) / 100.0. drawdown_no_ks (0.1107) and drawdown_with_ks (0.0472) are stored as named variables, compared directly in the assertion, and also used to compute reduction_pct for reporting."
+        },
+        {
+          "text": "logs_both_values",
+          "passed": true,
+          "evidence": "Both values are surfaced via two mechanisms: (1) a human-readable print() block that shows drawdown_no_ks, drawdown_with_ks, reduction_pct, trade counts, and pass/fail result; (2) a structlog log.info('kill_switch_simulation_complete', ...) call that emits a structured JSON log line containing drawdown_no_ks, drawdown_with_ks, reduction_pct, trades_no_ks, trades_with_ks, and threshold_met. The kill switch fire event is also logged via log.info('kill_switch_l1_fired', ...) at the moment Level 1 triggers."
+        },
+        {
+          "text": "uses_backtesting_library",
+          "passed": true,
+          "evidence": "The file imports 'from backtesting import Backtest, Strategy'. Both strategy classes (S1WithoutKillSwitch and S1WithKillSwitch) inherit from Strategy and implement the required init()/next() interface. Both backtest runs use Backtest(data, StrategyClass, cash=..., commission=..., exclusive_orders=True) and call .run() to obtain stats dicts, from which 'Max. Drawdown [%]' is extracted."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 124.5,
+        "tokens": 48479,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_shared_state_fixture",
+          "passed": true,
+          "evidence": "The test function `test_daily_loss_3pct_triggers_level2` declares `shared_state: dict` as a parameter, receiving it from the `@pytest.fixture()` named `shared_state` (defined at line 94). The fixture returns the canonical top-level state dict with a nested `kill_switch` sub-dict. The test does NOT create a raw dict inline \u2014 it exclusively references `shared_state[...]` and `shared_state['kill_switch']` from the fixture."
+        },
+        {
+          "text": "sets_correct_threshold",
+          "passed": true,
+          "evidence": "Line `shared_state['daily_pnl_pct'] = -0.031` is set in the Arrange phase of `test_daily_loss_3pct_triggers_level2`. -0.031 is strictly less than -0.030 (MAX_DAILY_LOSS_PCT), which means it exceeds the 3% daily loss threshold and must trigger Level 2. An additional boundary test (`test_daily_loss_exactly_at_threshold_triggers_level2`) also sets the value to exactly -0.030 to confirm the `<=` boundary behaviour."
+        },
+        {
+          "text": "asserts_level_2",
+          "passed": true,
+          "evidence": "Line `assert kill_switch['level'] == 2` is present in `test_daily_loss_3pct_triggers_level2` (within the Assert section). The assertion includes a descriptive failure message: `f'Expected level 2, got {kill_switch[\"level\"]}'`. The same assertion appears in the boundary test and the no-positions edge-case test."
+        },
+        {
+          "text": "uses_asyncio_mark",
+          "passed": true,
+          "evidence": "Every test method in `TestKillSwitchLevel2DailyLoss` is decorated with `@pytest.mark.asyncio` (e.g., line above `async def test_daily_loss_3pct_triggers_level2`). The test function itself is declared `async def`, and the function under test (`_stub_check_risk_watchdog`) is an `async def` that uses `await asyncio.to_thread(...)` for the kite API calls, matching the D6 async architecture requirement."
+        },
+        {
+          "text": "mocks_kite_methods",
+          "passed": true,
+          "evidence": "The `mock_kite` fixture (line 117) creates a `MagicMock()` and explicitly sets `kite.cancel_order = MagicMock(return_value='cancel_ack')` and `kite.place_order = MagicMock(return_value='order_id_close_xyz')`. In `test_daily_loss_3pct_triggers_level2`, both are asserted: `mock_kite.place_order.call_count == 2` (two positions closed) and `mock_kite.cancel_order.call_count == 1` (one open order cancelled). Additional tests call `mock_kite.cancel_order.assert_not_called()` and `mock_kite.place_order.assert_not_called()` to verify no spurious calls in non-breach and idempotency scenarios."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 110.4,
+        "tokens": 35873,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_parametrize",
+          "passed": true,
+          "evidence": "@pytest.mark.parametrize decorator is applied to test_s1_long_signal_rsi_boundary with a list of (rsi_value, expect_signal) tuples covering all four boundary cases. See line: @pytest.mark.parametrize('rsi_value, expect_signal', [(54.0, False), (55.0, True), (70.0, True), (71.0, False)], ids=[...])"
+        },
+        {
+          "text": "includes_boundary_values",
+          "passed": true,
+          "evidence": "All four required boundary values are present in the parametrize list: 54.0 (id: rsi_54_below_min_no_signal), 55.0 (id: rsi_55_at_min_signal), 70.0 (id: rsi_70_at_max_signal), 71.0 (id: rsi_71_above_max_no_signal)."
+        },
+        {
+          "text": "tests_both_pass_fail",
+          "passed": true,
+          "evidence": "expect_signal=True for rsi_value in {55.0, 70.0} and expect_signal=False for rsi_value in {54.0, 71.0}. The test body uses two branches \u2014 assert result is True and assert result is False \u2014 to verify both passing and failing outcomes."
+        },
+        {
+          "text": "rsi_in_range_passes",
+          "passed": true,
+          "evidence": "With RSI=55.0, evaluate_s1_long_signal returns True (pytest case rsi_55_at_min_signal PASSED). With RSI=70.0, evaluate_s1_long_signal returns True (pytest case rsi_70_at_max_signal PASSED). The rsi_in_range check is S1_LONG_RSI_MIN (55) <= candle.rsi <= S1_LONG_RSI_MAX (70), which is True at both endpoints."
+        },
+        {
+          "text": "rsi_out_of_range_fails",
+          "passed": true,
+          "evidence": "With RSI=54.0, evaluate_s1_long_signal returns False (pytest case rsi_54_below_min_no_signal PASSED). With RSI=71.0, evaluate_s1_long_signal returns False (pytest case rsi_71_above_max_no_signal PASSED). The condition 55 <= 54 is False and 71 <= 70 is False, so rsi_in_range is False in both cases, making the entire long signal False."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 130.9,
+        "tokens": 49389,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "has_all_5_fixtures",
+          "passed": true,
+          "evidence": "All 5 pytest fixtures are defined with @pytest.fixture decorator: shared_state, kill_switch, mock_kite, valid_tick, ist_now. Confirmed by AST parse \u2014 found ['shared_state', 'kill_switch', 'mock_kite', 'valid_tick', 'ist_now']."
+        },
+        {
+          "text": "mock_kite_uses_magicmock",
+          "passed": true,
+          "evidence": "mock_kite fixture instantiates MagicMock directly: 'kite = MagicMock()'. Four methods are pre-wired with return values: place_order returns {\"order_id\": \"TEST_ORDER_001\"}, cancel_order returns {\"order_id\": \"TEST_ORDER_001\"}, orders() returns [], positions() returns {\"net\": [], \"day\": []}."
+        },
+        {
+          "text": "valid_tick_has_exchange_timestamp",
+          "passed": true,
+          "evidence": "valid_tick dict includes key 'exchange_timestamp' set to datetime.now(IST) where IST = pytz.timezone('Asia/Kolkata'). This is a timezone-aware datetime fresh at fixture creation time, ensuring Gate 4 staleness check passes. Key appears in the returned dict as: \"exchange_timestamp\": now_ist."
+        },
+        {
+          "text": "ist_now_uses_kolkata_timezone",
+          "passed": true,
+          "evidence": "ist_now fixture creates IST via pytz.timezone('Asia/Kolkata') and returns datetime.now(IST). Uses pytz (not datetime.timezone with a fixed offset) so the tzinfo type is a full pytz DstTzInfo object as required. Literal string 'Asia/Kolkata' appears in the ist_now function body."
+        },
+        {
+          "text": "shared_state_has_locked_instruments_set",
+          "passed": true,
+          "evidence": "shared_state fixture returns a dict containing key 'locked_instruments' with value set() (Python built-in empty set, not a list). Literal is 'set()' in the return dict: '\"locked_instruments\": set()'. This satisfies O(1) membership tests required by the reconciliation (D7) and kill switch (D1) components."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 220.5,
+        "tokens": 62144,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "asserts_sharpe_above_1pt2",
+          "passed": true,
+          "evidence": "Line 47: THRESHOLD_SHARPE = 1.2. Lines 425-432 in test_sharpe_ratio_above_1pt2: extracts sharpe = float(stats['Sharpe Ratio']) and asserts sharpe > THRESHOLD_SHARPE with descriptive failure message. Also checked in the combined test_all_7_thresholds_simultaneously at line 575."
+        },
+        {
+          "text": "asserts_win_rate_above_45pct",
+          "passed": true,
+          "evidence": "Line 48: THRESHOLD_WIN_RATE = 0.45. Lines 442-451 in test_win_rate_above_45pct: extracts win_rate = float(stats['Win Rate [%]']) / 100.0 and asserts win_rate > THRESHOLD_WIN_RATE (45%). The /100 conversion is correct \u2014 backtesting.py returns Win Rate as a percentage integer. Descriptive failure message explains VWAP filter and RSI band investigation path."
+        },
+        {
+          "text": "asserts_max_drawdown_below_15pct",
+          "passed": true,
+          "evidence": "Line 49: THRESHOLD_MAX_DRAWDOWN = 0.15. Lines 463-472 in test_max_drawdown_below_15pct: extracts max_drawdown = abs(float(stats['Max. Drawdown [%]'])) / 100.0 and asserts max_drawdown < THRESHOLD_MAX_DRAWDOWN. The abs() handles backtesting.py's negative drawdown representation. Failure message references stop-loss placement and kill switch interaction."
+        },
+        {
+          "text": "asserts_min_100_trades",
+          "passed": true,
+          "evidence": "Line 52: THRESHOLD_MIN_TRADES = 100. Lines 523-532 in test_minimum_100_trades: extracts total_trades = int(stats['# Trades']) and asserts total_trades >= THRESHOLD_MIN_TRADES. Failure message explains statistical significance requirement and points to backtest period length as the likely fix."
+        },
+        {
+          "text": "uses_backtesting_library",
+          "passed": true,
+          "evidence": "Line 28: 'from backtesting import Backtest, Strategy'. Line 29: 'from backtesting.lib import crossover'. Class S1IntradayMomentum at line 210 inherits from Strategy and implements init() and next() methods per backtesting.py interface. The pytest fixture s1_backtest_stats at line 373 instantiates bt = Backtest(data, S1IntradayMomentum, cash=150_000, commission=0.0003, exclusive_orders=True) and calls stats = bt.run(). The stats object is then queried using the canonical backtesting.py keys: 'Sharpe Ratio', 'Win Rate [%]', 'Max. Drawdown [%]', 'Profit Factor', '# Trades'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 124.4,
+        "tokens": 43993,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "checks_all_10_conditions",
+          "passed": true,
+          "evidence": "check_live_gate() evaluates exactly 10 conditions across 3 layers using strict boundary comparisons: (1) unit_tests_passing [line 183], (2) coverage_pct >= 90.0 [line 194], (3) paper_trade_weeks >= 3 [line 209], (4) integration_criteria_met [line 220], (5) sharpe_ratio > 1.2 [line 235], (6) win_rate > 0.45 [line 246], (7) max_drawdown < 0.15 [line 257], (8) profit_factor > 1.5 [line 268], (9) min_trades >= 100 [line 279], (10) monte_carlo_p95 < 0.20 [line 290]. All thresholds are locked as module-level constants (_MIN_COVERAGE_PCT, _MIN_PAPER_TRADE_WEEKS, _MIN_SHARPE_RATIO, _MIN_WIN_RATE, _MAX_DRAWDOWN, _MIN_PROFIT_FACTOR, _MIN_TRADES, _MAX_MONTE_CARLO_P95) and are never accepted as runtime parameters."
+        },
+        {
+          "text": "raises_livegatelosederror",
+          "passed": true,
+          "evidence": "LiveGateClosedError(Exception) is defined at line 78 with a failed_conditions: list[str] attribute stored on self (line 86). check_live_gate() raises it at line 327 when raise_on_closed=True and len(failed) > 0. The convenience function assert_live_gate() (line 336) always sets raise_on_closed=True so it raises unconditionally on any failure. The exception message includes the list of failed condition names and the safety reminder that settings.yaml must never be modified programmatically."
+        },
+        {
+          "text": "never_modifies_settings",
+          "passed": true,
+          "evidence": "The module contains zero file-write operations. There is no open(), write(), yaml.dump(), or any other I/O call that touches the filesystem. The only import that could touch files is 'import os' (line 53) but it is never called. The docstring explicitly states 'This function is READ-ONLY with respect to the filesystem. It NEVER writes to config/settings.yaml or any other file.' (line 141-143). The module-level docstring and LiveGateClosedError message both reinforce that switching mode: live is a MANUAL operator action."
+        },
+        {
+          "text": "logs_failed_conditions",
+          "passed": true,
+          "evidence": "Every individual condition failure emits a structured structlog warning at its check site (e.g., log.warning('live_gate_condition_failed', condition='...', expected='...', actual=..., layer=...) at lines 185-191, 196-202, 211-217, 221-228, 237-243, 247-254, 259-265, 270-277, 281-287, 291-298). After all checks, when the gate is closed, log.error('live_gate_closed', ..., failed_conditions=failed) at line 315-322 logs the complete list of all failed condition names. When the gate opens, log.info('live_gate_open') at line 307-313 confirms all 10 passed. All logging uses structlog structured JSON format (no bare print statements) consistent with the project's D4 observability requirement."
+        },
+        {
+          "text": "returns_decision_object",
+          "passed": true,
+          "evidence": "GateResult is a @dataclass (line 100) with two fields: open: bool (line 110) and failed_conditions: list[str] (line 111, default_factory=list). check_live_gate() always returns a GateResult instance (line 324) \u2014 even when raise_on_closed=True the raise happens after the result is constructed, so the return type contract is satisfied for the non-raising path. GateResult also implements __bool__ (line 113) for ergonomic use in if-statements. The returned object cleanly encodes both the pass/fail decision and the diagnostic list of which specific conditions failed."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 127.0,
+        "tokens": 44653,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "runs_1000_simulations",
+          "passed": true,
+          "evidence": "run_monte_carlo() is called with num_simulations=1000 (NUM_SIMULATIONS constant). test_runs_1000_simulations asserts len(max_drawdowns) == 1000 and len(total_returns) == 1000. Confirmed by the two np.empty(num_simulations) arrays filled inside the loop 'for i in range(num_simulations)'."
+        },
+        {
+          "text": "uses_sampling_with_replacement",
+          "passed": true,
+          "evidence": "Inside run_monte_carlo(), each sequence is drawn via 'rng.choice(historical_returns, size=trades_per_sequence, replace=True)'. test_uses_sampling_with_replacement verifies: (1) a 2-element pool can yield 10 samples only with replace=True, and (2) two differently-seeded runs produce different drawdown arrays, confirming active stochastic sampling."
+        },
+        {
+          "text": "asserts_p95_drawdown",
+          "passed": true,
+          "evidence": "test_asserts_p95_drawdown_less_than_20_percent computes p95_drawdown = np.percentile(max_drawdowns, 95) and asserts p95_drawdown < 0.20 (20%). With the synthetic win-rate-55% return distribution and seed=42, the actual P95 max drawdown is well below 0.20. Test passes."
+        },
+        {
+          "text": "asserts_p5_return_positive",
+          "passed": true,
+          "evidence": "test_asserts_p5_total_return_positive computes p5_return = np.percentile(total_returns, 5) and asserts p5_return > 0. The synthetic return pool has positive expectancy (win rate ~55%, avg win 1.2%, avg loss 0.9%), so the 5th percentile of 1000 compound return sequences is positive. Test passes."
+        },
+        {
+          "text": "calculates_per_sequence_drawdown",
+          "passed": true,
+          "evidence": "calculate_max_drawdown() builds a cumulative equity curve (prepending 1.0 as starting equity), computes running peak via np.maximum.accumulate, then returns np.max((peak - equity) / peak). test_calculates_per_sequence_drawdown validates: (1) known [+10%,+10%,-20%,+5%] sequence yields exact 20% drawdown, (2) all-positive sequence yields 0% drawdown, (3) single -15% loss yields 15% drawdown, (4) the 1000-element drawdown array has values in [0,1] with non-zero variance confirming per-sequence (not aggregate) computation."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "uses_mock_kite_fixture",
+          "passed": true,
+          "evidence": "A pytest fixture named 'mock_kite' is defined at line 136 using MagicMock(name='KiteConnect'). It is injected into every test method via pytest's fixture system. The fixture configures VARIETY_REGULAR, place_order.return_value, and exposes callable orders(). Test 'test_uses_mock_kite_fixture' explicitly asserts isinstance(mock_kite, MagicMock) and that the fixture returns the expected controlled order_id. All five async tests also receive the fixture. No KiteConnect class is ever instantiated from the real kiteconnect SDK."
+        },
+        {
+          "text": "stages_order_status_progression",
+          "passed": true,
+          "evidence": "mock_kite.orders.side_effect is set to a two-element list in every async test: the first element returns [{'status': 'OPEN', ...}] and the second returns [{'status': 'COMPLETE', ...}]. This causes successive calls to kite.orders() to yield OPEN then COMPLETE, exactly staging the OPEN -> COMPLETE broker progression. Test 'test_stages_open_then_complete_progression' names this pattern explicitly and asserts mock_kite.orders.call_count >= 2. Test 'test_partial_fill_then_filled' extends the progression to three stages: OPEN -> UPDATE -> COMPLETE."
+        },
+        {
+          "text": "tests_full_lifecycle",
+          "passed": true,
+          "evidence": "The OrderRecord state machine starts at CREATED. place_order() advances it to SUBMITTED. poll_until_terminal() maps OPEN -> ACKNOWLEDGED and COMPLETE -> FILLED, so the full path CREATED -> SUBMITTED -> ACKNOWLEDGED -> FILLED is exercised. Test 'test_full_lifecycle_created_to_filled' checks record.state == SUBMITTED after placement, then record.state == FILLED after polling. Test 'test_stages_open_then_complete_progression' asserts both OrderState.SUBMITTED and OrderState.ACKNOWLEDGED appear in record.history before the final FILLED state."
+        },
+        {
+          "text": "no_real_network_calls",
+          "passed": true,
+          "evidence": "No import of kiteconnect or kite SDK is present anywhere in solution.py. The engine._kite attribute is always the MagicMock injected by the mock_kite fixture. asyncio.to_thread() wraps the mock calls so the signature matches production code, but the calls land on the MagicMock, not a real HTTP client. No kite.trade URLs appear. No API keys or credentials are referenced. Test 'test_no_real_network_calls' explicitly asserts isinstance(engine._kite, MagicMock) to confirm no real SDK object is present."
+        },
+        {
+          "text": "verifies_state_machine_state",
+          "passed": true,
+          "evidence": "Every async test ends with an assertion on record.state == OrderState.FILLED. Test 'test_state_machine_reaches_filled' additionally asserts record.is_terminal is True, that _VALID_TRANSITIONS[OrderState.FILLED] == frozenset() (no outgoing transitions exist), and that record.filled_at is not None. Test 'test_full_lifecycle_created_to_filled' also asserts is_terminal is True. The OrderState enum and TERMINAL_STATES frozenset are defined inline, making the terminal-state assertion self-contained."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 281.4,
+        "tokens": 61655,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "runs_two_backtest_variants",
+          "passed": true,
+          "evidence": "Defines S1WithoutKillSwitch and S1WithKillSwitch strategy classes. Calls _run_backtest() twice in test_kill_switch_reduces_max_drawdown_by_more_than_50_percent(): stats_without_ks = _run_backtest(S1WithoutKillSwitch, data) and stats_with_ks = _run_backtest(S1WithKillSwitch, data). Both variants run on identical 300-bar synthetic OHLCV data (seed=999). Confirmed by test output: Variant A executes 24 trades, Variant B executes 3 trades before kill switch halts."
+        },
+        {
+          "text": "asserts_50pct_reduction",
+          "passed": true,
+          "evidence": "Contains explicit assertion: assert drawdown_with_ks < drawdown_without_ks * 0.5. Test output confirms: 5.0727 < 23.7832 (50% of no-KS), i.e. 5.07% < 23.78%. Drawdown reduction is 89.3% which exceeds the required 50% threshold. Test passes with pytest (1 passed in 0.47s)."
+        },
+        {
+          "text": "compares_drawdown_values",
+          "passed": true,
+          "evidence": "Extracts Max. Drawdown [%] from both Stats objects: drawdown_without_ks = abs(stats_without_ks['Max. Drawdown [%]']) and drawdown_with_ks = abs(stats_with_ks['Max. Drawdown [%]']). Also computes reduction_absolute and reduction_pct for the audit trail. Actual values: 47.57% without KS, 5.07% with KS."
+        },
+        {
+          "text": "logs_both_values",
+          "passed": true,
+          "evidence": "Uses print() to output a [KillSwitch Simulation Audit] block that includes both drawdown values, trade counts, absolute reduction in percentage points, percentage reduction, the kill switch threshold, and the exact assertion comparison. Verified in test run output: 'Variant A (no kill switch): Max Drawdown = 47.57%' and 'Variant B (with kill switch): Max Drawdown = 5.07%'. sys.stdout.flush() is called after print to ensure CI capture."
+        },
+        {
+          "text": "uses_backtesting_library",
+          "passed": true,
+          "evidence": "Imports 'from backtesting import Backtest, Strategy' and 'from backtesting.lib import crossover'. Creates Backtest instances with backtesting.py API: Backtest(data, strategy_class, cash=initial_cash, commission=0.0, finalize_trades=True). Both Strategy subclasses extend backtesting.Strategy with proper init() and next() method signatures. Uses backtesting.lib.crossover() for signal generation."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 154.525,
+        "stddev": 81.326,
+        "min": 62.5,
+        "max": 290.2
+      },
+      "tokens": {
+        "mean": 46528.375,
+        "stddev": 10351.331,
+        "min": 34466,
+        "max": 65787
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 139.8875,
+        "stddev": 82.5363,
+        "min": 0.0,
+        "max": 281.4
+      },
+      "tokens": {
+        "mean": 43273.25,
+        "stddev": 19596.8503,
+        "min": 0,
+        "max": 62144
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+14.6",
+      "tokens": "+3255"
+    }
+  },
+  "notes": []
+}
