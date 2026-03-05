@@ -1,0 +1,838 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-tick-validator",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T17:20:23Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 77.6,
+        "tokens": 41693,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate1_rejects_zero_price",
+          "text": "Gate 1 checks `tick.last_price <= 0` (or equivalent) and returns False for zero/negative price",
+          "passed": true,
+          "evidence": "_gate1_zero_price() checks `price is None or price <= 0` and returns False. Tests confirm validate() returns False for last_price=0, last_price=-5.0, and last_price=None."
+        },
+        {
+          "key": "gate1_logs_bad_tick",
+          "text": "Logs a warning with event name 'bad_tick' including gate=1 and the instrument_token",
+          "passed": true,
+          "evidence": "log.warning('bad_tick', gate=1, instrument_token=token, last_price=price, reason='zero_or_negative_price') is called on every Gate 1 failure. Runtime output shows: [warning] bad_tick gate=1 instrument_token=408065."
+        },
+        {
+          "key": "gate1_uses_structlog",
+          "text": "Uses structlog (not print() or stdlib logging) for the warning",
+          "passed": true,
+          "evidence": "`import structlog` and `log = structlog.get_logger()` are used. No `import logging` or bare `print()` calls exist in the production code path."
+        },
+        {
+          "key": "gate1_no_exception",
+          "text": "Does NOT raise an exception \u2014 returns False silently (discard and continue)",
+          "passed": true,
+          "evidence": "_gate1_zero_price() contains no `raise` statement. All failure paths execute `return False`. The run_tests() function ran without any exception being thrown for zero, negative, or None prices."
+        },
+        {
+          "key": "gate1_test_present",
+          "text": "A test or demonstration shows validate() returns False when last_price=0",
+          "passed": true,
+          "evidence": "run_tests() in solution.py creates MockTick(instrument_token=408065, last_price=0), calls validator.validate(tick_zero), asserts the result is False, and prints [PASS]. Confirmed working in execution output."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 106.1,
+        "tokens": 41499,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate2_rejects_over_20pct",
+          "text": "Rejects ticks where deviation > 20% from prev_close: abs(price - prev_close) / prev_close > 0.20",
+          "passed": true,
+          "evidence": "Scenario 1 uses prev_close=2000.0 and last_price=2500.0, giving deviation=0.25 (25%). _gate2_circuit_breaker() returns False. Assertion 'result_25 is False' passes. Output confirms: 'gate2 result: False  (expected: False \u2014 REJECTED)' and 'PASS: tick correctly rejected'."
+        },
+        {
+          "key": "gate2_passes_missing_cache",
+          "text": "Returns True (passes gate) when prev_close is not found in cache \u2014 missing cache entry does NOT block",
+          "passed": true,
+          "evidence": "Scenario 3 uses instrument_token=999999 which is not present in prev_close_cache. The code executes 'prev_close = self.prev_close_cache.get(token)' which returns None, then immediately returns True. Output confirms: 'gate2 result: True  (expected: True \u2014 PASSED)' and 'PASS: gate correctly passes when prev_close is unavailable'."
+        },
+        {
+          "key": "gate2_25pct_false_18pct_true",
+          "text": "A 25% deviation tick returns False, an 18% deviation tick returns True from gate 2",
+          "passed": true,
+          "evidence": "Scenario 1: last_price=2500.0 vs prev_close=2000.0, deviation=25.0%, gate2 returns False. Scenario 2: last_price=2360.0 vs prev_close=2000.0, deviation=18.0%, gate2 returns True. Both assertions pass. Output lines confirm: 'gate2 result: False' for +25% and 'gate2 result: True' for +18%."
+        },
+        {
+          "key": "gate2_uses_dict_get",
+          "text": "Uses dict.get() for prev_close lookup \u2014 no loops, no database queries, no API calls in the gate",
+          "passed": true,
+          "evidence": "Line 'prev_close = self.prev_close_cache.get(token)' in _gate2_circuit_breaker() is the only lookup. It is a single O(1) dict.get() call. There are no for/while loops, no import of any DB or HTTP client, and no external service calls anywhere in the gate method."
+        },
+        {
+          "key": "gate2_logs_warning_with_gate_and_deviation",
+          "text": "Logs a warning with gate=2 and includes the calculated deviation when rejecting",
+          "passed": true,
+          "evidence": "The structlog warning call includes gate=2 and deviation_pct=round(deviation*100, 2). Captured output line: '2026-03-05 20:06:23 [warning  ] circuit_breaker_tick           deviation_pct=25.0 gate=2 prev_close=2000.0 price=2500.0 symbol=RELIANCE'. Both gate=2 and deviation_pct=25.0 are present."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 95.6,
+        "tokens": 38650,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate3_zero_volume_allowed",
+          "text": "Checks `volume_traded < 0` (not `<= 0`) \u2014 zero volume is valid",
+          "passed": true,
+          "evidence": "Line 55 in solution.py: `if volume is None or volume < 0:` \u2014 uses strict less-than, so volume=0 falls through to `return True`. Verified by assertion: `result_zero = validator._gate3_negative_volume(tick_zero)` where tick_zero.volume_traded=0 returns True and all asserts pass."
+        },
+        {
+          "key": "gate3_negative_rejected_zero_accepted",
+          "text": "Returns False for volume=-1 (or any negative), True for volume=0",
+          "passed": true,
+          "evidence": "Demonstrated in the `__main__` block. Case 1 (volume=-1): returns False, assertion `assert result_neg is False` passes. Case 2 (volume=0): returns True, assertion `assert result_zero is True` passes. Runtime output confirms both: 'PASS: volume=-1 correctly rejected' and 'PASS: volume=0 correctly accepted'."
+        },
+        {
+          "key": "gate3_logs_bad_tick_gate3",
+          "text": "Logs a warning with event name 'bad_tick' and gate=3 when rejecting",
+          "passed": true,
+          "evidence": "Line 60-67 in solution.py calls `log.warning('bad_tick', gate=3, reason='negative_or_missing_volume', symbol=symbol, volume=volume, instrument_token=...)`. Runtime output shows the structlog line: `bad_tick  gate=3 instrument_token=408065 reason=negative_or_missing_volume symbol=RELIANCE volume=-1` confirming event name 'bad_tick' and gate=3 are present."
+        },
+        {
+          "key": "gate3_no_exception",
+          "text": "Does not raise an exception \u2014 returns False cleanly",
+          "passed": true,
+          "evidence": "The method is wrapped in a plain `if/return` pattern with no raise statements. All five test cases (volume=-1, 0, None, absent field, positive) complete without exception. The __main__ block runs to completion with exit code 0. Structlog is used for warning \u2014 it never raises on log calls."
+        },
+        {
+          "key": "gate3_safe_getattr",
+          "text": "Uses getattr() or equivalent safe access for volume_traded (tick field may be absent in full-mode ticks)",
+          "passed": true,
+          "evidence": "Line 54 in solution.py: `volume = getattr(tick, 'volume_traded', None)` \u2014 uses getattr with a None default. Case 4 in the demo uses MockTickNoVolume which has no volume_traded attribute at all; getattr correctly returns None and the gate returns False without AttributeError. Runtime output: 'PASS: absent volume_traded correctly rejected via getattr() (returns False)'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 119.2,
+        "tokens": 40297,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate4_uses_exchange_timestamp",
+          "text": "Computes age as: (datetime.now(IST) - tick.exchange_timestamp).total_seconds()",
+          "passed": true,
+          "evidence": "Line 88 in _gate4_staleness: 'age_seconds = (now_ist - exchange_ts).total_seconds()' where now_ist = datetime.now(IST) and exchange_ts = tick.exchange_timestamp. Same pattern appears in both the standalone gate4_staleness function (line 88) and the TickValidator._gate4_staleness method. The formula is exact: current IST wall-clock minus exchange-generated timestamp."
+        },
+        {
+          "key": "gate4_rejects_above_threshold",
+          "text": "Rejects ticks with age > 5 seconds (STALENESS_THRESHOLD_SECONDS = 5)",
+          "passed": true,
+          "evidence": "STALENESS_THRESHOLD_SECONDS = 5 is defined as a module-level constant at line 22. The check 'if age_seconds > STALENESS_THRESHOLD_SECONDS' uses strict greater-than, so a tick exactly 5 seconds old passes and a tick 5.001 seconds old is rejected. Test 2 (exactly 5s) verifies the boundary passes; Test 3 (10s old) verifies rejection. The constant is referenced by name, not hardcoded as a magic number."
+        },
+        {
+          "key": "gate4_passes_none_timestamp",
+          "text": "Returns True (passes gate) when exchange_timestamp is None or missing \u2014 missing timestamp does NOT block",
+          "passed": true,
+          "evidence": "Both implementations contain: 'exchange_ts = getattr(tick, \"exchange_timestamp\", None)' followed by 'if exchange_ts is None: return True'. The getattr default of None covers both (a) the field being absent from the tick object entirely and (b) the field being present but set to None. Test 4 covers exchange_timestamp=None; Test 5 covers a tick class with no exchange_timestamp attribute at all."
+        },
+        {
+          "key": "gate4_explains_datetime_now_wrong",
+          "text": "Explains or comments that datetime.now() alone is NOT the tick timestamp \u2014 exchange_timestamp reflects when the exchange generated the tick",
+          "passed": true,
+          "evidence": "The module-level docstring (lines 9-37) contains a dedicated section 'WHY exchange_timestamp and NOT datetime.now()' with a full explanation. The _gate4_staleness method also contains an inline comment block (lines 175-185) restating the distinction. Key quote: 'datetime.now() is the time our validator runs on the TradeOS server. It is NOT the time the tick was generated. exchange_timestamp is stamped by the exchange matching engine at the moment the trade or quote event occurred.' The standalone gate4_staleness function docstring also contains: 'datetime.now(IST) is the current wall-clock time... tick.exchange_timestamp is the time the exchange generated the tick.'"
+        },
+        {
+          "key": "gate4_logs_warning_with_gate_and_age",
+          "text": "Logs a warning with gate=4 and includes the age_seconds when rejecting stale ticks",
+          "passed": true,
+          "evidence": "The log.warning call in the standalone function (lines 112-119) uses: log.warning('stale_tick', gate=4, symbol=symbol, age_seconds=round(age_seconds, 3), exchange_timestamp=exchange_ts.isoformat(), threshold_seconds=STALENESS_THRESHOLD_SECONDS). The TickValidator._gate4_staleness method has an identical log.warning call with gate=4 and age_seconds. Both use structlog structured logging, include gate=4 explicitly, and include age_seconds as a field. The event name is 'stale_tick' matching the Gate 4 failure reference in the skill reference table."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 174.1,
+        "tokens": 45052,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate5_correct_duplicate_check",
+          "text": "Compares (instrument_token, last_price, exchange_timestamp) against last_tick[token] to detect duplicates",
+          "passed": true,
+          "evidence": "_gate5_duplicate uses 'token = tick.instrument_token' as the dict key, then checks 'same_price = (tick.last_price == last[\"price\"])' and 'same_ts = (tick.exchange_timestamp == last[\"ts\"])'. Returns False only when both same_price and same_ts are True, exactly matching the three-field duplicate definition."
+        },
+        {
+          "key": "gate5_no_log_on_duplicate",
+          "text": "Returns False for a duplicate tick with NO log call \u2014 not log.debug(), not log.info(), nothing",
+          "passed": true,
+          "evidence": "The _gate5_duplicate method contains zero calls to log.*. The only log.* calls in the entire class are in _gate1_zero_price (log.warning 'zero_price_tick'), _gate2_circuit_breaker (log.warning 'circuit_breaker_tick'), _gate3_negative_volume (log.warning 'negative_volume_tick'), and _gate4_staleness (log.warning 'stale_tick'). Gate 5 has no log call at any level. The docstring explicitly states '# Duplicate detected \u2014 SILENT discard, no log at any level'."
+        },
+        {
+          "key": "last_tick_updated_after_all_gates",
+          "text": "Updates last_tick[instrument_token] = {'price': ..., 'ts': ...} AFTER all gates pass (not inside gate 5)",
+          "passed": true,
+          "evidence": "_gate5_duplicate is a pure read-only predicate \u2014 it calls self.last_tick.get(token) but never writes to self.last_tick. The write 'self.last_tick[tick.instrument_token] = {\"price\": tick.last_price, \"ts\": tick.exchange_timestamp}' happens in validate() AFTER the 'if not self._gate5_duplicate(tick): return False' check. Test 5 explicitly asserts '999999 not in v2.last_tick' after calling _gate5_duplicate directly, confirming Gate 5 does not mutate the cache."
+        },
+        {
+          "key": "explains_silent_discard_reason",
+          "text": "Explains or comments that duplicates arrive in bursts on reconnect \u2014 logging each would create hundreds of log lines",
+          "passed": true,
+          "evidence": "The module-level docstring states: 'When a Zerodha KiteConnect WebSocket connection drops and reconnects, the broker replays the most recently cached ticks for all subscribed instruments before delivering new live ticks. This replay can arrive as a burst of hundreds of duplicate packets.' The _gate5_duplicate docstring elaborates: 'With 100-300 subscribed instruments, a single reconnect can produce 100-300 duplicate packets arriving in rapid succession. Logging each one \u2014 even at DEBUG \u2014 would: 1. Inject hundreds of log lines that carry zero diagnostic value. 2. Mask other meaningful log events in the same time window. 3. Spike log I/O precisely when the system is recovering.' Both the module docstring and the gate docstring carry the explanation."
+        },
+        {
+          "key": "uses_dict_get_for_lookup",
+          "text": "Uses dict.get() for last_tick lookup \u2014 O(1), no loops",
+          "passed": true,
+          "evidence": "_gate5_duplicate uses 'last = self.last_tick.get(token)' on line 171 of the solution. The docstring explicitly annotates this as 'O(1) dict.get() \u2014 returns None if this instrument has no prior tick'. No for-loops, no while-loops, no list iteration anywhere in the gate. Test 5 also verifies the O(1) path by confirming the gate returns True when get() returns None for an unseen token."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 97.7,
+        "tokens": 47160,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "all_5_gates_correct_order",
+          "text": "validate() method calls all 5 gates in order: zero_price -> circuit_breaker -> negative_volume -> staleness -> duplicate",
+          "passed": true,
+          "evidence": "Lines 60-69 of validate() call _gate1_zero_price, _gate2_circuit_breaker, _gate3_negative_volume, _gate4_staleness, _gate5_duplicate in exactly that order. Each is guarded by 'if not ... return False' so execution stops at first failure and never reorders."
+        },
+        {
+          "key": "prev_close_cache_constructor_arg",
+          "text": "Constructor accepts prev_close_cache as a parameter (not hardcoded or fetched inline)",
+          "passed": true,
+          "evidence": "Line 37: def __init__(self, prev_close_cache: Optional[dict] = None). Line 40 assigns it to self.prev_close_cache. No historical API call or inline fetch anywhere in the class. Gate 2 reads only from self.prev_close_cache, which was provided externally."
+        },
+        {
+          "key": "validate_always_returns_bool",
+          "text": "validate() always returns bool (True or False) \u2014 never raises an exception",
+          "passed": true,
+          "evidence": "The entire body of validate() is wrapped in try/except Exception (lines 59-87). On any unexpected exception, the except block logs the error and returns False. All normal paths return True or False via explicit return statements. No raise statement exists anywhere in the class."
+        },
+        {
+          "key": "last_tick_updated_only_after_all_gates",
+          "text": "last_tick dict is updated ONLY when all 5 gates pass (at end of validate(), not inside individual gates)",
+          "passed": true,
+          "evidence": "self.last_tick is written exactly once in the entire class, at lines 73-76 inside validate(), only after all 5 gate checks have returned True. No individual gate method (_gate1 through _gate5) contains any write to self.last_tick. The comment on line 71 also documents this invariant explicitly."
+        },
+        {
+          "key": "all_gates_o1_operations",
+          "text": "All gate methods use only O(1) operations: dict lookups, arithmetic, attribute access \u2014 no loops, API calls, or file I/O",
+          "passed": true,
+          "evidence": "Gate 1 (lines 99-110): getattr + None/<=0 check \u2014 O(1). Gate 2 (lines 125-143): dict.get() + float division + comparison \u2014 O(1). Gate 3 (lines 157-168): getattr + None/<0 check \u2014 O(1). Gate 4 (lines 183-204): getattr + datetime.now() + total_seconds() + comparison \u2014 O(1). Gate 5 (lines 221-232): dict.get() + two equality comparisons \u2014 O(1). No for/while loops, no API calls (kite.historical_data etc.), no open() file I/O anywhere in any gate method."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 72.2,
+        "tokens": 37892,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "nested_dict_counters",
+          "text": "Tracks counters as a nested dict: _counts[token][gate] = int",
+          "passed": true,
+          "evidence": "Class declares `self._counts: dict[int, dict[int, int]] = {}` and writes via `self._counts[instrument_token][gate] = gate_counts.get(gate, 0) + 1` \u2014 a proper nested dict keyed by instrument_token then gate number."
+        },
+        {
+          "key": "hourly_reset_via_hour_compare",
+          "text": "Resets all counters at the start of a new hour (checks datetime.now().hour != last_reset_hour)",
+          "passed": true,
+          "evidence": "`_maybe_reset_hour` does `current_hour = datetime.now(IST).hour` then `if current_hour != self._last_reset_hour: self._counts.clear()` \u2014 matches the required pattern exactly."
+        },
+        {
+          "key": "threshold_constant_not_literal",
+          "text": "Fires alert when _counts[token][gate] > THRESHOLD (50) \u2014 threshold is a constant, not hardcoded literal",
+          "passed": true,
+          "evidence": "Module-level constant `BAD_TICK_ALERT_THRESHOLD = 50` is defined. The comparison `count == BAD_TICK_ALERT_THRESHOLD + 1` is equivalent to `count > BAD_TICK_ALERT_THRESHOLD`, firing exactly once at the crossing point. No literal 50 appears in comparison logic."
+        },
+        {
+          "key": "alert_type_format",
+          "text": "Alert type for rate limiting is 'bad_tick_rate_{token}_{gate}' \u2014 allows independent 5-minute windows per instrument/gate pair",
+          "passed": true,
+          "evidence": "`alert_type=f\"bad_tick_rate_{token}_{gate}\"` \u2014 matches the required format exactly, giving each (instrument_token, gate) pair its own independent rate-limit key."
+        },
+        {
+          "key": "uses_send_warning_alert",
+          "text": "Uses send_warning_alert() (not send_critical_alert() or raw send_telegram()) for the threshold alert",
+          "passed": true,
+          "evidence": "`self._alerter.send_warning_alert(alert_type=..., event=..., fields=...)` is called in `_on_threshold_exceeded`. No call to `send_critical_alert` or `send_telegram` appears anywhere in the file."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 165.7,
+        "tokens": 48262,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "loads_from_tick_ohlc",
+          "text": "Loads prev_close from tick.ohlc.close (available in full/quote mode ticks) \u2014 no kite.historical_data() call",
+          "passed": true,
+          "evidence": "update_prev_close_from_tick() reads ohlc = getattr(tick, 'ohlc', None) and then close_price = getattr(ohlc, 'close', None), then stores float(close_price) into validator.prev_close_cache[token]. No kite.historical_data() call is made inside the validator. The TickValidatorWrongApproach class is provided only for documentation to show what must never be done."
+        },
+        {
+          "key": "cache_populated_outside_validate",
+          "text": "Cache is populated OUTSIDE the validate() method \u2014 loaded once per session, not on each tick",
+          "passed": true,
+          "evidence": "The validate() method only calls self.prev_close_cache.get(token) inside _gate2_circuit_breaker() \u2014 a read-only O(1) dict lookup. All writes to prev_close_cache happen in update_prev_close_from_tick() (called by the signal_processor_task after validate() returns True) and preload_prev_close_from_zerodha() (called once at startup). The guard 'if token in validator.prev_close_cache: return' ensures the write happens at most once per instrument per session."
+        },
+        {
+          "key": "explains_historical_data_violation",
+          "text": "Explains that kite.historical_data() is a blocking network call \u2014 violates <1ms requirement",
+          "passed": true,
+          "evidence": "The module docstring provides a detailed breakdown: DNS lookup ~10ms, TCP handshake ~5ms, TLS handshake ~15ms, HTTP round-trip ~20ms, minimum total ~20ms \u2014 20x over the 1ms budget. The TickValidatorWrongApproach class has a 5-point comment block labelled 'WRONG \u2014 DO NOT DO THIS' explaining that the call is blocking, violates asyncio safety, is subject to rate limits, and stalls the event loop for up to 200ms, blocking the WebSocket listener and kill switch checker."
+        },
+        {
+          "key": "cache_is_plain_dict",
+          "text": "Cache is a plain Python dict: {instrument_token: float} \u2014 O(1) lookup",
+          "passed": true,
+          "evidence": "TickValidator.__init__ declares 'self.prev_close_cache: dict[int, float] = {}'. _gate2_circuit_breaker accesses it via 'prev_close: Optional[float] = self.prev_close_cache.get(token)' which is a standard Python dict O(1) hash-map lookup. The performance-constraints reference is cited in comments and the solution's module docstring lists 'Gate 2: dict.get(token)' as O(1)."
+        },
+        {
+          "key": "handles_missing_ohlc",
+          "text": "Handles the case where ohlc data is not available in the tick (e.g., LTP-mode ticks) \u2014 uses None or skips update gracefully",
+          "passed": true,
+          "evidence": "update_prev_close_from_tick() has three explicit None-guard branches: (1) 'if ohlc is None: return' for LTP-mode ticks where ohlc is absent; (2) 'if close_price is None: return' for ticks where ohlc exists but close is None; (3) a try/except ValueError/TypeError for malformed close values that logs a warning and returns without writing. The demo() function includes Scenario 4 (LTP-mode tick with ohlc=None) and Scenario 5 (ohlc with close=None), both asserting that the cache is NOT populated. Gate 2 in _gate2_circuit_breaker() also has 'if prev_close is None: return True' so ticks for instruments with no cached close always pass through."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 120.4,
+        "tokens": 43366,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate1_rejects_zero_price",
+          "text": "Gate 1 checks tick.last_price <= 0 (or equivalent) and returns False for zero/negative price",
+          "passed": true,
+          "evidence": "Line 72 in solution.py: `if tick.last_price <= 0:` inside `_gate1_price_positive()`. The method returns False when the condition is true. Both zero (0.0) and negative (-10.5) prices are rejected as demonstrated by test_gate1_zero_price_returns_false and test_gate1_negative_price_returns_false, which both pass."
+        },
+        {
+          "key": "gate1_logs_bad_tick_with_gate_and_token",
+          "text": "Logs a warning with event name 'bad_tick' including gate=1 and the instrument_token",
+          "passed": true,
+          "evidence": "Lines 73-79 in solution.py: `log.warning('bad_tick', gate=1, reason='last_price_zero_or_negative', instrument_token=tick.instrument_token, last_price=tick.last_price)`. The event name is 'bad_tick', gate=1 is explicitly passed, and instrument_token is included from the tick. Confirmed in runtime output: `bad_tick  gate=1  instrument_token=256265  last_price=0.0`."
+        },
+        {
+          "key": "gate1_uses_structlog",
+          "text": "Uses structlog (not print() or stdlib logging) for the warning",
+          "passed": true,
+          "evidence": "Line 13: `import structlog` and line 15: `log = structlog.get_logger()`. The warning call on line 73 uses `log.warning(...)` where `log` is a structlog logger. No bare print() or stdlib logging.warning() calls are used anywhere in the production code path."
+        },
+        {
+          "key": "gate1_no_exception_raised",
+          "text": "Does NOT raise an exception \u2014 returns False silently (discard and continue)",
+          "passed": true,
+          "evidence": "The `_gate1_price_positive` method unconditionally returns False (not raises) when last_price <= 0. The `validate()` method likewise returns False without raising. This is explicitly verified by `test_gate1_does_not_raise_on_zero_price()` which wraps the call in a try/except and asserts no exception is raised. All tests passed at runtime."
+        },
+        {
+          "key": "gate1_test_demonstrates_false_on_zero",
+          "text": "A test or demonstration shows validate() returns False when last_price=0",
+          "passed": true,
+          "evidence": "Function `test_gate1_zero_price_returns_false()` at line 107 creates a Tick with last_price=0.0 and asserts `validator.validate(tick) is False`. Also confirmed by the inline `_demo_gate1()` function and the runtime output showing all tests passed. The script can be executed directly (`python solution.py`) or via pytest."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 81.2,
+        "tokens": 38407,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate2_rejects_over_20pct",
+          "text": "Rejects ticks where deviation > 20% from prev_close: abs(price - prev_close) / prev_close > 0.20",
+          "passed": true,
+          "evidence": "Gate2CircuitBreakerFilter.check() computes deviation = abs(price - prev_close) / prev_close and returns False when deviation > 0.20. Verified by Case 1 (price=125, prev_close=100, deviation=0.25 => REJECT) and Case 5 (price=75, prev_close=100, deviation=0.25 => REJECT). All runtime assertions passed."
+        },
+        {
+          "key": "gate2_missing_cache_passes",
+          "text": "Returns True (passes gate) when prev_close is not found in cache \u2014 missing cache entry does NOT block",
+          "passed": true,
+          "evidence": "self._cache.get(instrument_token) returns None when the key is absent. The guard 'if prev_close is None: return True' is the first check after the lookup, so a missing entry immediately passes. Verified by Case 3 (instrument_token=999999 not in cache => PASS). All runtime assertions passed."
+        },
+        {
+          "key": "gate2_25pct_rejects_18pct_passes",
+          "text": "A 25% deviation tick returns False, an 18% deviation tick returns True from gate 2",
+          "passed": true,
+          "evidence": "Case 1: gate2.check(256265, 125.0) with prev_close=100 => deviation=0.25 => returns False (REJECT). Case 2: gate2.check(256265, 118.0) with prev_close=100 => deviation=0.18 => returns True (PASS). Both verified with assert statements; script exited successfully."
+        },
+        {
+          "key": "gate2_dict_get_no_loops_no_external",
+          "text": "Uses dict.get() for prev_close lookup \u2014 no loops, no database queries, no API calls in the gate",
+          "passed": true,
+          "evidence": "Lookup is a single O(1) call: prev_close = self._cache.get(instrument_token). No for/while loops, no I/O, no network calls, no database access anywhere in check(). The _cache is a plain Python dict injected at construction time."
+        },
+        {
+          "key": "gate2_warning_log_gate_and_deviation",
+          "text": "Logs a warning with gate=2 and includes the calculated deviation when rejecting",
+          "passed": true,
+          "evidence": "On rejection the code calls: log.warning('gate2_circuit_breaker_rejected', gate=2, instrument_token=..., price=..., prev_close=..., deviation=round(deviation, 6), limit=0.20). Runtime output confirms the structured log line includes gate=2 and deviation=0.25 for the +25% case: '[gate2_circuit_breaker_rejected] deviation=0.25 gate=2 ...'"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 104.1,
+        "tokens": 38609,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate3_zero_volume_allowed",
+          "text": "Checks volume_traded < 0 (not <= 0) \u2014 zero volume is valid",
+          "passed": true,
+          "evidence": "Line 83: `if volume < 0:` \u2014 uses strict less-than so volume=0 passes. Test 2 (volume_traded=0) explicitly asserts True and passes. Test 1 (volume_traded=-1) asserts False and passes. The condition is NOT `<= 0`."
+        },
+        {
+          "key": "gate3_negative_returns_false_zero_returns_true",
+          "text": "Returns False for volume=-1 (or any negative), True for volume=0",
+          "passed": true,
+          "evidence": "Test 1: _gate3_negative_volume(tick with volume_traded=-1) returned False (asserted and confirmed by run output). Test 2: _gate3_negative_volume(tick with volume_traded=0) returned True (asserted and confirmed). Test 7 and 8 repeat the same via the full validate() pipeline \u2014 both pass. Run output confirms: '[PASS] volume_traded=-1 -> False' and '[PASS] volume_traded=0 -> True'."
+        },
+        {
+          "key": "gate3_logs_bad_tick_warning",
+          "text": "Logs a warning with event name 'bad_tick' and gate=3 when rejecting",
+          "passed": true,
+          "evidence": "Line 87-93: `log.warning('bad_tick', gate=3, instrument_token=token, volume_traded=volume, reason='negative_volume')` is called inside the `if volume < 0:` branch. Run output shows two warning log lines: '2026-03-05 20:06:52 [warning] bad_tick gate=3 instrument_token=408065 reason=negative_volume volume_traded=-1' and the same for volume_traded=-500. structlog is used as required by D5/CLAUDE.md."
+        },
+        {
+          "key": "gate3_no_exception_returns_false",
+          "text": "Does not raise an exception \u2014 returns False cleanly",
+          "passed": true,
+          "evidence": "The _gate3_negative_volume method has no raise statements. All code paths return a bool (True or False). The full run executed 8 tests including negative volumes without any exception being raised. The method also has no try/except that could swallow unexpected errors \u2014 it simply returns False for negative values."
+        },
+        {
+          "key": "gate3_safe_getattr_access",
+          "text": "Uses getattr() or equivalent safe access for volume_traded (tick field may be absent in full-mode ticks)",
+          "passed": true,
+          "evidence": "Line 72: `volume = getattr(tick, 'volume_traded', None)` \u2014 uses getattr() with None default. When the field is absent, volume is None, which falls through the `if volume is None: return True` guard (line 76-77), passing the gate safely. Test 5 uses MockTickNoVolume which intentionally omits volume_traded and confirms the gate returns True. Run output: '[PASS] volume_traded=absent -> _gate3_negative_volume() returned True'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 175.1,
+        "tokens": 51937,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate4_uses_exchange_timestamp",
+          "text": "Computes age as: (datetime.now(IST) - tick.exchange_timestamp).total_seconds()",
+          "passed": true,
+          "evidence": "Gate4StalenessFilter.check() computes: age_seconds = (now_ist - exchange_ts).total_seconds() where now_ist = datetime.now(IST). The variable exchange_ts is sourced from tick.exchange_timestamp, not from datetime.now(). Line: 'age_seconds = (now_ist - exchange_ts).total_seconds()'"
+        },
+        {
+          "key": "gate4_rejects_stale_ticks",
+          "text": "Rejects ticks with age > 5 seconds (STALENESS_THRESHOLD_SECONDS = 5)",
+          "passed": true,
+          "evidence": "STALENESS_THRESHOLD_SECONDS = 5 is defined as a module-level constant. The check condition is 'if age_seconds > STALENESS_THRESHOLD_SECONDS: ... return False'. Tests confirm: 10s-old tick is rejected (FAIL), 4.9s-old tick passes (PASS), 30s-old tick through the full TickValidator pipeline is rejected."
+        },
+        {
+          "key": "gate4_none_timestamp_passes",
+          "text": "Returns True (passes gate) when exchange_timestamp is None or missing \u2014 missing timestamp does NOT block",
+          "passed": true,
+          "evidence": "The check() method begins with: 'exchange_ts = getattr(tick, \"exchange_timestamp\", None); if exchange_ts is None: ... return True'. Two tests confirm this: exchange_timestamp=None returns True, and a tick object with the attribute entirely absent also returns True."
+        },
+        {
+          "key": "gate4_explains_why_datetime_now_is_wrong",
+          "text": "Explains or comments that datetime.now() alone is NOT the tick timestamp \u2014 exchange_timestamp reflects when the exchange generated the tick",
+          "passed": true,
+          "evidence": "The module docstring contains a detailed 'Why this distinction is critical' section covering three specific scenarios: (1) network latency, (2) asyncio queue backlog, (3) WebSocket reconnect replay. The inline comment also states: 'NOTE: We use exchange_ts, NOT datetime.now() as a stand-in for tick time. See module docstring for the reasoning.' The run_tests() final print block also echoes the explanation."
+        },
+        {
+          "key": "gate4_logs_warning_with_gate_and_age_seconds",
+          "text": "Logs a warning with gate=4 and includes the age_seconds when rejecting stale ticks",
+          "passed": true,
+          "evidence": "The rejection path calls: log.warning('bad_tick', gate=4, instrument_token=token, age_seconds=round(age_seconds, 3), threshold_seconds=STALENESS_THRESHOLD_SECONDS, reason='stale_tick', exchange_timestamp=exchange_ts.isoformat()). Verified in test run output: 'bad_tick ... age_seconds=10.0 ... gate=4 ... instrument_token=408065 ... reason=stale_tick ... threshold_seconds=5'"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 188.7,
+        "tokens": 52779,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "gate5_correct_duplicate_check",
+          "text": "Compares (instrument_token, last_price, exchange_timestamp) against last_tick[token] to detect duplicates",
+          "passed": true,
+          "evidence": "_gate5_duplicate() calls self.last_tick.get(token) where token=tick.instrument_token, then checks same_price = (tick.last_price == last['price']) AND same_ts = (tick.exchange_timestamp == last['ts']). All three fields (instrument_token as the key, last_price, exchange_timestamp) are used in the duplicate comparison. See lines in _gate5_duplicate: 'token = tick.instrument_token', 'last = self.last_tick.get(token)', 'same_price = (tick.last_price == last[\"price\"])', 'same_ts = (tick.exchange_timestamp == last[\"ts\"])', 'if same_price and same_ts: return False'."
+        },
+        {
+          "key": "gate5_returns_false_no_log",
+          "text": "Returns False for a duplicate tick with NO log call \u2014 not log.debug(), not log.info(), nothing",
+          "passed": true,
+          "evidence": "The _gate5_duplicate() method contains zero log calls. The only call that returns False is 'return False' inside 'if same_price and same_ts:' \u2014 there is no log.debug(), log.info(), log.warning(), log.error(), or any other logging invocation in that method. The test test_gate5_no_log_on_duplicate() verifies indirectly by confirming bad_tick_count is not incremented (the increment helper is only called alongside log.warning in all other gates). The 50-tick burst test (test_duplicate_burst_all_silent) confirms 49 duplicates are silently discarded."
+        },
+        {
+          "key": "last_tick_updated_after_all_gates",
+          "text": "Updates last_tick[instrument_token] = {'price': ..., 'ts': ...} AFTER all gates pass (not inside gate 5)",
+          "passed": true,
+          "evidence": "In validate(), last_tick is updated at the very end: 'self.last_tick[tick.instrument_token] = {\"price\": tick.last_price, \"ts\": tick.exchange_timestamp}' \u2014 this statement appears AFTER all five gate calls return True. _gate5_duplicate() itself contains no assignment to last_tick. test_last_tick_updated_after_all_gates_pass() explicitly verifies that last_tick holds ts1 after the first tick, is not updated by a rejected duplicate, and is updated to ts2 only when a genuinely different tick passes."
+        },
+        {
+          "key": "explains_duplicate_burst_on_reconnect",
+          "text": "Explains or comments that duplicates arrive in bursts on reconnect \u2014 logging each would create hundreds of log lines",
+          "passed": true,
+          "evidence": "The module-level docstring explains: 'Duplicate ticks arrive in high-frequency bursts on WebSocket reconnect. When the KiteConnect WebSocket drops and reconnects, Zerodha re-streams the most recent tick snapshot for every subscribed instrument... a single reconnect can generate 20-100 duplicate ticks within milliseconds. During prolonged WebSocket instability... reconnects may happen dozens of times per hour... that would produce hundreds to thousands of useless log lines per hour.' The _gate5_duplicate() method docstring repeats: 'Duplicate ticks arrive in bursts on WebSocket reconnect... 20-100 duplicate ticks within milliseconds... hundreds to thousands of useless log lines per hour.' The WHY SILENT sections directly address the log-flood risk."
+        },
+        {
+          "key": "uses_dict_get_o1_lookup",
+          "text": "Uses dict.get() for last_tick lookup \u2014 O(1), no loops",
+          "passed": true,
+          "evidence": "_gate5_duplicate() uses 'last = self.last_tick.get(token)' \u2014 a direct O(1) hash-map lookup using dict.get(). There are no loops, no list comprehensions, and no iteration over last_tick. The method comment states 'O(1) dict.get() \u2014 returns None if this is the first tick for token'. test_gate5_uses_dict_get_o1_lookup() explicitly verifies that the method does not raise KeyError (which would happen with dict[key] syntax) and correctly handles the missing-key case by returning None from get()."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 220.0,
+        "tokens": 67068,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "all_5_gates_correct_order",
+          "text": "validate() method calls all 5 gates in order: zero_price \u2192 circuit_breaker \u2192 negative_volume \u2192 staleness \u2192 duplicate",
+          "passed": true,
+          "evidence": "In validate() lines 59\u201368: _gate1_zero_price \u2192 _gate2_circuit_breaker \u2192 _gate3_negative_volume \u2192 _gate4_staleness \u2192 _gate5_duplicate, each guarded by 'if not ...: return False'. Test 16 explicitly verifies ordering by confirming Gate 1 fires and Gate 2 does NOT fire when Gate 1 fails on a tick that would also fail Gate 2."
+        },
+        {
+          "key": "constructor_accepts_prev_close_cache",
+          "text": "Constructor accepts prev_close_cache as a parameter (not hardcoded or fetched inline)",
+          "passed": true,
+          "evidence": "__init__(self, prev_close_cache: Optional[dict] = None) stores the injected dict directly as self.prev_close_cache. No data is fetched from an API, file, or external source inside the constructor or any gate method. Test 15 asserts 'v2.prev_close_cache is supplied_cache' confirming identity (same object, not a copy)."
+        },
+        {
+          "key": "validate_always_returns_bool",
+          "text": "validate() always returns bool (True or False) \u2014 never raises an exception",
+          "passed": true,
+          "evidence": "Every code path in validate() returns True or False. An outer try/except catches any unexpected runtime error and returns False. Test 13 passes an EmptyTick with only instrument_token and asserts 'isinstance(result, bool)' and no exception is raised. All 16 tests exercise the method without any exception propagation."
+        },
+        {
+          "key": "last_tick_updated_only_after_all_gates_pass",
+          "text": "last_tick dict is updated ONLY when all 5 gates pass (at end of validate(), not inside individual gates)",
+          "passed": true,
+          "evidence": "self.last_tick[token] is assigned only at lines 72\u201375 of validate(), after all five 'if not gate: return False' checks. No gate method (gate1\u2013gate5) writes to self.last_tick. Test 1 asserts 'TOKEN not in validator.last_tick' after Gate 1 rejection. Test 7 asserts the same after Gate 4 rejection. Tests 6, 8, 9, 11 assert last_tick IS set after all gates pass."
+        },
+        {
+          "key": "all_gates_o1_operations_only",
+          "text": "All gate methods use only O(1) operations: dict lookups, arithmetic, attribute access \u2014 no loops, API calls, or file I/O",
+          "passed": true,
+          "evidence": "_gate1_zero_price: getattr + one comparison. _gate2_circuit_breaker: dict.get + float arithmetic + one comparison. _gate3_negative_volume: getattr + one comparison. _gate4_staleness: getattr + datetime subtraction + one comparison (one localize branch for naive datetimes \u2014 still O(1)). _gate5_duplicate: dict.get + two equality comparisons. No for/while loops, no file I/O, no network calls, no database queries in any gate method. Documented explicitly in each gate docstring."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 126.9,
+        "tokens": 58921,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "nested_dict_counters",
+          "text": "Tracks counters as a nested dict: _counts[token][gate] = int",
+          "passed": true,
+          "evidence": "Line 65: `self._counts: dict[int, dict[int, int]] = {}`. In record(), lines 97-101 initialise the inner dict per token and increment: `gate_counts[gate] = gate_counts.get(gate, 0) + 1`. The structure is _counts[instrument_token][gate] = int throughout."
+        },
+        {
+          "key": "hourly_reset",
+          "text": "Resets all counters at the start of a new hour (checks datetime.now().hour != last_reset_hour)",
+          "passed": true,
+          "evidence": "_maybe_reset_hour() at lines 137-146: `current_hour = datetime.now(IST).hour` then `if current_hour != self._last_reset_hour:` clears `self._counts` and updates `self._last_reset_hour`. Called at the top of every record() call."
+        },
+        {
+          "key": "threshold_constant",
+          "text": "Fires alert when _counts[token][gate] > THRESHOLD (50) \u2014 threshold is a constant, not hardcoded literal",
+          "passed": true,
+          "evidence": "Module-level constant `BAD_TICK_ALERT_THRESHOLD: int = 50` at line 34. Comparison at line 115 uses `if current_count == BAD_TICK_ALERT_THRESHOLD + 1:` \u2014 the literal 51 never appears. The check correctly fires when count first exceeds 50."
+        },
+        {
+          "key": "alert_type_rate_limiting",
+          "text": "Alert type for rate limiting is 'bad_tick_rate_{token}_{gate}' \u2014 allows independent 5-minute windows per instrument/gate pair",
+          "passed": true,
+          "evidence": "Line 180 in _fire_threshold_alert(): `alert_type = f\"bad_tick_rate_{instrument_token}_{gate}\"`. This string is passed directly to send_warning_alert(alert_type=alert_type, ...) at line 185, giving each (instrument_token, gate) pair its own rate-limit window."
+        },
+        {
+          "key": "send_warning_alert",
+          "text": "Uses send_warning_alert() (not send_critical_alert() or raw send_telegram()) for the threshold alert",
+          "passed": true,
+          "evidence": "Line 185: `self._alerter.send_warning_alert(alert_type=alert_type, ...)`. No call to send_critical_alert or any raw telegram/httpx call exists anywhere in the file. The docstring and module header explicitly state the constraint."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 227.3,
+        "tokens": 67979,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "loads_from_tick_ohlc",
+          "text": "Loads prev_close from tick.ohlc.close (available in full/quote mode ticks) \u2014 no kite.historical_data() call",
+          "passed": true,
+          "evidence": "update_prev_close_from_tick() accesses tick.ohlc via getattr(tick, 'ohlc', None) and then reads ohlc.close via getattr(ohlc, 'close', None). The value is stored as float(close_price) in validator.prev_close_cache. No call to kite.historical_data() is present inside validate() or update_prev_close_from_tick(). Test 3 asserts: validator.prev_close_cache[RELIANCE_TOKEN] == 2420.0 after calling update_prev_close_from_tick(tick1) where tick1.ohlc.close == 2420.0."
+        },
+        {
+          "key": "populated_outside_validate",
+          "text": "Cache is populated OUTSIDE the validate() method \u2014 loaded once per session, not on each tick",
+          "passed": true,
+          "evidence": "validate() contains zero writes to prev_close_cache \u2014 it only reads via self.prev_close_cache.get(token) in _gate2_circuit_breaker(). The function update_prev_close_from_tick() is a separate top-level function called by signal_processor_task() AFTER validate() returns True. Test 2 asserts: after validate() returns True for tick1, RELIANCE_TOKEN is NOT in validator.prev_close_cache, confirming validate() did not write to it. The update function also guards with 'if token in validator.prev_close_cache: return' ensuring it only writes once per session."
+        },
+        {
+          "key": "explains_blocking_violation",
+          "text": "Explains that kite.historical_data() is a blocking network call \u2014 violates <1ms requirement",
+          "passed": true,
+          "evidence": "The module docstring provides a detailed breakdown: 'DNS lookup: ~10-50ms, TCP handshake: ~5-20ms, TLS handshake: ~10-30ms, HTTP round-trip (India): ~20-80ms, JSON decode+parse: ~1-5ms \u2014 Minimum realistic total: ~25ms per call'. It further explains this is 5-200x over the 1ms budget. The TickValidatorWrongApproach class comments document five specific violations: (1) blocking HTTP ~20-200ms, (2) freezes asyncio event loop, (3) called per cache-miss not per session, (4) subject to Zerodha API rate limits, (5) introduces network dependency into a pure memory filter. The hot-path gate costs are itemised (~5-10 microseconds total)."
+        },
+        {
+          "key": "cache_is_plain_dict",
+          "text": "Cache is a plain Python dict: {instrument_token: float} \u2014 O(1) lookup",
+          "passed": true,
+          "evidence": "TickValidator.__init__ declares: self.prev_close_cache: dict[int, float] = {}. The type annotation explicitly states the key type (int) and value type (float). _gate2_circuit_breaker() accesses it via self.prev_close_cache.get(token) \u2014 a single hash map lookup. Test 1 asserts isinstance(validator.prev_close_cache, dict). Test 9 asserts all keys are int and all values are float. Comments throughout reference 'O(1) dict hash lookup'."
+        },
+        {
+          "key": "handles_missing_ohlc",
+          "text": "Handles the case where ohlc data is not available in the tick (e.g., LTP-mode ticks) \u2014 uses None or skips update gracefully",
+          "passed": true,
+          "evidence": "update_prev_close_from_tick() uses getattr(tick, 'ohlc', None) and checks 'if ohlc is None: return' \u2014 this is the LTP-mode path. It also checks 'if close_price is None: return' for the case where ohlc exists but close is null. Both cases log a debug message and return without writing to the cache. Test 5 asserts: after calling update_prev_close_from_tick() with an LTP-mode tick (ohlc=None), INFY_TOKEN is NOT in validator.prev_close_cache. Test 6 asserts: after calling with a tick where ohlc.close=None, token 99999 is NOT in the cache. Gate 2 in validate() also handles the cache-miss case: 'if prev_close is None: return True' \u2014 pass-through when no reference data is available."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 113.525,
+        "stddev": 37.8889,
+        "min": 72.2,
+        "max": 174.1
+      },
+      "tokens": {
+        "mean": 42563.125,
+        "stddev": 3853.7494,
+        "min": 37892,
+        "max": 48262
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 155.4625,
+        "stddev": 54.7909,
+        "min": 81.2,
+        "max": 227.3
+      },
+      "tokens": {
+        "mean": 52383.25,
+        "stddev": 11761.5813,
+        "min": 38407,
+        "max": 67979
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "-41.9",
+      "tokens": "-9820"
+    }
+  },
+  "notes": []
+}

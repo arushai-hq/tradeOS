@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "gate1_zero_price_rejects",
+    "description": "Gate 1 must reject a tick with last_price=0 and return False",
+    "prompt": "Implement Gate 1 of the TickValidator for TradeOS — it must reject any tick where last_price is 0 or negative, log a warning with event name 'bad_tick', and return False. Show the gate implementation and a test proving a zero-price tick returns False.",
+    "expectations": [
+      {
+        "text": "Gate 1 checks `tick.last_price <= 0` (or equivalent) and returns False for zero/negative price",
+        "key": "gate1_rejects_zero_price"
+      },
+      {
+        "text": "Logs a warning with event name 'bad_tick' including gate=1 and the instrument_token",
+        "key": "gate1_logs_bad_tick"
+      },
+      {
+        "text": "Uses structlog (not print() or stdlib logging) for the warning",
+        "key": "gate1_uses_structlog"
+      },
+      {
+        "text": "Does NOT raise an exception — returns False silently (discard and continue)",
+        "key": "gate1_no_exception"
+      },
+      {
+        "text": "A test or demonstration shows validate() returns False when last_price=0",
+        "key": "gate1_test_present"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "gate2_circuit_breaker_blocks",
+    "description": "Gate 2 must reject a tick where price deviates more than ±20% from prev_close",
+    "prompt": "Implement Gate 2 of the TradeOS TickValidator — the NSE circuit breaker filter. It must reject ticks where abs(price - prev_close) / prev_close > 0.20. If prev_close is not in the cache for that instrument_token, the gate must PASS (not block). Show the implementation and demonstrate it rejects a tick at +25% deviation but passes one at +18%.",
+    "expectations": [
+      {
+        "text": "Rejects ticks where deviation > 20% from prev_close: abs(price - prev_close) / prev_close > 0.20",
+        "key": "gate2_rejects_over_20pct"
+      },
+      {
+        "text": "Returns True (passes gate) when prev_close is not found in cache — missing cache entry does NOT block",
+        "key": "gate2_missing_cache_passes"
+      },
+      {
+        "text": "A 25% deviation tick returns False, an 18% deviation tick returns True from gate 2",
+        "key": "gate2_boundary_test"
+      },
+      {
+        "text": "Uses dict.get() for prev_close lookup — no loops, no database queries, no API calls in the gate",
+        "key": "gate2_oc1_dict_lookup"
+      },
+      {
+        "text": "Logs a warning with gate=2 and includes the calculated deviation when rejecting",
+        "key": "gate2_logs_deviation"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "gate3_negative_volume_rejects",
+    "description": "Gate 3 must reject ticks with negative volume_traded",
+    "prompt": "Implement Gate 3 of the TradeOS TickValidator — it must reject ticks where volume_traded is negative (< 0). Volume of 0 is acceptable. Show the implementation and demonstrate that volume=-1 returns False but volume=0 returns True.",
+    "expectations": [
+      {
+        "text": "Checks `volume_traded < 0` (not `<= 0`) — zero volume is valid",
+        "key": "gate3_zero_volume_allowed"
+      },
+      {
+        "text": "Returns False for volume=-1 (or any negative), True for volume=0",
+        "key": "gate3_boundary_correct"
+      },
+      {
+        "text": "Logs a warning with event name 'bad_tick' and gate=3 when rejecting",
+        "key": "gate3_logs_bad_tick"
+      },
+      {
+        "text": "Does not raise an exception — returns False cleanly",
+        "key": "gate3_no_exception"
+      },
+      {
+        "text": "Uses getattr() or equivalent safe access for volume_traded (tick field may be absent in full-mode ticks)",
+        "key": "gate3_safe_attribute_access"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "gate4_staleness_uses_exchange_timestamp",
+    "description": "Gate 4 must use exchange_timestamp (not datetime.now()) for staleness check",
+    "prompt": "Implement Gate 4 of the TradeOS TickValidator — the staleness filter. A tick is stale if its exchange_timestamp is more than 5 seconds old. IMPORTANT: use the tick's exchange_timestamp field, NOT datetime.now() as a substitute for the tick time. If exchange_timestamp is None or missing, the gate must PASS. Show the implementation and explain why using datetime.now() instead of exchange_timestamp would be wrong.",
+    "expectations": [
+      {
+        "text": "Computes age as: (datetime.now(IST) - tick.exchange_timestamp).total_seconds()",
+        "key": "gate4_uses_exchange_timestamp"
+      },
+      {
+        "text": "Rejects ticks with age > 5 seconds (STALENESS_THRESHOLD_SECONDS = 5)",
+        "key": "gate4_5s_threshold"
+      },
+      {
+        "text": "Returns True (passes gate) when exchange_timestamp is None or missing — missing timestamp does NOT block",
+        "key": "gate4_missing_ts_passes"
+      },
+      {
+        "text": "Explains or comments that datetime.now() alone is NOT the tick timestamp — exchange_timestamp reflects when the exchange generated the tick",
+        "key": "gate4_explains_exchange_ts"
+      },
+      {
+        "text": "Logs a warning with gate=4 and includes the age_seconds when rejecting stale ticks",
+        "key": "gate4_logs_age"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "gate5_duplicate_silent_discard",
+    "description": "Gate 5 must silently discard exact duplicate ticks with NO logging",
+    "prompt": "Implement Gate 5 of the TradeOS TickValidator — duplicate tick suppression. A tick is a duplicate if it has the same instrument_token, last_price, and exchange_timestamp as the previously seen tick. Gate 5 must return False WITHOUT logging anything (not even at debug level). After passing Gate 5, update last_tick dict. Show the implementation and explain why duplicate ticks must be silently discarded without logging.",
+    "expectations": [
+      {
+        "text": "Compares (instrument_token, last_price, exchange_timestamp) against last_tick[token] to detect duplicates",
+        "key": "gate5_correct_duplicate_check"
+      },
+      {
+        "text": "Returns False for a duplicate tick with NO log call — not log.debug(), not log.info(), nothing",
+        "key": "gate5_no_logging_on_duplicate"
+      },
+      {
+        "text": "Updates last_tick[instrument_token] = {'price': ..., 'ts': ...} AFTER all gates pass (not inside gate 5)",
+        "key": "gate5_updates_last_tick_after_all_gates"
+      },
+      {
+        "text": "Explains or comments that duplicates arrive in bursts on reconnect — logging each would create hundreds of log lines",
+        "key": "gate5_explains_no_logging"
+      },
+      {
+        "text": "Uses dict.get() for last_tick lookup — O(1), no loops",
+        "key": "gate5_o1_lookup"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "full_pipeline_all_5_gates",
+    "description": "Complete TickValidator class must implement all 5 gates in correct order",
+    "prompt": "Write the complete TickValidator class for TradeOS with all 5 gates in the correct order: Gate 1 (zero price) → Gate 2 (circuit breaker ±20%) → Gate 3 (negative volume) → Gate 4 (staleness > 5s) → Gate 5 (duplicate suppression). The validator must: never raise exceptions, always return bool, update last_tick only after all gates pass, and accept prev_close_cache as a constructor argument.",
+    "expectations": [
+      {
+        "text": "validate() method calls all 5 gates in order: zero_price → circuit_breaker → negative_volume → staleness → duplicate",
+        "key": "all_5_gates_correct_order"
+      },
+      {
+        "text": "Constructor accepts prev_close_cache as a parameter (not hardcoded or fetched inline)",
+        "key": "prev_close_cache_injected"
+      },
+      {
+        "text": "validate() always returns bool (True or False) — never raises an exception",
+        "key": "always_returns_bool"
+      },
+      {
+        "text": "last_tick dict is updated ONLY when all 5 gates pass (at end of validate(), not inside individual gates)",
+        "key": "last_tick_update_after_all_gates"
+      },
+      {
+        "text": "All gate methods use only O(1) operations: dict lookups, arithmetic, attribute access — no loops, API calls, or file I/O",
+        "key": "all_gates_o1"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "bad_tick_monitor_threshold_alert",
+    "description": "BadTickMonitor must fire a Telegram WARNING when > 50 bad ticks per instrument per gate per hour",
+    "prompt": "Write the BadTickMonitor class for TradeOS that tracks bad tick counts per instrument_token per gate, resets counters every hour, and fires a Telegram WARNING alert when any instrument exceeds 50 bad ticks per gate per hour. The alert type for rate limiting must be 'bad_tick_rate_{token}_{gate}'.",
+    "expectations": [
+      {
+        "text": "Tracks counters as a nested dict: _counts[token][gate] = int",
+        "key": "nested_dict_counters"
+      },
+      {
+        "text": "Resets all counters at the start of a new hour (checks datetime.now().hour != last_reset_hour)",
+        "key": "hourly_counter_reset"
+      },
+      {
+        "text": "Fires alert when _counts[token][gate] > THRESHOLD (50) — threshold is a constant, not hardcoded literal",
+        "key": "threshold_constant_50"
+      },
+      {
+        "text": "Alert type for rate limiting is 'bad_tick_rate_{token}_{gate}' — allows independent 5-minute windows per instrument/gate pair",
+        "key": "rate_limit_key_per_token_gate"
+      },
+      {
+        "text": "Uses send_warning_alert() (not send_critical_alert() or raw send_telegram()) for the threshold alert",
+        "key": "uses_warning_alert_function"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "prev_close_cache_loading",
+    "description": "prev_close_cache must be loaded from tick OHLC data, not from a blocking API call",
+    "prompt": "Show how to populate the prev_close_cache for the TradeOS TickValidator. The cache must be loaded from the tick's own OHLC fields (tick.ohlc.close) when available in full-mode ticks — NOT from a blocking kite.historical_data() API call inside the validator. Show the loading approach and explain why calling historical_data() inside the validator would violate the <1ms performance constraint.",
+    "expectations": [
+      {
+        "text": "Loads prev_close from tick.ohlc.close (available in full/quote mode ticks) — no kite.historical_data() call",
+        "key": "loads_from_tick_ohlc"
+      },
+      {
+        "text": "Cache is populated OUTSIDE the validate() method — loaded once per session, not on each tick",
+        "key": "cache_loaded_outside_validate"
+      },
+      {
+        "text": "Explains that kite.historical_data() is a blocking network call — violates <1ms requirement",
+        "key": "explains_api_call_violates_perf"
+      },
+      {
+        "text": "Cache is a plain Python dict: {instrument_token: float} — O(1) lookup",
+        "key": "cache_is_plain_dict"
+      },
+      {
+        "text": "Handles the case where ohlc data is not available in the tick (e.g., LTP-mode ticks) — uses None or skips update gracefully",
+        "key": "handles_missing_ohlc"
+      }
+    ]
+  }
+]
