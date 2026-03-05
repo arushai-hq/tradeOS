@@ -48,21 +48,45 @@ check `kill_switch.is_trading_allowed()`, and push approved signals to `order_qu
 **Input:** `tick_queue: asyncio.Queue`
 **Output:** `order_queue: asyncio.Queue(maxsize=100)`
 
-**Critical rule:** Check kill switch BEFORE every `order_queue.put()`.
-If `kill_switch.is_trading_allowed()` returns False → drop signal, log INFO "signal_blocked_by_kill_switch".
+**Critical rule:** Four gates must pass in strict order before any signal reaches `order_queue`.
+
+| Gate | Check | Failure action |
+|------|-------|----------------|
+| 0 | `assert_paper_mode(config)` | Hard crash → D6 escalates to Level 3 |
+| 1 | `kill_switch.is_trading_allowed()` | Drop signal, log INFO |
+| 2 | `shared_state["recon_in_progress"]` is False | Drop signal, log INFO |
+| 3 | `symbol not in shared_state["locked_instruments"]` | Drop signal, log INFO |
+
+Gate 0 runs once at task startup (config is static after load). Gates 1–3 run per signal.
 
 **On exception in strategy logic:** Log ERROR with full traceback, continue — one bad tick does not stop processing.
 
 ```python
-async def signal_processor_fn(shared_state: dict) -> None:
+async def signal_processor_fn(shared_state: dict, config: dict) -> None:
     tick_queue = shared_state["tick_queue"]
     order_queue = shared_state["order_queue"]
+
+    # Gate 0: mode safety — runs once at startup; crashes hard if misconfigured
+    assert_paper_mode(config)
 
     while True:
         tick = await tick_queue.get()
         try:
             signal = strategy.on_tick(tick)
-            if signal and kill_switch.is_trading_allowed():
+            if signal:
+                # Gate 1: kill switch
+                if not kill_switch.is_trading_allowed():
+                    log.info("signal_blocked_kill_switch", symbol=signal["symbol"])
+                    continue
+                # Gate 2: reconciliation in progress
+                if shared_state["recon_in_progress"]:
+                    log.info("signal_blocked_recon", symbol=signal["symbol"])
+                    continue
+                # Gate 3: instrument lock
+                if signal["symbol"] in shared_state["locked_instruments"]:
+                    log.info("signal_blocked_instrument_locked", symbol=signal["symbol"])
+                    continue
+                # All gates passed
                 await order_queue.put(signal)
                 shared_state["last_signal"] = signal
                 shared_state["signals_generated_today"] += 1

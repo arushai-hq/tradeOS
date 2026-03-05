@@ -16,7 +16,7 @@ positions_data = await asyncio.to_thread(kite.positions)
 }
 ```
 
-**TradeOS only uses `"net"` positions** for reconciliation. Day positions are a subset of net.
+**TradeOS uses `"day"` positions for reconciliation.** Phase 1 is MIS-only intraday; `"day"` captures exactly today's intraday activity. `"net"` silently includes overnight NRML/CNC positions not managed by TradeOS Phase 1 — always use `"day"`.
 
 ## Full Payload Example
 
@@ -72,8 +72,8 @@ positions_data = {
 
 | Field | Type | Used for |
 |-------|------|---------|
-| `instrument_token` | int | Primary key for position lookup (O(1) dict access) |
-| `tradingsymbol` | str | Human-readable identifier for logs and alerts |
+| `tradingsymbol` | str | Primary key for reconciliation lookup — matches `open_positions` keys |
+| `instrument_token` | int | Secondary — used to build `broker_token_by_symbol` for mismatch locking |
 | `quantity` | int | The reconciliation signal — compare against local state |
 | `product` | str | Should always be "MIS" (intraday) in Phase 1 |
 | `average_price` | float | Not used for reconciliation — only for display |
@@ -81,14 +81,17 @@ positions_data = {
 ## How to Parse for Reconciliation
 
 ```python
-def _parse_broker_positions(positions_data: dict) -> dict[int, dict]:
+def _parse_broker_positions(positions_data: dict) -> dict[str, dict]:
     """
-    Returns {instrument_token: position_dict} for positions with non-zero quantity.
+    Returns {tradingsymbol: position_dict} for positions with non-zero quantity.
+    Always use positions_data["day"] — MIS intraday only.
+    Never use ["net"] in Phase 1 — it includes overnight NRML/CNC positions
+    not managed by TradeOS, which would generate false reconciliation mismatches.
     Ignores flat positions (quantity == 0).
     """
     return {
-        pos["instrument_token"]: pos
-        for pos in positions_data.get("net", [])
+        pos["tradingsymbol"]: pos
+        for pos in positions_data.get("day", [])  # Always ["day"] — never ["net"]
         if pos["quantity"] != 0
     }
 ```

@@ -1,5 +1,40 @@
 # Kill Switch Levels — TradeOS D1
 
+## Pre-Order Gate — Mode Safety Assertion
+
+This gate is **zeroth** — it runs before the kill switch check, before any Zerodha API call, before any signal reaches `order_queue`. It is not a kill switch level. It is a hard assertion that crashes intentionally if the system is misconfigured.
+
+```python
+def assert_paper_mode(config: dict) -> None:
+    """
+    Zeroth gate. Called at signal_processor task startup (once) and before
+    any order is placed. Hard AssertionError if not in paper mode —
+    intentional crash, not graceful degradation.
+    D6's resilient_task crash recovery catches AssertionError → escalates to Level 3.
+    """
+    assert config["system"]["mode"] == "paper", (
+        f"LIVE ORDER BLOCKED: mode is '{config['system']['mode']}'. "
+        f"Manual promotion to live mode required via config/settings.yaml"
+    )
+```
+
+**Why AssertionError and not a kill switch trigger?**
+- Misconfigured mode is a deployment error, not a runtime trading event
+- The kill switch handles market-hours risk events — not config faults
+- A hard crash on wrong mode is the correct signal: something is wrong at the infra level
+- D6's `resilient_task` wrapper catches the `AssertionError` and escalates to Level 3
+
+**Order of gates in signal_processor (strictly sequential):**
+```
+0. assert_paper_mode(config)                                  ← config fault — crashes hard
+1. kill_switch.is_trading_allowed()                           ← risk gate — blocks gracefully
+2. if shared_state["recon_in_progress"]: skip signal          ← reconciliation gate
+3. if symbol in shared_state["locked_instruments"]: skip      ← instrument lock gate
+→ only then: await order_queue.put(signal)
+```
+
+---
+
 ## Level 0 — Inactive (Normal State)
 
 - `kill_switch_state = {"level": 0, "active": False, "reason": "", "triggered_at": None}`
