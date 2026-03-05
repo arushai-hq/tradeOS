@@ -1,0 +1,25 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1200,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":350,"y":15,"width":500,"height":30,"text":"D2 — Order State Machine","fontSize":26,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":300,"y":48,"width":600,"height":20,"text":"All 8 states — TradeOS must track every transition","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"ellipse","id":"s_created","x":470,"y":80,"width":140,"height":60,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"label":{"text":"CREATED","fontSize":16}},
+    {"type":"ellipse","id":"s_sub","x":470,"y":180,"width":140,"height":60,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"label":{"text":"SUBMITTED","fontSize":16}},
+    {"type":"ellipse","id":"s_ack","x":450,"y":280,"width":180,"height":60,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":2,"label":{"text":"ACKNOWLEDGED","fontSize":15}},
+    {"type":"diamond","id":"d_fill","x":480,"y":380,"width":120,"height":80,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"label":{"text":"fill?","fontSize":16}},
+    {"type":"ellipse","id":"s_partial","x":760,"y":390,"width":180,"height":60,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"label":{"text":"PARTIALLY FILLED","fontSize":14}},
+    {"type":"ellipse","id":"s_filled","x":460,"y":520,"width":160,"height":60,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"label":{"text":"FILLED","fontSize":18}},
+    {"type":"ellipse","id":"s_rej","x":190,"y":390,"width":140,"height":60,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"label":{"text":"REJECTED","fontSize":16}},
+    {"type":"ellipse","id":"s_pcancel","x":140,"y":270,"width":190,"height":60,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"label":{"text":"PENDING CANCEL","fontSize":14}},
+    {"type":"ellipse","id":"s_cancel","x":170,"y":140,"width":140,"height":60,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"label":{"text":"CANCELLED","fontSize":16}},
+    {"type":"ellipse","id":"s_exp","x":880,"y":270,"width":140,"height":60,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":2,"label":{"text":"EXPIRED","fontSize":16}},
+    {"type":"ellipse","id":"s_pupdate","x":850,"y":170,"width":190,"height":60,"backgroundColor":"#eebefa","fillStyle":"solid","strokeColor":"#ec4899","strokeWidth":2,"label":{"text":"PENDING UPDATE","fontSize":14}},
+    {"type":"rectangle","id":"critical_note","x":30,"y":610,"width":1120,"height":60,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"CRITICAL: On restart — query Zerodha for all open orders BEFORE placing anything. Unrecognised order = LOCK instrument.","fontSize":15}},
+    {"type":"rectangle","id":"tool_box","x":30,"y":690,"width":540,"height":55,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Tool: python-statemachine (async compatible)","fontSize":16}},
+    {"type":"rectangle","id":"rule_box","x":590,"y":690,"width":560,"height":55,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Duplicate Order Prevention: check state before any new order","fontSize":16}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

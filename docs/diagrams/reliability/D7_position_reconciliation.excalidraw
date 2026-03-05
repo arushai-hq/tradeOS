@@ -1,0 +1,30 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1200,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":330,"y":15,"width":540,"height":30,"text":"D7 — Position Reconciliation","fontSize":26,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":250,"y":48,"width":700,"height":20,"text":"Align broker reality with local state — runs at startup, every 30 min, after disruptions","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"rectangle","id":"trigger_zone","x":30,"y":80,"width":200,"height":230,"backgroundColor":"#dbe4ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1,"opacity":40,"roundness":{"type":3}},
+    {"type":"text","id":"tzl","x":60,"y":88,"width":120,"height":20,"text":"TRIGGERS","fontSize":15,"strokeColor":"#4a9eed","fontFamily":1},
+    {"type":"rectangle","id":"t1","x":45,"y":112,"width":170,"height":42,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1,"roundness":{"type":3},"label":{"text":"System startup","fontSize":14}},
+    {"type":"rectangle","id":"t2","x":45,"y":162,"width":170,"height":42,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1,"roundness":{"type":3},"label":{"text":"Every 30 min","fontSize":14}},
+    {"type":"rectangle","id":"t3","x":45,"y":212,"width":170,"height":42,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"roundness":{"type":3},"label":{"text":"After network drop","fontSize":14}},
+    {"type":"rectangle","id":"t4","x":45,"y":262,"width":170,"height":42,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":1,"roundness":{"type":3},"label":{"text":"Manual trigger","fontSize":14}},
+    {"type":"rectangle","id":"step1","x":280,"y":95,"width":220,"height":75,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Step 1\nFetch positions\nfrom Zerodha","fontSize":14}},
+    {"type":"rectangle","id":"step2","x":280,"y":210,"width":220,"height":75,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Step 2\nFetch positions\nfrom local state","fontSize":14}},
+    {"type":"diamond","id":"compare","x":580,"y":195,"width":180,"height":100,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"label":{"text":"qty\nmatch?","fontSize":16}},
+    {"type":"rectangle","id":"ok","x":840,"y":215,"width":160,"height":65,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"roundness":{"type":3},"label":{"text":"ALL CLEAR\nContinue trading","fontSize":14}},
+    {"type":"rectangle","id":"mismatch_zone","x":450,"y":340,"width":640,"height":290,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"opacity":25,"roundness":{"type":3}},
+    {"type":"text","id":"mzl","x":620,"y":350,"width":280,"height":20,"text":"MISMATCH HANDLER","fontSize":16,"strokeColor":"#ef4444","fontFamily":1},
+    {"type":"rectangle","id":"m1","x":470,"y":380,"width":260,"height":55,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"LOCK instrument — no new orders","fontSize":14}},
+    {"type":"rectangle","id":"m2","x":470,"y":450,"width":260,"height":55,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"LOG critical: Zerodha qty vs local qty","fontSize":14}},
+    {"type":"rectangle","id":"m3","x":470,"y":520,"width":260,"height":55,"backgroundColor":"#eebefa","fillStyle":"solid","strokeColor":"#ec4899","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Telegram ALERT: mismatch on SYMBOL","fontSize":14}},
+    {"type":"rectangle","id":"m4","x":780,"y":380,"width":240,"height":200,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"RESOLUTION OPTIONS\n\n1. Manual fix\n   via Telegram cmd\n\n2. Auto-adjust\n   local state\n\n3. Close position\n   if unknown","fontSize":13}},
+    {"type":"rectangle","id":"rule_box","x":30,"y":660,"width":1130,"height":55,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"RULE: Zerodha is source of truth. Never trade on an unresolved mismatch.","fontSize":15}},
+    {"type":"rectangle","id":"tool_box","x":30,"y":730,"width":540,"height":50,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Uses: kite.positions() + kite.orders() on each reconcile","fontSize":14}},
+    {"type":"rectangle","id":"lock_box","x":590,"y":730,"width":570,"height":50,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Lock mechanism: per-instrument flag in local dict / Redis","fontSize":14}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

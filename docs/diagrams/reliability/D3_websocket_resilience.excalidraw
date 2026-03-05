@@ -1,0 +1,33 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1200,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":310,"y":15,"width":580,"height":30,"text":"D3 — WebSocket Resilience","fontSize":26,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":250,"y":48,"width":700,"height":20,"text":"Exponential backoff reconnect + stale signal detection","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"ellipse","id":"s_connect","x":80,"y":90,"width":130,"height":60,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"label":{"text":"CONNECT","fontSize":16}},
+    {"type":"ellipse","id":"s_connected","x":290,"y":90,"width":140,"height":60,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"label":{"text":"CONNECTED","fontSize":16}},
+    {"type":"rectangle","id":"hb_box","x":470,"y":76,"width":160,"height":50,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Heartbeat every 15s","fontSize":14}},
+    {"type":"ellipse","id":"s_disc","x":290,"y":210,"width":140,"height":60,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"label":{"text":"DISCONNECTED","fontSize":14}},
+    {"type":"rectangle","id":"backoff_zone","x":50,"y":300,"width":580,"height":220,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"opacity":40,"roundness":{"type":3}},
+    {"type":"text","id":"bzl","x":60,"y":308,"width":300,"height":20,"text":"EXPONENTIAL BACKOFF ZONE","fontSize":14,"strokeColor":"#f59e0b","fontFamily":1},
+    {"type":"rectangle","id":"r1","x":60,"y":330,"width":110,"height":50,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Attempt 1\nwait 2s","fontSize":14}},
+    {"type":"rectangle","id":"r2","x":200,"y":330,"width":110,"height":50,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Attempt 2\nwait 4s","fontSize":14}},
+    {"type":"rectangle","id":"r3","x":340,"y":330,"width":110,"height":50,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Attempt 3\nwait 8s","fontSize":14}},
+    {"type":"rectangle","id":"r4","x":480,"y":330,"width":110,"height":50,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Attempt 4\nwait 16s","fontSize":13}},
+    {"type":"rectangle","id":"r5","x":160,"y":400,"width":300,"height":50,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Attempt 5+: 30s cap -> Telegram alert","fontSize":14}},
+    {"type":"rectangle","id":"stale_zone","x":680,"y":90,"width":480,"height":420,"backgroundColor":"#e5dbff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":1,"opacity":40,"roundness":{"type":3}},
+    {"type":"text","id":"szl","x":690,"y":98,"width":400,"height":20,"text":"STALE SIGNAL DETECTION (on reconnect)","fontSize":14,"strokeColor":"#8b5cf6","fontFamily":1},
+    {"type":"rectangle","id":"sq1","x":700,"y":125,"width":440,"height":55,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Step 1: Record timestamp of disconnect","fontSize":15}},
+    {"type":"rectangle","id":"sq2","x":700,"y":200,"width":440,"height":55,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Step 2: On reconnect — re-fetch current price","fontSize":15}},
+    {"type":"diamond","id":"sq3d","x":840,"y":275,"width":160,"height":80,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"label":{"text":"signal age\n> 5 min?","fontSize":14}},
+    {"type":"rectangle","id":"sq_dead","x":1025,"y":290,"width":130,"height":55,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DEAD SIGNAL\nDiscard","fontSize":14}},
+    {"type":"rectangle","id":"sq_live","x":690,"y":290,"width":145,"height":55,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":2,"roundness":{"type":3},"label":{"text":"LIVE SIGNAL\nProcess","fontSize":14}},
+    {"type":"rectangle","id":"hb2","x":700,"y":375,"width":440,"height":55,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Heartbeat monitor: no tick in 30s = trigger reconnect","fontSize":15}},
+    {"type":"rectangle","id":"critical","x":50,"y":540,"width":1110,"height":55,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"RULE: Never re-fire pending signals after reconnect. Always re-fetch state first.","fontSize":15}},
+    {"type":"rectangle","id":"toolbox","x":50,"y":610,"width":540,"height":55,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Tool: websockets (asyncio) with exponential backoff","fontSize":15}},
+    {"type":"rectangle","id":"alertbox","x":610,"y":610,"width":550,"height":55,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Alert: Telegram if reconnect attempts > 5","fontSize":15}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

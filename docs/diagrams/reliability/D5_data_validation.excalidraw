@@ -1,0 +1,26 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1200,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":280,"y":15,"width":640,"height":30,"text":"D5 — Data Validation & Bad Tick Detection","fontSize":26,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":250,"y":48,"width":700,"height":20,"text":"Every tick passes 5 gates before touching strategy logic","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"rectangle","id":"src","x":30,"y":140,"width":140,"height":70,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Zerodha\nWebSocket\nTick","fontSize":14}},
+    {"type":"rectangle","id":"v1","x":220,"y":110,"width":150,"height":130,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GATE 1\nprice > 0\nzero filter","fontSize":14}},
+    {"type":"rectangle","id":"rej1","x":235,"y":260,"width":120,"height":45,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DISCARD+LOG","fontSize":13}},
+    {"type":"rectangle","id":"v2","x":420,"y":110,"width":150,"height":130,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GATE 2\nprice within\n+/-20% close","fontSize":14}},
+    {"type":"rectangle","id":"rej2","x":435,"y":260,"width":120,"height":45,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DISCARD+LOG","fontSize":13}},
+    {"type":"rectangle","id":"v3","x":620,"y":110,"width":150,"height":130,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GATE 3\nvolume >= 0\nno negatives","fontSize":14}},
+    {"type":"rectangle","id":"rej3","x":635,"y":260,"width":120,"height":45,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DISCARD+LOG","fontSize":13}},
+    {"type":"rectangle","id":"v4","x":820,"y":110,"width":150,"height":130,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GATE 4\ntimestamp\nwithin 5s","fontSize":14}},
+    {"type":"rectangle","id":"rej4","x":835,"y":260,"width":120,"height":45,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DISCARD+LOG","fontSize":13}},
+    {"type":"rectangle","id":"v5","x":1020,"y":110,"width":150,"height":130,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GATE 5\nno duplicate\nsame price+ts","fontSize":14}},
+    {"type":"rectangle","id":"rej5","x":1035,"y":260,"width":120,"height":45,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"DISCARD+LOG","fontSize":13}},
+    {"type":"rectangle","id":"strategy","x":1020,"y":320,"width":150,"height":70,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"roundness":{"type":3},"label":{"text":"STRATEGY\nENGINE","fontSize":16}},
+    {"type":"rectangle","id":"rule_box","x":30,"y":420,"width":1140,"height":55,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"RULE: Never halt on bad tick. Discard silently, log it, continue. A halt is itself a vulnerability.","fontSize":15}},
+    {"type":"rectangle","id":"count_box","x":30,"y":490,"width":540,"height":50,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Track: bad_tick_count per instrument per hour","fontSize":15}},
+    {"type":"rectangle","id":"alert_box","x":590,"y":490,"width":580,"height":50,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Alert if bad_tick_count > 50/hr — possible data quality issue","fontSize":15}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

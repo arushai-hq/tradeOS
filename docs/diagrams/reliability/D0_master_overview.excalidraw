@@ -1,0 +1,24 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1600,"height":80,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":400,"y":15,"width":800,"height":35,"text":"TradeOS — Reliability Engineering Master Overview","fontSize":30,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":350,"y":52,"width":900,"height":22,"text":"8 Disciplines that must be built before a single order is placed in production","fontSize":18,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"rectangle","id":"core","x":620,"y":430,"width":260,"height":110,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TradeOS\nCore Engine","fontSize":18,"strokeColor":"#ffffff"}},
+    {"type":"rectangle","id":"d1","x":60,"y":100,"width":250,"height":100,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D1 KILL SWITCH\nHierarchy\n3 Levels of Stop","fontSize":16}},
+    {"type":"rectangle","id":"d2","x":360,"y":100,"width":250,"height":100,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D2 ORDER STATE\nMachine\n8 States Tracked","fontSize":16}},
+    {"type":"rectangle","id":"d3","x":660,"y":100,"width":250,"height":100,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D3 WEBSOCKET\nResilience\nExp Backoff + Stale","fontSize":16}},
+    {"type":"rectangle","id":"d4","x":960,"y":100,"width":250,"height":100,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D4 OBSERVABILITY\nPrometheus+Loki\nGrafana Alerts","fontSize":16}},
+    {"type":"rectangle","id":"d5","x":60,"y":520,"width":250,"height":100,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D5 DATA VALIDATION\n5 Gate Filter\nBad Tick Detection","fontSize":16}},
+    {"type":"rectangle","id":"d6","x":360,"y":700,"width":250,"height":100,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D6 ASYNC FIRST\n5 Concurrent Tasks\nNothing Blocks","fontSize":16}},
+    {"type":"rectangle","id":"d7","x":660,"y":700,"width":250,"height":100,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D7 RECONCILIATION\nZerodha vs Local\nMismatch = Lock","fontSize":16}},
+    {"type":"rectangle","id":"d8","x":960,"y":520,"width":250,"height":100,"backgroundColor":"#eebefa","fillStyle":"solid","strokeColor":"#ec4899","strokeWidth":3,"roundness":{"type":3},"label":{"text":"D8 TESTING PYRAMID\nUnit+Integration\n+Simulation","fontSize":16}},
+    {"type":"rectangle","id":"phase1","x":60,"y":840,"width":500,"height":75,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":2,"roundness":{"type":3},"label":{"text":"PHASE 1: D1+D2+D3+D5+D6+D7+D8\n(all except full Prometheus stack)","fontSize":15}},
+    {"type":"rectangle","id":"phase2","x":580,"y":840,"width":500,"height":75,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"PHASE 2 ADD: D4 Full Observability\nPrometheus + Grafana + Loki on VPS","fontSize":15}},
+    {"type":"rectangle","id":"never_skip","x":60,"y":935,"width":1020,"height":55,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"roundness":{"type":3},"label":{"text":"NONE ARE OPTIONAL. Knight Capital skipped D1 and lost $440M in 45 minutes.","fontSize":16}},
+    {"type":"rectangle","id":"refbox","x":1100,"y":840,"width":360,"height":150,"backgroundColor":"#dbe4ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GitHub Reference:\ndocs/diagrams/reliability/\n\nD0_master_overview\nD1 through D8","fontSize":15}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

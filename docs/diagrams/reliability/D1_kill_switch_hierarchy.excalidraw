@@ -1,0 +1,24 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":800,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":200,"y":15,"width":400,"height":30,"text":"D1 — Kill Switch Hierarchy","fontSize":26,"strokeColor":"#ffffff","fontFamily":1,"textAlign":"left"},
+    {"type":"text","id":"sub","x":200,"y":48,"width":400,"height":20,"text":"3 Levels of Emergency Stop","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1,"textAlign":"left"},
+    {"type":"rectangle","id":"trigger_zone","x":30,"y":80,"width":220,"height":480,"backgroundColor":"#dbe4ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":1,"roundness":{"type":3},"opacity":60},
+    {"type":"text","id":"tz_label","x":55,"y":88,"width":120,"height":20,"text":"TRIGGERS","fontSize":14,"strokeColor":"#4a9eed","fontFamily":1},
+    {"type":"rectangle","id":"t1a","x":35,"y":112,"width":210,"height":35,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"roundness":{"type":3},"label":{"text":"3 consecutive losses","fontSize":13}},
+    {"type":"rectangle","id":"t1b","x":35,"y":155,"width":210,"height":35,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"roundness":{"type":3},"label":{"text":"Daily loss > 3% capital","fontSize":13}},
+    {"type":"rectangle","id":"t2a","x":35,"y":230,"width":210,"height":35,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"roundness":{"type":3},"label":{"text":"WS disconnected > 60s","fontSize":13}},
+    {"type":"rectangle","id":"t2b","x":35,"y":273,"width":210,"height":35,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":1,"roundness":{"type":3},"label":{"text":"API errors > 5 in 5 min","fontSize":13}},
+    {"type":"rectangle","id":"t3a","x":35,"y":375,"width":210,"height":35,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":1,"roundness":{"type":3},"label":{"text":"Manual override (Telegram)","fontSize":13}},
+    {"type":"rectangle","id":"t3b","x":35,"y":418,"width":210,"height":35,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":1,"roundness":{"type":3},"label":{"text":"Position mismatch detected","fontSize":13}},
+    {"type":"rectangle","id":"l1","x":290,"y":90,"width":460,"height":100,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":3,"roundness":{"type":3},"label":{"text":"LEVEL 1 — TRADE STOP\nStop new signals. Positions stay open.","fontSize":18}},
+    {"type":"rectangle","id":"l2","x":290,"y":230,"width":460,"height":100,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"roundness":{"type":3},"label":{"text":"LEVEL 2 — POSITION STOP\nCancels all orders. Closes all positions.","fontSize":18}},
+    {"type":"rectangle","id":"l3","x":290,"y":370,"width":460,"height":100,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":4,"roundness":{"type":3},"label":{"text":"LEVEL 3 — SYSTEM STOP\nKill everything. Full shutdown.","fontSize":18}},
+    {"type":"rectangle","id":"tool_box","x":290,"y":490,"width":460,"height":60,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Tool: pybreaker — Circuit Breaker Pattern","fontSize":16}},
+    {"type":"text","id":"note","x":294,"y":562,"width":460,"height":20,"text":"Escalate L1 -> L2 -> L3 automatically if condition persists > 5 min","fontSize":13,"strokeColor":"#757575","fontFamily":1}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}

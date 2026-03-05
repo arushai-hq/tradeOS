@@ -1,0 +1,26 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {"type":"rectangle","id":"title_bg","x":0,"y":0,"width":1200,"height":70,"backgroundColor":"#1e1e1e","fillStyle":"solid","strokeColor":"transparent","strokeWidth":0},
+    {"type":"text","id":"title","x":320,"y":15,"width":560,"height":30,"text":"D6 — Async-First Architecture","fontSize":26,"strokeColor":"#ffffff","fontFamily":1},
+    {"type":"text","id":"sub","x":240,"y":48,"width":720,"height":20,"text":"5 concurrent tasks in asyncio event loop — nothing blocks anything else","fontSize":16,"strokeColor":"#a0a0a0","fontFamily":1},
+    {"type":"rectangle","id":"event_loop_bg","x":30,"y":80,"width":1130,"height":540,"backgroundColor":"#dbe4ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"opacity":25,"roundness":{"type":3}},
+    {"type":"text","id":"ell","x":530,"y":88,"width":220,"height":25,"text":"asyncio Event Loop","fontSize":18,"strokeColor":"#4a9eed","fontFamily":1},
+    {"type":"rectangle","id":"ws_src","x":50,"y":130,"width":150,"height":70,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Zerodha\nWebSocket","fontSize":14}},
+    {"type":"rectangle","id":"task1","x":240,"y":115,"width":200,"height":100,"backgroundColor":"#a5d8ff","fillStyle":"solid","strokeColor":"#4a9eed","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TASK 1\nWebSocket Listener\ntick -> queue","fontSize":14}},
+    {"type":"rectangle","id":"queue","x":470,"y":145,"width":120,"height":55,"backgroundColor":"#c3fae8","fillStyle":"solid","strokeColor":"#06b6d4","strokeWidth":2,"roundness":{"type":3},"label":{"text":"asyncio\nQueue","fontSize":14}},
+    {"type":"rectangle","id":"task2","x":620,"y":115,"width":200,"height":100,"backgroundColor":"#b2f2bb","fillStyle":"solid","strokeColor":"#22c55e","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TASK 2\nSignal Processor\nqueue -> strategy","fontSize":14}},
+    {"type":"rectangle","id":"task3","x":240,"y":260,"width":200,"height":100,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TASK 3\nOrder Monitor\npoll Zerodha 5s","fontSize":14}},
+    {"type":"rectangle","id":"task4","x":470,"y":260,"width":200,"height":100,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TASK 4\nRisk Watchdog\ndrawdown check 1s","fontSize":14}},
+    {"type":"rectangle","id":"task5","x":700,"y":260,"width":200,"height":100,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":3,"roundness":{"type":3},"label":{"text":"TASK 5\nHeartbeat\nsystem alive 30s","fontSize":14}},
+    {"type":"rectangle","id":"risk_mgr","x":240,"y":410,"width":200,"height":75,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":3,"roundness":{"type":3},"label":{"text":"Risk Manager\n(Kill Switch Gate)","fontSize":14}},
+    {"type":"rectangle","id":"zerodha_api","x":500,"y":410,"width":160,"height":75,"backgroundColor":"#fff3bf","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Zerodha\nKiteConnect API","fontSize":14}},
+    {"type":"rectangle","id":"telegram","x":720,"y":410,"width":200,"height":75,"backgroundColor":"#eebefa","fillStyle":"solid","strokeColor":"#ec4899","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Telegram Bot\nCritical Alerts","fontSize":14}},
+    {"type":"rectangle","id":"golden_rule","x":30,"y":640,"width":1130,"height":55,"backgroundColor":"#ffc9c9","fillStyle":"solid","strokeColor":"#ef4444","strokeWidth":2,"roundness":{"type":3},"label":{"text":"GOLDEN RULE: Any blocking I/O (REST, file write, DB) must use asyncio.to_thread() — never block the event loop","fontSize":15}},
+    {"type":"rectangle","id":"tool_box","x":30,"y":710,"width":540,"height":50,"backgroundColor":"#d0bfff","fillStyle":"solid","strokeColor":"#8b5cf6","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Tools: asyncio + asyncio.Queue + asyncio.gather","fontSize":15}},
+    {"type":"rectangle","id":"crash_box","x":590,"y":710,"width":570,"height":50,"backgroundColor":"#ffd8a8","fillStyle":"solid","strokeColor":"#f59e0b","strokeWidth":2,"roundness":{"type":3},"label":{"text":"Crash policy: catch per-task, log, auto-restart task (not full system)","fontSize":14}}
+  ],
+  "appState": {"viewBackgroundColor":"#ffffff","gridSize":null}
+}
