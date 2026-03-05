@@ -1,0 +1,2 @@
+# tradeOS
+Arushai Tradingos test. 
