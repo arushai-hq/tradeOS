@@ -1,0 +1,49 @@
+# TradeOS Configuration
+# DO NOT commit secrets.yaml — use .env for API keys
+
+system:
+  mode: paper          # paper | live
+  broker: zerodha
+  exchange: NSE
+  timezone: Asia/Kolkata
+
+capital:
+  total: 500000        # ₹5L
+  allocation:
+    s1_intraday: 0.30
+    s2_swing: 0.30
+    s3_positional: 0.30
+    s4_event: 0.10
+
+risk:
+  max_loss_per_trade_pct: 0.015
+  max_daily_loss_pct: 0.03
+  max_open_positions: 3
+  hard_exit_time: "15:00"
+
+trading_hours:
+  market_open: "09:15"
+  market_close: "15:30"
+  intraday_exit: "15:00"
+
+watchlist:
+  - RELIANCE
+  - INFY
+  - HDFCBANK
+  - TCS
+  - ICICIBANK
+  - TATAMOTORS
+  - WIPRO
+  - AXISBANK
+  - SBIN
+  - KOTAKBANK
+  - LT
+  - BAJFINANCE
+  - HCLTECH
+  - MARUTI
+  - SUNPHARMA
+  - ULTRACEMCO
+  - TITAN
+  - ASIANPAINT
+  - NESTLEIND
+  - POWERGRID

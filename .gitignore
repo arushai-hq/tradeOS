@@ -1,0 +1,31 @@
+# Environment & Secrets
+.env
+*.env
+config/secrets.yaml
+config/api_keys.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+logs/*.log
+logs/*.csv
+
+# Data cache
+data_engine/cache/
+*.pkl
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
