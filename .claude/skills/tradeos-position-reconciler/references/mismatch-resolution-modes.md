@@ -63,24 +63,18 @@ shared_state["locked_instruments"].discard(token)
 **Never auto-adjust**: `ghost_position` type — ghost positions require manual handling.
 
 ```python
-def _handle_mismatch_auto_adjust(shared_state: dict, mismatch: dict, kite) -> None:
-    token = mismatch["instrument_token"]
+def _handle_mismatch_auto_adjust(shared_state: dict, mismatch: dict, reconciler) -> None:
     mtype = mismatch["mismatch_type"]
+    symbol = mismatch["tradingsymbol"]
 
     if mtype == "ghost_position":
         # NEVER auto-adjust ghost positions — fall back to manual
         _handle_mismatch_manual(shared_state, mismatch)
         return
 
-    # Update local state to match broker
-    if mismatch["broker_qty"] == 0:
-        # Broker says flat — clear local position
-        shared_state["position_state"].pop(token, None)
-    else:
-        # Broker has position — update local quantity
-        if token in shared_state["position_state"]:
-            shared_state["position_state"][token]["quantity"] = mismatch["broker_qty"]
-        # Note: if no local record at all, this is a ghost — handled above
+    # D7 never writes open_positions directly — always via reconciler.apply_fix()
+    # which goes through order_monitor's update path (single-writer rule).
+    reconciler.apply_fix(symbol=symbol, qty=mismatch["broker_qty"])
 
     log.warning(
         "position_auto_adjusted",
@@ -128,15 +122,10 @@ def _handle_ghost_position(shared_state: dict, mismatch: dict) -> None:
     # Lock — no new signals or orders for this instrument
     shared_state["locked_instruments"].add(token)
 
-    # Add a ghost marker to position_state so it shows up in heartbeat
-    shared_state["position_state"][token] = {
-        "instrument_token": token,
-        "tradingsymbol": symbol,
-        "quantity": broker_qty,       # from broker
-        "average_price": 0.0,         # unknown — we didn't place this
-        "is_ghost": True,             # flag for UI / heartbeat
-        "detected_at": datetime.now(IST).isoformat(),
-    }
+    # Ghost positions are NOT written to open_positions.
+    # open_positions tracks only positions the system placed via order_monitor.
+    # The gap between broker (has position) and open_positions (no record) IS the ghost.
+    # Operator resolves via Zerodha console; once resolved, order_monitor updates open_positions.
 
     log.critical(
         "ghost_position_detected",

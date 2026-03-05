@@ -27,7 +27,7 @@ related-skills: tradeos-kill-switch-guardian, tradeos-async-architecture, tradeo
 **Zerodha is always the source of truth.**
 
 When broker state and local state disagree, local state is wrong. Always.
-Never assume the local position_state is correct after a disruption. Always verify.
+Never assume local `open_positions` is correct after a disruption. Always verify against broker.
 
 ## The 4 Reconciliation Triggers
 
@@ -61,6 +61,10 @@ Read these for implementation details:
 
 ## Entry Point Pattern
 
+> **Position local map is built from `shared_state["open_positions"]` owned by
+> `order_monitor` (D6). D7 never writes this key directly.**
+> Mismatch corrections in auto-adjust mode go via `reconciler.apply_fix(symbol, qty)`.
+
 ```python
 async def reconcile_positions(shared_state: dict, kite, mode: str = "startup") -> bool:
     """
@@ -69,7 +73,7 @@ async def reconcile_positions(shared_state: dict, kite, mode: str = "startup") -
     On scheduled/post-disruption: locks affected instruments, returns False.
     """
     broker_positions = await asyncio.to_thread(kite.positions)
-    local_positions = shared_state["position_state"]
+    local_positions = shared_state["open_positions"]
 
     mismatches = _compare_positions(broker_positions["net"], local_positions)
 

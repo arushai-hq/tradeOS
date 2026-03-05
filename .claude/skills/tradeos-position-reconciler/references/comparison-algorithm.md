@@ -1,6 +1,10 @@
 # Position Comparison Algorithm
 
-The comparison algorithm takes broker positions (from Zerodha) and local positions (from `shared_state["position_state"]`) and returns a list of mismatches.
+The comparison algorithm takes broker positions (from Zerodha) and local positions
+(from `shared_state["open_positions"]`) and returns a list of mismatches.
+
+`open_positions` is owned by `order_monitor` (D6). D7 reads it as the local baseline —
+it never writes to it directly.
 
 ## Data Structures
 
@@ -18,19 +22,20 @@ BrokerPosition = {
     "product": str,                # "MIS" for intraday
 }
 
-# Local position record (in shared_state["position_state"])
+# Local position record (from shared_state["open_positions"])
+# Key is tradingsymbol (e.g. "RELIANCE") — value is this dict.
+# open_positions is written by order_monitor only — never by D7.
 LocalPosition = {
-    "instrument_token": int,
-    "tradingsymbol": str,
-    "quantity": int,
-    "average_price": float,
+    "qty": int,            # net quantity (positive=long, negative=short)
+    "avg_price": float,    # average entry price
+    "side": str,           # "BUY" or "SELL"
+    "order_id": str,       # order_id that created this position
     "entry_time": datetime,
-    "strategy": str,               # "s1" etc
 }
 
 # Mismatch record
 Mismatch = {
-    "instrument_token": int,
+    "instrument_token": int,       # from broker; 0 if not in broker history
     "tradingsymbol": str,
     "mismatch_type": str,          # "qty_mismatch" | "ghost_position" | "missing_local"
     "broker_qty": int,
@@ -39,12 +44,19 @@ Mismatch = {
 }
 ```
 
+## Building the Local Map
+
+```python
+# D7 reads open_positions as the local baseline — never writes to it
+local_map: dict[str, dict] = shared_state["open_positions"]
+```
+
 ## The Comparison Function
 
 ```python
 def _compare_positions(
     broker_positions: list[dict],
-    local_positions: dict[int, dict],
+    local_positions: dict[str, dict],  # from shared_state["open_positions"]
 ) -> list[dict]:
     """
     Compare broker positions vs local state.
@@ -58,50 +70,55 @@ def _compare_positions(
     """
     mismatches = []
 
-    # Build a set of broker tokens with non-zero quantity
-    broker_by_token: dict[int, dict] = {
-        pos["instrument_token"]: pos
+    # Build broker maps — by symbol for position matching
+    broker_by_symbol: dict[str, dict] = {
+        pos["tradingsymbol"]: pos
         for pos in broker_positions
         if pos["quantity"] != 0
     }
+    # Full broker map (including 0-qty entries) for token lookup on local-only mismatches
+    broker_token_by_symbol: dict[str, int] = {
+        pos["tradingsymbol"]: pos["instrument_token"]
+        for pos in broker_positions
+    }
 
     # Check every broker position against local state
-    for token, broker_pos in broker_by_token.items():
-        local_pos = local_positions.get(token)
+    for symbol, broker_pos in broker_by_symbol.items():
+        local_pos = local_positions.get(symbol)
 
         if local_pos is None:
             # Broker has position, we have no record → ghost
             mismatches.append({
-                "instrument_token": token,
-                "tradingsymbol": broker_pos["tradingsymbol"],
+                "instrument_token": broker_pos["instrument_token"],
+                "tradingsymbol": symbol,
                 "mismatch_type": "ghost_position",
                 "broker_qty": broker_pos["quantity"],
                 "local_qty": 0,
                 "severity": "critical",
             })
-        elif local_pos["quantity"] != broker_pos["quantity"]:
+        elif local_pos["qty"] != broker_pos["quantity"]:
             # Both have position but quantities differ
             mismatches.append({
-                "instrument_token": token,
-                "tradingsymbol": broker_pos["tradingsymbol"],
+                "instrument_token": broker_pos["instrument_token"],
+                "tradingsymbol": symbol,
                 "mismatch_type": "qty_mismatch",
                 "broker_qty": broker_pos["quantity"],
-                "local_qty": local_pos["quantity"],
+                "local_qty": local_pos["qty"],
                 "severity": "warning",
             })
 
     # Check every local position against broker
-    for token, local_pos in local_positions.items():
-        if local_pos["quantity"] == 0:
+    for symbol, local_pos in local_positions.items():
+        if local_pos["qty"] == 0:
             continue
-        if token not in broker_by_token:
+        if symbol not in broker_by_symbol:
             # We think we have position, broker says flat
             mismatches.append({
-                "instrument_token": token,
-                "tradingsymbol": local_pos["tradingsymbol"],
+                "instrument_token": broker_token_by_symbol.get(symbol, 0),
+                "tradingsymbol": symbol,
                 "mismatch_type": "missing_local",
                 "broker_qty": 0,
-                "local_qty": local_pos["quantity"],
+                "local_qty": local_pos["qty"],
                 "severity": "warning",
             })
 

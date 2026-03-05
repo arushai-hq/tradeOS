@@ -41,7 +41,6 @@ background scheduled task and is called from ws_listener after reconnect).
 | `kill_switch_level` | `int` | `KillSwitch.trigger()` (D1) | `0` | D1 |
 | `system_start_time` | `datetime` | `heartbeat` | `datetime.now(IST)` | D6 |
 | `tasks_alive` | `dict[str, bool]` | `heartbeat` | see below | D6 |
-| `position_state` | `dict[int, dict]` | `reconciler` | `{}` | D7 |
 | `recon_in_progress` | `bool` | `reconciler` | `False` | D7 |
 | `locked_instruments` | `set[int]` | `reconciler` | `set()` | D7 |
 | `tick_queue` | `asyncio.Queue` | startup | `asyncio.Queue(maxsize=1000)` | D6 |
@@ -96,16 +95,37 @@ Protocol:
 
 heartbeat **never** writes `ws_connected` or `disconnect_timestamp`.
 
-### position_state vs open_positions — two different purposes
+### open_positions — schema and single-writer rule
 
-| Key | Owner | Purpose |
-|-----|-------|---------|
-| `open_positions` | `order_monitor` | Real-time in-flight view. Updated on every order fill event. Used by risk_watchdog for position-count gating. |
-| `position_state` | `reconciler` | Verified-against-broker view. Updated during each reconciliation cycle. Used as the comparison baseline for the next cycle. |
+**Owner:** `order_monitor` only. **D7 reconciler never writes this key directly.**
 
-These keys represent the same underlying reality from two different vantage points.
-After a reconciliation that adjusts `position_state`, order_monitor must refresh
-`open_positions` to match. The reconciler's view is authoritative after any disruption.
+Structure — keyed by `tradingsymbol`:
+
+```python
+open_positions: dict[str, dict] = {
+    "RELIANCE": {
+        "qty": 10,
+        "avg_price": 2450.00,
+        "side": "BUY",
+        "order_id": "xxx",
+        "entry_time": datetime,   # IST-aware
+    },
+    "INFY": {
+        "qty": -5,
+        "avg_price": 1750.00,
+        "side": "SELL",
+        "order_id": "yyy",
+        "entry_time": datetime,
+    },
+}
+```
+
+Updated by `order_monitor` when an order reaches `FILLED` or `CANCELLED` terminal state.
+
+D7 reconciler reads `open_positions` to build its local comparison map.
+If reconciler needs to correct a mismatch (auto-adjust mode), it calls
+`reconciler.apply_fix(symbol, qty)` which routes through order_monitor's update path.
+D7 never writes `shared_state["open_positions"]` directly.
 
 ---
 
@@ -145,7 +165,7 @@ def _init_shared_state() -> dict:
             "order_monitor": True, "risk_watchdog": True, "heartbeat": True,
         },
         # D7 — reconciler (position reconciliation component)
-        "position_state": {},
+        # Note: open_positions (D2/D6) is the single position key — D7 reads it, never writes it
         "recon_in_progress": False,
         "locked_instruments": set(),
         # D6 — queues (also stored here for heartbeat queue-depth reporting)
