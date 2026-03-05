@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "five_tasks_gather_pattern",
+    "description": "main() coroutine must start all 5 tasks with asyncio.gather() in correct startup order",
+    "prompt": "Write the main() coroutine that starts all 5 TradeOS tasks concurrently using asyncio.gather(). The tasks are: ws_listener, signal_processor, order_monitor, risk_watchdog, and heartbeat.",
+    "expectations": [
+      {
+        "text": "All 5 tasks are started: ws_listener, signal_processor, order_monitor, risk_watchdog, heartbeat",
+        "key": "all_five_tasks_started"
+      },
+      {
+        "text": "Tasks are created in correct startup order: risk_watchdog first, then order_monitor, ws_listener, signal_processor, heartbeat last",
+        "key": "correct_startup_order"
+      },
+      {
+        "text": "Uses asyncio.gather() or equivalent to run tasks concurrently",
+        "key": "uses_asyncio_gather"
+      },
+      {
+        "text": "asyncio.gather() uses return_exceptions=True to prevent one crash killing all tasks",
+        "key": "return_exceptions_true"
+      },
+      {
+        "text": "Includes reconciliation step that completes BEFORE tasks are started",
+        "key": "reconciliation_before_tasks"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "blocking_io_uses_to_thread",
+    "description": "order_monitor must use asyncio.to_thread() for kite.orders() and asyncio.sleep(5)",
+    "prompt": "Write the order_monitor task that polls kite.orders() every 5 seconds and updates the order state machine.",
+    "expectations": [
+      {
+        "text": "Uses asyncio.to_thread(kite.orders) — not kite.orders() directly",
+        "key": "uses_to_thread_for_api"
+      },
+      {
+        "text": "Uses asyncio.sleep(5) — not time.sleep(5)",
+        "key": "uses_asyncio_sleep"
+      },
+      {
+        "text": "No synchronous API calls directly in the event loop (no kite.orders(), kite.positions() etc. without to_thread)",
+        "key": "no_sync_api_in_loop"
+      },
+      {
+        "text": "Handles API errors with try/except and continues polling — does NOT stop monitoring on error",
+        "key": "continues_on_error"
+      },
+      {
+        "text": "Updates shared_state['open_orders'] with fetched order data",
+        "key": "updates_shared_state"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "queue_overflow_drops_oldest",
+    "description": "tick queue producer must drop oldest tick (not block) when queue is full",
+    "prompt": "Write the tick queue producer for TradeOS that handles a full queue without blocking the ws_listener.",
+    "expectations": [
+      {
+        "text": "Checks queue.full() before attempting to put a new tick",
+        "key": "checks_queue_full"
+      },
+      {
+        "text": "If full: calls queue.get_nowait() to discard the oldest item first",
+        "key": "drops_oldest_on_overflow"
+      },
+      {
+        "text": "Logs WARNING 'queue_overflow' when discarding (structlog, not print)",
+        "key": "logs_queue_overflow_warning"
+      },
+      {
+        "text": "Never blocks the producer — does not use await queue.put() when full without first making room",
+        "key": "producer_never_blocks"
+      },
+      {
+        "text": "Includes the queue depth in the overflow log (queue.maxsize or queue.qsize())",
+        "key": "logs_queue_depth"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "risk_watchdog_triggers_kill_switch",
+    "description": "risk_watchdog must check daily loss every 1 second and trigger kill switch on breach",
+    "prompt": "Write the risk_watchdog task body that checks daily loss every 1 second and triggers the kill switch when MAX_DAILY_LOSS_PCT is breached.",
+    "expectations": [
+      {
+        "text": "Uses asyncio.sleep(1) loop — checks every 1 second",
+        "key": "one_second_interval"
+      },
+      {
+        "text": "Reads daily_pnl_pct from shared_state and compares to MAX_DAILY_LOSS_PCT (0.03)",
+        "key": "reads_shared_state_pnl"
+      },
+      {
+        "text": "Calls kill_switch.trigger(level=2) when daily_pnl_pct <= -MAX_DAILY_LOSS_PCT",
+        "key": "triggers_level2_on_breach"
+      },
+      {
+        "text": "Logs CRITICAL (not just ERROR) on its own crash — risk_watchdog crash is a critical event",
+        "key": "logs_critical_on_crash"
+      },
+      {
+        "text": "Does NOT auto-restart after crash — crash triggers Level 3 kill switch, not a quiet restart",
+        "key": "no_auto_restart_on_crash"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "startup_sequence_order_enforced",
+    "description": "Startup must ensure reconciliation completes and WS is connected before signal_processor starts",
+    "prompt": "Write the startup sequence that ensures reconciliation completes before any trading task starts, and that ws_listener connects before signal_processor begins.",
+    "expectations": [
+      {
+        "text": "Reconciliation called with await before any asyncio.create_task() calls",
+        "key": "reconciliation_awaited_before_tasks"
+      },
+      {
+        "text": "ws_listener is started (create_task) BEFORE signal_processor",
+        "key": "ws_listener_before_signal_processor"
+      },
+      {
+        "text": "A gate blocks signal_processor until ws_connected=True (polling loop or asyncio.wait or similar)",
+        "key": "ws_connected_gate"
+      },
+      {
+        "text": "risk_watchdog is started before ws_listener (first task created)",
+        "key": "risk_watchdog_first"
+      },
+      {
+        "text": "Startup mismatch aborts boot — system does not start trading if reconciliation finds mismatches",
+        "key": "mismatch_aborts_startup"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "crash_recovery_wrapper",
+    "description": "resilient_task wrapper must auto-restart all tasks except risk_watchdog which triggers Level 3",
+    "prompt": "Write the resilient_task wrapper that auto-restarts crashed tasks, and a separate risk_watchdog variant that triggers Level 3 kill switch instead of restarting.",
+    "expectations": [
+      {
+        "text": "resilient_task uses while True loop with try/except for auto-restart",
+        "key": "while_true_loop"
+      },
+      {
+        "text": "asyncio.CancelledError is re-raised — not caught and suppressed",
+        "key": "cancelled_error_reraised"
+      },
+      {
+        "text": "Waits asyncio.sleep(5) before restarting after a crash",
+        "key": "five_second_restart_pause"
+      },
+      {
+        "text": "Updates shared_state['tasks_alive'][name] = False on crash, True after restart",
+        "key": "updates_tasks_alive"
+      },
+      {
+        "text": "risk_watchdog variant calls kill_switch.trigger(level=3) on crash — no restart",
+        "key": "risk_watchdog_level3_on_crash"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "graceful_shutdown_sequence",
+    "description": "SIGTERM handler must set Level 1, wait for orders (max 30s), reconcile, cancel tasks, send Telegram",
+    "prompt": "Write the SIGTERM handler for graceful shutdown of the TradeOS trading system.",
+    "expectations": [
+      {
+        "text": "First action: sets kill switch Level 1 to stop new signals",
+        "key": "level1_first_on_shutdown"
+      },
+      {
+        "text": "Waits up to 30 seconds for open orders using asyncio.wait_for() with timeout=30",
+        "key": "30s_order_wait_with_timeout"
+      },
+      {
+        "text": "Runs final reconciliation before cancelling tasks",
+        "key": "final_reconciliation"
+      },
+      {
+        "text": "Cancels tasks in reverse startup order (heartbeat first, risk_watchdog last)",
+        "key": "reverse_order_cancellation"
+      },
+      {
+        "text": "Sends Telegram daily summary as part of shutdown sequence",
+        "key": "telegram_daily_summary_on_shutdown"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "heartbeat_detects_dead_task",
+    "description": "heartbeat task must detect dead tasks via tasks_alive dict and alert via Telegram",
+    "prompt": "Write the heartbeat task that detects when another task has stopped running and emits system state every 30 seconds.",
+    "expectations": [
+      {
+        "text": "Checks shared_state['tasks_alive'] dict every 30 seconds for False entries",
+        "key": "checks_tasks_alive_dict"
+      },
+      {
+        "text": "Logs CRITICAL when a task's alive status is False",
+        "key": "logs_critical_on_dead_task"
+      },
+      {
+        "text": "Sends Telegram WARNING alert for dead task detection",
+        "key": "telegram_alert_on_dead_task"
+      },
+      {
+        "text": "Emits 'system_heartbeat' log with queue depths (tick_q, order_q qsize), ws_connected, kill_switch_level, daily_pnl_pct",
+        "key": "heartbeat_log_includes_system_state"
+      },
+      {
+        "text": "Uses asyncio.sleep(30) — 30 second interval",
+        "key": "thirty_second_interval"
+      }
+    ]
+  }
+]

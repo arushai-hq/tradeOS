@@ -1,0 +1,838 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-async-architecture",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T17:23:00Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 134.8,
+        "tokens": 49352,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "all_five_tasks_started",
+          "text": "All 5 tasks are started: ws_listener, signal_processor, order_monitor, risk_watchdog, heartbeat",
+          "passed": true,
+          "evidence": "Lines 365-410 in main() create asyncio.Task objects for all 5 tasks: risk_watchdog via _resilient_risk_watchdog (line 366), order_monitor via resilient_task (line 377), ws_listener via resilient_task (line 385), signal_processor via resilient_task (line 397), heartbeat via resilient_task (line 405). All 5 are then passed to asyncio.gather(*tasks, ...) at line 428."
+        },
+        {
+          "key": "correct_startup_order",
+          "text": "Tasks are created in correct startup order: risk_watchdog first, then order_monitor, ws_listener, signal_processor, heartbeat last",
+          "passed": true,
+          "evidence": "In main(): Step 3 (line 363) creates risk_watchdog first; Step 4 (line 374) appends order_monitor; Step 5 (line 383) appends ws_listener; Step 7 (line 395) appends signal_processor (after _wait_for_ws_connected); Step 8 (line 403) appends heartbeat last. The tasks list order is [risk_watchdog, order_monitor, ws_listener, signal_processor, heartbeat] matching the mandatory startup order exactly."
+        },
+        {
+          "key": "uses_asyncio_gather",
+          "text": "Uses asyncio.gather() or equivalent to run tasks concurrently",
+          "passed": true,
+          "evidence": "Line 428: `await asyncio.gather(*tasks, return_exceptions=True)` collects all 5 asyncio.Task objects and runs them concurrently in the same event loop. Tasks are first created individually with asyncio.create_task() (ensuring they are scheduled immediately), then gathered for concurrent execution."
+        },
+        {
+          "key": "return_exceptions_true",
+          "text": "asyncio.gather() uses return_exceptions=True to prevent one crash killing all tasks",
+          "passed": true,
+          "evidence": "Line 428: `await asyncio.gather(*tasks, return_exceptions=True)` \u2014 the return_exceptions=True keyword argument is explicitly present, ensuring that if one task raises an unhandled exception it is returned as a result rather than propagated to cancel all other tasks."
+        },
+        {
+          "key": "reconciliation_before_tasks",
+          "text": "Includes reconciliation step that completes BEFORE tasks are started",
+          "passed": true,
+          "evidence": "Lines 354-361 in main(): `recon_result = await reconcile_on_startup(shared_state)` is awaited to completion (blocking the coroutine) before the first asyncio.create_task() call at line 366. If mismatches are detected, SystemExit is raised before any task creation occurs, enforcing the D7 discipline that reconciliation must succeed before any trading task starts."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 89.0,
+        "tokens": 39844,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "uses_to_thread_for_api",
+          "text": "Uses asyncio.to_thread(kite.orders) \u2014 not kite.orders() directly",
+          "passed": true,
+          "evidence": "Line: `orders = await asyncio.to_thread(kite.orders)` \u2014 the only code line referencing kite.orders is wrapped in asyncio.to_thread. All other appearances are in comments/docstrings."
+        },
+        {
+          "key": "uses_asyncio_sleep_not_time_sleep",
+          "text": "Uses asyncio.sleep(5) \u2014 not time.sleep(5)",
+          "passed": true,
+          "evidence": "`await asyncio.sleep(5)` is present at the bottom of the while loop. `time.sleep` does not appear anywhere in the file."
+        },
+        {
+          "key": "no_sync_calls_in_event_loop",
+          "text": "No synchronous API calls directly in the event loop",
+          "passed": true,
+          "evidence": "The only kite API call in runnable code is `await asyncio.to_thread(kite.orders)`. No blocking calls are made outside of to_thread. `time` module is not imported."
+        },
+        {
+          "key": "handles_errors_continues_polling",
+          "text": "Handles API errors with try/except and continues polling \u2014 does NOT stop on error",
+          "passed": true,
+          "evidence": "The while loop body is wrapped in `try/except Exception as e` which logs the error and falls through to `await asyncio.sleep(5)`, resuming the next poll cycle. `asyncio.CancelledError` is caught separately and re-raised to allow graceful shutdown without masking it."
+        },
+        {
+          "key": "updates_shared_state_open_orders",
+          "text": "Updates shared_state['open_orders'] with fetched order data",
+          "passed": true,
+          "evidence": "`shared_state[\"open_orders\"] = {o[\"order_id\"]: o for o in orders}` is executed after every successful kite.orders() poll, keying each order by its order_id for O(1) lookup."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 120.3,
+        "tokens": 39323,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "checks_queue_full",
+          "text": "Checks queue.full() before attempting to put a new tick",
+          "passed": true,
+          "evidence": "Line 40: `if queue.full():` is the first operation in put_tick_safe(), executed unconditionally before any put attempt. The entire overflow and put logic is gated on this check."
+        },
+        {
+          "key": "discards_oldest_with_get_nowait",
+          "text": "If full: calls queue.get_nowait() to discard the oldest item first",
+          "passed": true,
+          "evidence": "Line 42: `queue.get_nowait()` is called inside the `if queue.full():` block, removing the oldest item from the head of the queue before the new tick is enqueued. The asyncio.QueueEmpty exception is caught to handle the rare race condition."
+        },
+        {
+          "key": "logs_queue_overflow_warning",
+          "text": "Logs WARNING 'queue_overflow' when discarding (structlog, not print)",
+          "passed": true,
+          "evidence": "Lines 43-47: `log.warning('queue_overflow', queue='tick_queue', depth=queue.maxsize)` is called via structlog (imported at line 18, `log = structlog.get_logger()`). No bare print() statements anywhere in the file."
+        },
+        {
+          "key": "never_blocks_producer",
+          "text": "Never blocks the producer \u2014 does not use await queue.put() when full without first making room",
+          "passed": true,
+          "evidence": "Line 56: `await queue.put(tick)` is only reached after either (a) `queue.full()` returned False so there is existing space, or (b) `queue.get_nowait()` freed one slot. In both cases the put completes in at most one event-loop iteration without suspending. There is no code path that calls `await queue.put()` while the queue remains at maxsize."
+        },
+        {
+          "key": "includes_queue_depth_in_overflow_log",
+          "text": "Includes the queue depth in the overflow log (queue.maxsize or queue.qsize())",
+          "passed": true,
+          "evidence": "Line 46: `depth=queue.maxsize` is passed as a keyword argument to `log.warning('queue_overflow', ...)`. This uses `queue.maxsize` (the canonical capacity value from queue-specifications.md reference implementation) to report the configured depth of the tick_queue."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 99.5,
+        "tokens": 40901,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "one_second_interval",
+          "text": "Uses asyncio.sleep(1) loop \u2014 checks every 1 second",
+          "passed": true,
+          "evidence": "The main loop ends with `await asyncio.sleep(1)` at line 100, matching the 1-second interval specified in five-task-definitions.md for risk_watchdog. The sleep is placed at the bottom of the while True loop so all checks run first, then the task yields for exactly 1 second before the next cycle."
+        },
+        {
+          "key": "reads_shared_state_pnl",
+          "text": "Reads daily_pnl_pct from shared_state and compares to MAX_DAILY_LOSS_PCT (0.03)",
+          "passed": true,
+          "evidence": "Line `daily_pnl_pct: float = shared_state[\"daily_pnl_pct\"]` reads the value, and `if daily_pnl_pct <= -MAX_DAILY_LOSS_PCT:` performs the comparison. MAX_DAILY_LOSS_PCT is defined as the hardcoded constant 0.030 (3.0%) per CLAUDE.md rules. The condition uses <= -0.03 to catch exactly the breach threshold and below."
+        },
+        {
+          "key": "triggers_level2_on_breach",
+          "text": "Calls kill_switch.trigger(level=2) when daily_pnl_pct <= -MAX_DAILY_LOSS_PCT",
+          "passed": true,
+          "evidence": "When the daily loss check is triggered: `kill_switch.trigger(level=2, reason=\"daily_loss_exceeded\")` is called directly. Level 2 is correct: it is Position Stop (no new positions, flatten existing), as specified in the skill reference. The reason string matches the exact value from five-task-definitions.md."
+        },
+        {
+          "key": "logs_critical_on_crash",
+          "text": "Logs CRITICAL (not just ERROR) on its own crash \u2014 risk_watchdog crash is a critical event",
+          "passed": true,
+          "evidence": "The except clause uses `log.critical(\"risk_watchdog_crashed\", error=str(e), exc_info=True)` \u2014 it explicitly uses log.critical (not log.error). This matches the reference code in five-task-definitions.md and SKILL.md rule 6: 'risk_watchdog crash \u2192 Level 3 kill switch'. The structured log event name is `risk_watchdog_crashed`, consistent with structlog conventions in CLAUDE.md."
+        },
+        {
+          "key": "no_auto_restart_on_crash",
+          "text": "Does NOT auto-restart after crash \u2014 crash triggers Level 3 kill switch, not a quiet restart",
+          "passed": true,
+          "evidence": "After logging CRITICAL and triggering Level 3 (`kill_switch.trigger(level=3, reason=\"risk_watchdog_crashed\")`), the code calls `raise` to re-raise the exception. This propagates up to `_resilient_risk_watchdog`, which is the non-restarting wrapper defined in startup-shutdown-sequences.md. There is no retry loop, no sleep-and-continue, and no swallowing of the exception \u2014 the task terminates definitively. SKILL.md rule 6 is explicitly followed: 'risk_watchdog crash \u2192 Level 3 kill switch \u2014 never silently restart it'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 138.3,
+        "tokens": 44557,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "reconciliation_awaited_before_tasks",
+          "text": "Reconciliation called with await before any asyncio.create_task() calls",
+          "passed": true,
+          "evidence": "Line 'recon_result: ReconciliationResult = await reconcile_on_startup(shared_state)' appears in Step 2 of main(). The first asyncio.create_task() call (for risk_watchdog) is in Step 3, which only executes after the await returns. If reconciliation raises, SystemExit fires and no create_task() is ever called."
+        },
+        {
+          "key": "ws_listener_before_signal_processor",
+          "text": "ws_listener is started (create_task) BEFORE signal_processor",
+          "passed": true,
+          "evidence": "Step 6 appends the ws_listener create_task() to the tasks list. Step 7 then awaits the _wait_for_ws_connected gate. Step 8 appends signal_processor create_task() only after the gate returns. The ws_listener task is therefore both created earlier in the list and guaranteed to have run its connection logic before signal_processor exists."
+        },
+        {
+          "key": "ws_connected_gate",
+          "text": "A gate blocks signal_processor until ws_connected=True (polling loop or asyncio.wait or similar)",
+          "passed": true,
+          "evidence": "_wait_for_ws_connected() polls 'shared_state.get(\"ws_connected\")' every 0.5 s using 'await asyncio.sleep(0.5)' inside a while loop. It raises TimeoutError (aborting startup) if 30 s pass without ws_connected becoming True. signal_processor's create_task() call is placed AFTER 'await _wait_for_ws_connected(shared_state, ...)', so the task is never created unless the gate passes."
+        },
+        {
+          "key": "risk_watchdog_first",
+          "text": "risk_watchdog is started before ws_listener (first task created)",
+          "passed": true,
+          "evidence": "In Step 3 of main(), 'tasks = [asyncio.create_task(_resilient_risk_watchdog(\"risk_watchdog\", ...), name=\"risk_watchdog\")]' is the very first create_task() call in the function. order_monitor (Step 5), ws_listener (Step 6), signal_processor (Step 8), and heartbeat (Step 9) all use tasks.append() that follow. risk_watchdog is also given its own special non-restarting wrapper (_resilient_risk_watchdog) that escalates to Level 3 kill switch on crash."
+        },
+        {
+          "key": "mismatch_aborts_startup",
+          "text": "Startup mismatch aborts boot \u2014 system does not start trading if reconciliation finds mismatches",
+          "passed": true,
+          "evidence": "After 'await reconcile_on_startup(shared_state)', the code checks 'if recon_result.mismatches:' and executes 'raise SystemExit(\"Cannot start: ... position mismatch(es) detected.\")'. This exception exits the entire process before any asyncio.create_task() call is ever reached, so no trading task \u2014 not even risk_watchdog \u2014 starts if the broker state does not match local state."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 66.9,
+        "tokens": 38821,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "while_true_loop",
+          "text": "resilient_task uses while True loop with try/except for auto-restart",
+          "passed": true,
+          "evidence": "resilient_task contains 'while True:' at its outermost level, with a try/except block inside that catches Exception and loops back to call coro_fn(shared_state) again after the restart pause."
+        },
+        {
+          "key": "cancelled_error_reraised",
+          "text": "asyncio.CancelledError is re-raised \u2014 not caught and suppressed",
+          "passed": true,
+          "evidence": "Both resilient_task and _resilient_risk_watchdog contain an explicit 'except asyncio.CancelledError: raise' clause placed before the broad 'except Exception' handler, ensuring CancelledError is never swallowed."
+        },
+        {
+          "key": "five_second_restart_pause",
+          "text": "Waits asyncio.sleep(5) before restarting after a crash",
+          "passed": true,
+          "evidence": "In resilient_task's except Exception block: 'await asyncio.sleep(5)' appears between setting tasks_alive to False and setting it back to True, introducing a 5-second non-blocking pause before the while True loop iterates."
+        },
+        {
+          "key": "updates_tasks_alive",
+          "text": "Updates shared_state['tasks_alive'][name] = False on crash, True after restart",
+          "passed": true,
+          "evidence": "resilient_task sets shared_state['tasks_alive'][name] = False immediately after catching the exception, then sets shared_state['tasks_alive'][name] = True after the asyncio.sleep(5) pause, before logging 'task_restarted' and looping."
+        },
+        {
+          "key": "risk_watchdog_level3_on_crash",
+          "text": "risk_watchdog variant calls kill_switch.trigger(level=3) on crash \u2014 no restart",
+          "passed": true,
+          "evidence": "_resilient_risk_watchdog has no while True loop. On Exception it calls kill_switch.trigger(level=3, reason='risk_watchdog_crashed'), marks tasks_alive False, then re-raises \u2014 so the task terminates without restarting."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 81.8,
+        "tokens": 40416,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "level1_first_on_shutdown",
+          "text": "First action: sets kill switch Level 1 to stop new signals",
+          "passed": true,
+          "evidence": "In shutdown(), Step 1 is the very first operation after log.info('shutdown_initiated'): `kill_switch.trigger(level=1, reason='graceful_shutdown')`. No other logic executes before this call. This matches the skill reference exactly: 'Step 1: Stop new signals (Level 1 kill switch)'."
+        },
+        {
+          "key": "30s_order_wait_with_timeout",
+          "text": "Waits up to 30 seconds for open orders using asyncio.wait_for() with timeout=30",
+          "passed": true,
+          "evidence": "Step 2 uses `await asyncio.wait_for(_wait_for_orders_to_settle(shared_state), timeout=30.0)`. The helper `_wait_for_orders_to_settle` polls `shared_state['open_orders']` every 1 second until empty. TimeoutError is caught and logged as a warning, ensuring shutdown never blocks forever."
+        },
+        {
+          "key": "final_reconciliation",
+          "text": "Runs final reconciliation before cancelling tasks",
+          "passed": true,
+          "evidence": "Step 3 calls `await asyncio.wait_for(reconcile_on_shutdown(shared_state), timeout=15.0)` before any task.cancel() calls in Step 4. This ensures D7 reconciliation against Zerodha as source of truth completes before the task teardown begins."
+        },
+        {
+          "key": "reverse_order_cancellation",
+          "text": "Cancels tasks in reverse startup order (heartbeat first, risk_watchdog last)",
+          "passed": true,
+          "evidence": "Step 4 iterates `for task in reversed(tasks)`. The tasks list is constructed in startup order [risk_watchdog(0), order_monitor(1), ws_listener(2), signal_processor(3), heartbeat(4)], so reversed() yields heartbeat first and risk_watchdog last. A comment in the code explicitly documents this ordering with the index mapping."
+        },
+        {
+          "key": "telegram_daily_summary_on_shutdown",
+          "text": "Sends Telegram daily summary as part of shutdown sequence",
+          "passed": true,
+          "evidence": "Step 5 calls `await send_daily_summary_telegram(shared_state)` as the final action in the shutdown coroutine, after all tasks are cancelled and the structured shutdown log is emitted. This matches the skill reference: 'Step 5: Final log + Telegram daily summary'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 134.2,
+        "tokens": 57987,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "checks_tasks_alive_dict",
+          "text": "Checks shared_state['tasks_alive'] dict every 30 seconds for False entries",
+          "passed": true,
+          "evidence": "heartbeat_fn iterates `tasks_alive: dict[str, bool] = shared_state.get('tasks_alive', {})` and checks `if not alive:` on every cycle, which runs after `await asyncio.sleep(30)` at the top of the while-True loop. Lines 97-113 in solution.py."
+        },
+        {
+          "key": "logs_critical_on_dead_task",
+          "text": "Logs CRITICAL when a task's alive status is False",
+          "passed": true,
+          "evidence": "Inside the dead-task branch: `log.critical('task_not_alive', task=task_name)` is called immediately when `alive` is False. This matches the reference in five-task-definitions.md: `log.critical('task_not_alive', task=task_name)`. Lines 100-103 in solution.py."
+        },
+        {
+          "key": "telegram_alert_on_dead_task",
+          "text": "Sends Telegram WARNING alert for dead task detection",
+          "passed": true,
+          "evidence": "After logging CRITICAL, the code calls `await send_warning_alert(event='task_not_alive', task_name=task_name, ...)` which constructs a WARNING-level Telegram message (`\u26a0\ufe0f WARNING | TradeOS`) and sends it via `httpx.AsyncClient` (non-blocking). The `send_warning_alert` function is defined at lines 44-63. The alert is sent for each dead task found in the loop. Lines 104-116 in solution.py."
+        },
+        {
+          "key": "heartbeat_log_includes_system_state",
+          "text": "Emits 'system_heartbeat' log with queue depths (tick_q, order_q qsize), ws_connected, kill_switch_level, daily_pnl_pct",
+          "passed": true,
+          "evidence": "`log.info('system_heartbeat', ...)` is called with all required fields: `ws_connected=shared_state['ws_connected']`, `kill_switch_level=shared_state['kill_switch_level']`, `daily_pnl_pct=shared_state['daily_pnl_pct']`, and `queue_depths={'tick_q': tick_queue.qsize(), 'order_q': order_queue.qsize()}`. This exactly matches the log format specified in five-task-definitions.md. Lines 121-133 in solution.py."
+        },
+        {
+          "key": "thirty_second_interval",
+          "text": "Uses asyncio.sleep(30) \u2014 30 second interval",
+          "passed": true,
+          "evidence": "The first statement inside the `while True:` loop in `heartbeat_fn` is `await asyncio.sleep(30)`, which is a non-blocking 30-second wait using asyncio (not time.sleep). This matches the spec: 'Interval: Exactly 30 seconds (asyncio.sleep(30))'. Line 91 in solution.py."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 108.3,
+        "tokens": 51077,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "all_five_tasks_started",
+          "text": "All 5 tasks are started: ws_listener, signal_processor, order_monitor, risk_watchdog, heartbeat",
+          "passed": true,
+          "evidence": "Lines 236-240: asyncio.create_task() is called for all five coroutines \u2014 risk_watchdog(), order_monitor(), ws_listener(tick_queue), signal_processor(tick_queue), heartbeat(). All five are then passed to asyncio.gather() at lines 258-265."
+        },
+        {
+          "key": "correct_startup_order",
+          "text": "Tasks are created in correct startup order: risk_watchdog first, then order_monitor, ws_listener, signal_processor, heartbeat last",
+          "passed": true,
+          "evidence": "Lines 236-240 show create_task() calls in exact order: task_risk_watchdog (line 236), task_order_monitor (line 237), task_ws_listener (line 238), task_signal_processor (line 239), task_heartbeat (line 240). The docstring at lines 210-215 also explicitly documents this ordering rationale."
+        },
+        {
+          "key": "uses_asyncio_gather",
+          "text": "Uses asyncio.gather() or equivalent to run tasks concurrently",
+          "passed": true,
+          "evidence": "Lines 258-265: asyncio.gather() is called with all five task objects (task_risk_watchdog, task_order_monitor, task_ws_listener, task_signal_processor, task_heartbeat) and awaited, running them concurrently in a single event loop."
+        },
+        {
+          "key": "gather_return_exceptions_true",
+          "text": "asyncio.gather() uses return_exceptions=True to prevent one crash killing all tasks",
+          "passed": true,
+          "evidence": "Line 264: return_exceptions=True is passed to asyncio.gather(). Lines 270-288 then inspect results and log any exceptions via log.critical() without re-raising, ensuring a crashed task does not kill the others."
+        },
+        {
+          "key": "reconciliation_before_tasks",
+          "text": "Includes reconciliation step that completes BEFORE tasks are started",
+          "passed": true,
+          "evidence": "Line 225: 'await run_reconciliation()' is called and must complete (or raise) before execution reaches line 231 where the tick queue is created and lines 236-240 where tasks are created. The run_reconciliation() coroutine (lines 159-187) wraps blocking Zerodha REST calls in asyncio.to_thread() and raises on failure, preventing task startup on unresolved mismatches."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 71.2,
+        "tokens": 31857,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "uses_to_thread_for_api",
+          "text": "Uses asyncio.to_thread(kite.orders) \u2014 not kite.orders() directly",
+          "passed": true,
+          "evidence": "Line 39: `orders = await asyncio.to_thread(kite.orders)` \u2014 kite.orders is passed as a callable reference (not called directly), and awaited via asyncio.to_thread so the blocking HTTP call runs in a thread pool without blocking the event loop."
+        },
+        {
+          "key": "uses_asyncio_sleep",
+          "text": "Uses asyncio.sleep(5) \u2014 not time.sleep(5)",
+          "passed": true,
+          "evidence": "Line 70: `await asyncio.sleep(POLL_INTERVAL_SECONDS)` where POLL_INTERVAL_SECONDS = 5 (line 18). There is zero usage of time.sleep anywhere in the file."
+        },
+        {
+          "key": "no_sync_calls_in_event_loop",
+          "text": "No synchronous API calls directly in the event loop",
+          "passed": true,
+          "evidence": "The only broker call is `asyncio.to_thread(kite.orders)` on line 39, which offloads the blocking call to a thread pool. `kite.orders()` (direct synchronous call) does not appear anywhere in the file."
+        },
+        {
+          "key": "handles_api_errors_continues_polling",
+          "text": "Handles API errors with try/except and continues polling \u2014 does NOT stop on error",
+          "passed": true,
+          "evidence": "Lines 36-67: The entire poll body is wrapped in `try...except Exception as api_exc`. On error, the exception is logged (line 64-66) and execution falls through to `await asyncio.sleep(POLL_INTERVAL_SECONDS)` on line 70 inside the `while True` loop, so polling always continues regardless of API failures."
+        },
+        {
+          "key": "updates_shared_state_open_orders",
+          "text": "Updates shared_state['open_orders'] with fetched order data",
+          "passed": true,
+          "evidence": "Line 42: `shared_state[\"open_orders\"] = orders` \u2014 immediately after a successful API call the shared dictionary is updated with the full list of orders returned by kite.orders."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 60.2,
+        "tokens": 30879,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "checks_queue_full",
+          "text": "Checks queue.full() before attempting to put a new tick",
+          "passed": true,
+          "evidence": "Line 25: `if queue.full():` is the first thing evaluated inside enqueue_tick() before any put attempt is made. The guard fires for every tick enqueue call."
+        },
+        {
+          "key": "discards_oldest_with_get_nowait",
+          "text": "If full: calls queue.get_nowait() to discard the oldest item first",
+          "passed": true,
+          "evidence": "Lines 26-27: inside the `if queue.full():` branch, `discarded = queue.get_nowait()` removes the head (oldest item) of the queue immediately and non-blocking before inserting the new tick."
+        },
+        {
+          "key": "logs_warning_queue_overflow",
+          "text": "Logs WARNING 'queue_overflow' when discarding (structlog, not print)",
+          "passed": true,
+          "evidence": "Lines 28-33: `log.warning('queue_overflow', ...)` is called immediately after get_nowait(). Uses `structlog.get_logger()` (line 11), not bare print(). The event name is the literal string 'queue_overflow'."
+        },
+        {
+          "key": "never_blocks_producer",
+          "text": "Never blocks the producer \u2014 does not use await queue.put() when full without first making room",
+          "passed": true,
+          "evidence": "The implementation exclusively uses `queue.put_nowait()` (line 44) and `queue.get_nowait()` (line 27), both of which are synchronous and raise exceptions rather than suspending. `await queue.put()` is never called anywhere in the module. The only `await` in the producer loop is `await asyncio.sleep(0)` to yield the event loop \u2014 not to wait for queue space."
+        },
+        {
+          "key": "logs_queue_depth",
+          "text": "Includes the queue depth in the overflow log (queue.maxsize or queue.qsize())",
+          "passed": true,
+          "evidence": "Lines 30-32: the log call includes both `queue_depth=queue.maxsize` (the maximum capacity) and `queue_current_size=queue.qsize()` (current occupancy after the discard), giving full context for the overflow event. The same fields appear in the fallback warning at lines 51-52."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 67.8,
+        "tokens": 32429,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "one_second_interval",
+          "text": "Uses asyncio.sleep(1) loop \u2014 checks every 1 second",
+          "passed": true,
+          "evidence": "The task body is a `while True:` loop with `await asyncio.sleep(1)` at the top of each iteration (line: `await asyncio.sleep(1)`). This ensures exactly one check per second without blocking the event loop."
+        },
+        {
+          "key": "reads_shared_state_pnl",
+          "text": "Reads daily_pnl_pct from shared_state and compares to MAX_DAILY_LOSS_PCT (0.03)",
+          "passed": true,
+          "evidence": "`daily_pnl_pct: float = shared_state.get('daily_pnl_pct', 0.0)` reads the value from the shared dict each tick. The comparison `if daily_pnl_pct <= -MAX_DAILY_LOSS_PCT` uses the hardcoded constant `MAX_DAILY_LOSS_PCT = 0.03`."
+        },
+        {
+          "key": "triggers_level2_on_breach",
+          "text": "Calls kill_switch.trigger(level=2) when daily_pnl_pct <= -MAX_DAILY_LOSS_PCT",
+          "passed": true,
+          "evidence": "Inside the breach condition block: `result = kill_switch.trigger(level=2)` followed by `if asyncio.iscoroutine(result): await result`. This handles both sync and async kill switch implementations. The condition is `daily_pnl_pct <= -MAX_DAILY_LOSS_PCT` which correctly fires at exactly -3% and below."
+        },
+        {
+          "key": "logs_critical_on_crash",
+          "text": "Logs CRITICAL (not just ERROR) on its own crash \u2014 risk_watchdog crash is a critical event",
+          "passed": true,
+          "evidence": "In the `except Exception` block (which handles any unexpected crash): `log.critical('risk_watchdog_crashed', error=str(exc), ...)`. Uses `log.critical(...)` explicitly, not `log.error(...)`. A second `log.critical('kill_switch_level3_triggered', ...)` follows after the Level 3 trigger. This is distinct from the `CancelledError` path which uses `log.info` for graceful shutdown."
+        },
+        {
+          "key": "no_auto_restart_on_crash",
+          "text": "Does NOT auto-restart after crash \u2014 crash triggers Level 3 kill switch, not a quiet restart",
+          "passed": true,
+          "evidence": "The `except Exception` block does NOT contain a retry loop, `continue`, or recursive call. After logging CRITICAL and triggering Level 3, it executes `raise` \u2014 re-raising the original exception. This terminates the coroutine and lets the asyncio task fail, which the outer task supervisor (e.g. `asyncio.gather`) will surface as a crash. There is no `while True` wrapping the outer try/except, so the crash propagates to the caller."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 144.6,
+        "tokens": 45311,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "reconciliation_awaited_before_tasks",
+          "text": "Reconciliation called with await before any asyncio.create_task() calls",
+          "passed": true,
+          "evidence": "In startup() at line 327: `result = await run_reconciliation(state)` is a plain await that fully completes before the first asyncio.create_task() call appears at line 341 (risk_watchdog). No create_task() is issued before the await returns. If reconciliation raises or returns MISMATCH, execution never reaches any create_task()."
+        },
+        {
+          "key": "ws_listener_before_signal_processor",
+          "text": "ws_listener is started (create_task) BEFORE signal_processor",
+          "passed": true,
+          "evidence": "In startup(): t_ws_listener = asyncio.create_task(task_ws_listener(state), name='ws_listener') is created at line 359 with logged order=3. t_signal_processor = asyncio.create_task(task_signal_processor(state), name='signal_processor') is created at line 370 with logged order=4. ws_listener is unconditionally created first."
+        },
+        {
+          "key": "ws_connected_gate",
+          "text": "A gate blocks signal_processor until ws_connected=True (polling loop or asyncio.wait or similar)",
+          "passed": true,
+          "evidence": "In task_signal_processor() at lines 238-242: `while not state.ws_connected: if state.shutdown_event.is_set(): return; await asyncio.sleep(WS_GATE_POLL_INTERVAL)`. This polling loop runs at 0.5s intervals and prevents any tick from being dequeued or any strategy logic from executing until state.ws_connected is True, which is set by task_ws_listener() after a successful connection."
+        },
+        {
+          "key": "risk_watchdog_first",
+          "text": "risk_watchdog is started before ws_listener (first task created)",
+          "passed": true,
+          "evidence": "In startup() the create_task() call order is: (1) risk_watchdog at line 341, (2) heartbeat at line 350, (3) ws_listener at line 359, (4) signal_processor at line 370, (5) order_monitor at line 379. risk_watchdog is the very first create_task() call, ensuring risk controls are active before any market data or order processing begins."
+        },
+        {
+          "key": "mismatch_aborts_startup",
+          "text": "Startup mismatch aborts boot \u2014 system does not start trading if reconciliation finds mismatches",
+          "passed": true,
+          "evidence": "In startup() at lines 329-333: `if result == ReconciliationResult.MISMATCH: raise StartupAbortError(...)`. In _compare_with_local_state(), any mismatch locks the instrument, logs a critical event, and sends a Telegram alert before returning a non-empty list. In main() at the top level, StartupAbortError is caught and sys.exit(1) is called. Because the raise happens before any create_task() call, zero tasks are created and no trading occurs when a mismatch is found."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 134.7,
+        "tokens": 64498,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "while_true_loop",
+          "text": "resilient_task uses while True loop with try/except for auto-restart",
+          "passed": true,
+          "evidence": "Line 98: `while True:` wraps the entire try/except block inside resilient_task. The `except Exception` branch at line 122 logs the crash, marks tasks_alive False, sleeps 5s, then falls through to the bottom of the loop where `log.info('resilient_task_restarting', ...)` fires before the loop iterates again and the inner coroutine is invoked anew via `await coro_fn(*args, **kwargs)` at line 103."
+        },
+        {
+          "key": "cancelled_error_reraised",
+          "text": "asyncio.CancelledError is re-raised \u2014 not caught and suppressed",
+          "passed": true,
+          "evidence": "In resilient_task (line 115-120): `except asyncio.CancelledError:` block logs the event, marks the task dead, then unconditionally calls `raise`. In risk_watchdog (line 199-203): `except asyncio.CancelledError:` block logs the event, marks the task dead, then unconditionally calls `raise`. Neither wrapper ever suppresses CancelledError."
+        },
+        {
+          "key": "five_second_restart_pause",
+          "text": "Waits asyncio.sleep(5) before restarting after a crash",
+          "passed": true,
+          "evidence": "Module-level constant `RESTART_PAUSE_S: int = 5` defined at line 39. Inside the `except Exception` handler in resilient_task (line 135): `await asyncio.sleep(RESTART_PAUSE_S)` \u2014 a non-blocking 5-second pause before the while loop iterates and restarts the inner coroutine. risk_watchdog has no restart loop (by design), so no sleep is needed there."
+        },
+        {
+          "key": "updates_tasks_alive",
+          "text": "Updates shared_state['tasks_alive'][name] = False on crash, True after restart",
+          "passed": true,
+          "evidence": "Helper `_set_alive(shared_state, name, alive)` at line 46 writes `shared_state['tasks_alive'][name]`. Inside resilient_task: `_set_alive(shared_state, name, True)` at line 100 runs at the TOP of the while loop on every iteration (first start + every restart). `_set_alive(shared_state, name, False)` at line 132 runs inside `except Exception` immediately when a crash is detected, BEFORE the 5s sleep and before the restart. On CancelledError (line 119), False is also written before re-raising. In risk_watchdog: True is written at line 182 on start; False is written at line 215 when the crash occurs."
+        },
+        {
+          "key": "risk_watchdog_level3_on_crash",
+          "text": "risk_watchdog variant calls kill_switch.trigger(level=3) on crash \u2014 no restart",
+          "passed": true,
+          "evidence": "risk_watchdog (line 145) has a single try/except with NO while True loop. Inside `except Exception as exc` (line 205): `_set_alive` marks the task dead (line 215), then `kill_switch.trigger(level=3)` is called at line 221 (with coroutine support at lines 222-223). The handler ends with `raise` at line 239, which re-raises the original exception causing the coroutine to exit. There is no restart mechanism \u2014 the task terminates permanently after triggering Level 3."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 154.9,
+        "tokens": 55457,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "level1_first_on_shutdown",
+          "text": "First action: sets kill switch Level 1 to stop new signals",
+          "passed": true,
+          "evidence": "graceful_shutdown() begins at Step 1 with kill_switch.trigger(level=1, reason='graceful_shutdown_initiated') before any other action. This is the very first executable line of the shutdown coroutine, logged as 'shutdown_kill_switch_level1_set'. No order waiting, reconciliation, or task cancellation happens before this call."
+        },
+        {
+          "key": "30s_order_wait_with_timeout",
+          "text": "Waits up to 30 seconds for open orders using asyncio.wait_for() with timeout=30",
+          "passed": true,
+          "evidence": "Step 2 in graceful_shutdown() uses: await asyncio.wait_for(order_tracker.wait_for_all_terminal(), timeout=ORDER_WAIT_TIMEOUT_S) where ORDER_WAIT_TIMEOUT_S = 30. asyncio.TimeoutError is caught and logged as a warning, then the shutdown sequence continues. The constant is defined at module level as ORDER_WAIT_TIMEOUT_S = 30."
+        },
+        {
+          "key": "final_reconciliation",
+          "text": "Runs final reconciliation before cancelling tasks",
+          "passed": true,
+          "evidence": "Step 3 in graceful_shutdown() calls await run_final_reconciliation() explicitly before the task cancellation loop in Step 4. run_final_reconciliation() wraps the blocking Zerodha REST calls via asyncio.to_thread(_blocking_reconcile_stub), logs 'final_reconciliation_started' and 'final_reconciliation_complete', and is marked as trigger='shutdown'. It runs before any task.cancel() is called."
+        },
+        {
+          "key": "reverse_order_cancellation",
+          "text": "Cancels tasks in reverse startup order (heartbeat first, risk_watchdog last)",
+          "passed": true,
+          "evidence": "Step 4 defines teardown_order = ['heartbeat', 'signal_processor', 'ws_listener', 'order_monitor', 'risk_watchdog'] and iterates this list to call task.cancel() followed by asyncio.wait_for(asyncio.shield(task), timeout=TASK_CANCEL_TIMEOUT_S). This is the exact reverse of the startup order defined in main(): risk_watchdog \u2192 order_monitor \u2192 ws_listener \u2192 signal_processor \u2192 heartbeat. heartbeat is cancelled first; risk_watchdog is cancelled last."
+        },
+        {
+          "key": "telegram_daily_summary_on_shutdown",
+          "text": "Sends Telegram daily summary as part of shutdown sequence",
+          "passed": true,
+          "evidence": "Step 5 in graceful_shutdown() calls await send_telegram_daily_summary(session_store, trigger='graceful_shutdown'). This function computes session stats via session_store.summary_stats(), formats a human-readable message with _format_daily_summary(), and POSTs to the Telegram Bot API using aiohttp.ClientSession (non-blocking, D6 compliant). It is the final step before the 'tradeos_shutdown_complete' log line."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 67.8,
+        "tokens": 33450,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "checks_tasks_alive_dict",
+          "text": "Checks shared_state['tasks_alive'] dict every 30 seconds for False entries",
+          "passed": true,
+          "evidence": "Inside the `while True` loop, after `await asyncio.sleep(30)`, the code reads `tasks_alive = shared_state.get('tasks_alive', {})` and then iterates over ALL_TASKS checking `tasks_alive.get(task_name, False)`. Any task whose value is False (or absent) is flagged as dead. This check happens on every 30-second tick for all five task names: ws_listener, signal_processor, order_monitor, risk_watchdog, heartbeat."
+        },
+        {
+          "key": "logs_critical_on_dead_task",
+          "text": "Logs CRITICAL when a task's alive status is False",
+          "passed": true,
+          "evidence": "When `is_alive` is False the code calls `log.critical('dead_task_detected', task=task_name, action='immediate_investigation_required')`. structlog is used throughout; the call is made with keyword context so the output is a structured JSON log line at CRITICAL severity, satisfying the project's logging convention."
+        },
+        {
+          "key": "telegram_alert_on_dead_task",
+          "text": "Sends Telegram WARNING alert for dead task detection",
+          "passed": true,
+          "evidence": "Immediately after the CRITICAL log, the code retrieves `alert_fn = shared_state.get('send_telegram_alert')` and, if present, calls `await alert_fn('WARNING', f\"[TradeOS] Dead task detected: '{task_name}' ...\")`. The first positional argument is the string 'WARNING', matching the expected level. Failures in the Telegram call are caught with a specific `except Exception` and logged as an error \u2014 they never crash the heartbeat loop."
+        },
+        {
+          "key": "heartbeat_log_includes_system_state",
+          "text": "Emits 'system_heartbeat' log with queue depths (tick_q, order_q qsize), ws_connected, kill_switch_level, daily_pnl_pct",
+          "passed": true,
+          "evidence": "After the dead-task loop, the code emits `log.info('system_heartbeat', tick_q_depth=tick_q_depth, order_q_depth=order_q_depth, ws_connected=ws_connected, kill_switch_level=kill_switch_level, daily_pnl_pct=round(daily_pnl_pct, 6), tasks_alive=tasks_alive)`. Queue depths are obtained via `.qsize()` on `shared_state['tick_q']` and `shared_state['order_q']`. All five required fields are present in the log call."
+        },
+        {
+          "key": "thirty_second_interval",
+          "text": "Uses asyncio.sleep(30) \u2014 30 second interval",
+          "passed": true,
+          "evidence": "The constant `HEARTBEAT_INTERVAL_SECONDS = 30` is defined at module level. The loop body starts with `await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)`. There is no use of `time.sleep()` anywhere in the file. The `asyncio.CancelledError` raised by cancellation is caught only to emit a clean shutdown log and then `return`, ensuring the loop exits without swallowing the cancellation."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 108.1,
+        "stddev": 27.4718,
+        "min": 66.9,
+        "max": 138.3
+      },
+      "tokens": {
+        "mean": 43900.125,
+        "stddev": 6686.1059,
+        "min": 38821,
+        "max": 57987
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 101.1875,
+        "stddev": 39.1919,
+        "min": 60.2,
+        "max": 154.9
+      },
+      "tokens": {
+        "mean": 43119.75,
+        "stddev": 12883.2029,
+        "min": 30879,
+        "max": 64498
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+6.9",
+      "tokens": "+780"
+    }
+  },
+  "notes": []
+}
