@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "invalid_state_transition_raises",
+    "description": "Invalid state transitions must raise InvalidStateTransition, not silently fail",
+    "prompt": "write the order state machine with python-statemachine — need all 8 states from CREATED to FILLED including PARTIALLY_FILLED and PENDING_CANCEL transitions. Invalid state transitions must raise an exception and be logged at CRITICAL level.",
+    "expectations": [
+      {
+        "text": "Uses python-statemachine library (StateMachine, State imports)",
+        "key": "uses_python_statemachine"
+      },
+      {
+        "text": "Defines all 8 states: CREATED, SUBMITTED, ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, REJECTED, PENDING_CANCEL, CANCELLED (at minimum)",
+        "key": "defines_8_states"
+      },
+      {
+        "text": "Raises a custom exception (InvalidStateTransition or similar) on invalid transitions",
+        "key": "raises_on_invalid_transition"
+      },
+      {
+        "text": "Logs transition failures at CRITICAL or ERROR level using structlog",
+        "key": "logs_critical_on_invalid"
+      },
+      {
+        "text": "Includes TERMINAL_STATES set or equivalent marking FILLED, CANCELLED, REJECTED as terminal",
+        "key": "terminal_states_defined"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "zerodha_status_mapping",
+    "description": "Map kite COMPLETE/OPEN/CANCELLED to local states correctly",
+    "prompt": "map kite COMPLETE/OPEN/CANCELLED to local states — implement the function that takes a Zerodha order status string and returns the correct TradeOS state transition for the order state machine",
+    "expectations": [
+      {
+        "text": "Maps 'COMPLETE' to FILLED state (via fill() transition or equivalent)",
+        "key": "maps_complete_to_filled"
+      },
+      {
+        "text": "Maps 'OPEN' to ACKNOWLEDGED (or SUBMITTED) state",
+        "key": "maps_open_to_acknowledged"
+      },
+      {
+        "text": "Maps 'CANCELLED' to CANCELLED state",
+        "key": "maps_cancelled_to_cancelled"
+      },
+      {
+        "text": "Maps 'REJECTED' to REJECTED state",
+        "key": "maps_rejected_to_rejected"
+      },
+      {
+        "text": "Handles unknown status by marking order as UNKNOWN and logging CRITICAL",
+        "key": "handles_unknown_status"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "startup_reconciliation_system_ready",
+    "description": "system_ready = False until Zerodha reconciliation passes with zero UNKNOWN orders",
+    "prompt": "write startup reconciliation before placing orders — the system must set system_ready=False on startup, fetch all open orders from Zerodha, compare against local order_registry, mark any unrecognized orders as UNKNOWN, and only set system_ready=True when there are zero UNKNOWN orders",
+    "expectations": [
+      {
+        "text": "Sets system_ready = False at startup before reconciliation",
+        "key": "starts_not_ready"
+      },
+      {
+        "text": "Fetches orders from Zerodha using asyncio.to_thread() or equivalent non-blocking call",
+        "key": "fetches_zerodha_orders"
+      },
+      {
+        "text": "Creates UNKNOWN state entries for orders found on Zerodha but not in local registry",
+        "key": "creates_unknown_entries"
+      },
+      {
+        "text": "Sets system_ready = True only when unknown_count == 0",
+        "key": "sets_ready_on_zero_unknown"
+      },
+      {
+        "text": "Sends Telegram alert (or logs CRITICAL) when UNKNOWN orders exist",
+        "key": "alerts_on_unknown_orders"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "duplicate_order_prevention",
+    "description": "DuplicateOrderError raised when active order exists for same symbol",
+    "prompt": "prevent duplicate orders for same symbol — implement the gate check that raises DuplicateOrderError if an active (non-terminal) order already exists for the tradingsymbol before calling kite.place_order()",
+    "expectations": [
+      {
+        "text": "Defines or raises DuplicateOrderError (custom exception)",
+        "key": "defines_duplicate_error"
+      },
+      {
+        "text": "Checks for active orders using TERMINAL_STATES set (FILLED, CANCELLED, REJECTED, EXPIRED, UNKNOWN)",
+        "key": "checks_active_states"
+      },
+      {
+        "text": "Raises DuplicateOrderError BEFORE calling kite.place_order()",
+        "key": "raises_before_placement"
+      },
+      {
+        "text": "PARTIALLY_FILLED order blocks a new order for the same symbol (not treated as terminal)",
+        "key": "partially_filled_blocks_duplicate"
+      },
+      {
+        "text": "Logs the duplicate attempt with order_id, symbol, and current state",
+        "key": "logs_duplicate_attempt"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "partially_filled_not_terminal",
+    "description": "PARTIALLY_FILLED must not release instrument lock or be treated as FILLED",
+    "prompt": "handle PARTIALLY_FILLED orders — when an order is partially filled it should NOT be treated as complete. The instrument lock must remain, position tracking should only count the filled quantity, and new orders for the same symbol must still be blocked.",
+    "expectations": [
+      {
+        "text": "PARTIALLY_FILLED is defined as a non-terminal state (not in TERMINAL_STATES)",
+        "key": "partially_filled_is_nonterminal"
+      },
+      {
+        "text": "on_enter_PARTIALLY_FILLED callback does NOT release the instrument lock",
+        "key": "lock_not_released_on_partial"
+      },
+      {
+        "text": "on_enter_FILLED callback releases the instrument lock (only FILLED does this)",
+        "key": "lock_released_on_full_fill"
+      },
+      {
+        "text": "PARTIALLY_FILLED → FILLED is a valid transition (remaining qty fills)",
+        "key": "partial_to_filled_transition_valid"
+      },
+      {
+        "text": "Duplicate check blocks new orders when existing order is PARTIALLY_FILLED",
+        "key": "partial_blocks_new_orders"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "unknown_order_on_restart",
+    "description": "Orders found on Zerodha but not in local registry must become UNKNOWN + lock instrument",
+    "prompt": "UNKNOWN order on restart — when startup reconciliation finds an order on Zerodha that does not exist in the local order_registry, it must create an UNKNOWN state machine entry, lock the instrument, log at CRITICAL level, and prevent any new orders for that symbol",
+    "expectations": [
+      {
+        "text": "Creates an OrderStateMachine entry for the unrecognized Zerodha order in UNKNOWN state",
+        "key": "creates_unknown_state_machine"
+      },
+      {
+        "text": "Adds the symbol to instrument_locks set (or equivalent lock mechanism)",
+        "key": "locks_instrument_on_unknown"
+      },
+      {
+        "text": "Logs the unknown order at CRITICAL level with order_id and symbol",
+        "key": "logs_critical_unknown"
+      },
+      {
+        "text": "system_ready remains False when any UNKNOWN orders exist",
+        "key": "system_not_ready_with_unknown"
+      },
+      {
+        "text": "UNKNOWN is defined as a terminal state (no further transitions out of UNKNOWN)",
+        "key": "unknown_is_terminal"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "async_statemachine_nonblocking",
+    "description": "on_enter_* callbacks must not block the asyncio event loop",
+    "prompt": "implement the order state machine with python-statemachine in an asyncio context — the on_enter_FILLED and on_enter_REJECTED callbacks need to send Telegram notifications and release instrument locks, but these are async operations. The callbacks must not block the event loop.",
+    "expectations": [
+      {
+        "text": "on_enter_* callbacks are synchronous (not async def) as required by python-statemachine",
+        "key": "callbacks_are_sync"
+      },
+      {
+        "text": "Async work scheduled from sync callback using loop.create_task() or loop.call_soon_threadsafe()",
+        "key": "async_scheduled_from_sync"
+      },
+      {
+        "text": "Does NOT use time.sleep() in any callback or transition handler",
+        "key": "no_time_sleep"
+      },
+      {
+        "text": "Blocking Zerodha API calls wrapped in asyncio.to_thread()",
+        "key": "blocking_calls_wrapped"
+      },
+      {
+        "text": "Order state machine access is confined to the asyncio event loop thread (not shared across threads)",
+        "key": "event_loop_thread_only"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "assert_system_ready_gate",
+    "description": "assert_system_ready() must block all order placement until reconciliation passes",
+    "prompt": "write the order state dict keyed by order_id — include the assert_system_ready() gate function that must be called at the top of every order placement path and raises RuntimeError if startup reconciliation has not completed (system_ready is False)",
+    "expectations": [
+      {
+        "text": "order_registry is a dict keyed by order_id mapping to OrderStateMachine instances",
+        "key": "registry_keyed_by_order_id"
+      },
+      {
+        "text": "assert_system_ready() raises RuntimeError when system_ready is False",
+        "key": "raises_runtime_error_when_not_ready"
+      },
+      {
+        "text": "assert_system_ready() is called BEFORE any order placement code (before kite.place_order)",
+        "key": "gate_called_before_placement"
+      },
+      {
+        "text": "system_ready is a module-level boolean flag that persists across function calls",
+        "key": "module_level_flag"
+      },
+      {
+        "text": "RuntimeError message mentions reconciliation or UNKNOWN orders",
+        "key": "error_message_mentions_reconciliation"
+      }
+    ]
+  }
+]
