@@ -54,10 +54,15 @@ Read these for implementation details:
 | What you're building | Read this |
 |----------------------|-----------|
 | Any of the 5 tasks | `references/five-task-definitions.md` |
-| Shared state dict | `references/shared-state-contract.md` |
+| Shared state dict (all skills) | `references/shared-state-contract.md` ← **canonical for all D1–D7 keys** |
 | tick_queue or order_queue | `references/queue-specifications.md` |
 | asyncio.to_thread() rules | `references/blocking-io-rules.md` |
 | Startup or shutdown sequence | `references/startup-shutdown-sequences.md` |
+
+`shared-state-contract.md` is the authoritative reference for every key in `shared_state`
+across all 8 skills (D1–D7). Any component that reads or writes `shared_state` must
+use only keys listed there. It also documents the `kill_switch_level` atomic-write
+pattern (D1) and the `reconnect_requested` heartbeat-signal pattern (D3).
 
 ## Main Entry Point Pattern
 

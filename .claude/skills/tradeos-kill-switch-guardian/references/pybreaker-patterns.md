@@ -26,13 +26,16 @@ class KillSwitch:
     One instance shared across all 5 asyncio tasks.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, shared_state: dict) -> None:
         self.state: dict = {
             "level": 0,
             "active": False,
             "reason": "",
             "triggered_at": Optional[datetime],
         }
+        # shared_state read cache — kill_switch_level mirrors self.state["level"]
+        # written atomically inside trigger() via self._lock (see below)
+        self._shared_state = shared_state
         # pybreaker tracks API error thresholds
         self.api_breaker = pybreaker.CircuitBreaker(
             fail_max=5,
@@ -57,7 +60,17 @@ class KillSwitch:
         return not self.state["active"]  # same as: self.state["level"] == 0
 
     async def trigger(self, level: int, reason: str) -> None:
-        """Single entry point for all kill switch triggers."""
+        """
+        Single entry point for all kill switch triggers.
+
+        Atomic dual-write pattern: this method is the ONLY place that writes
+        shared_state["kill_switch_level"]. It updates both self.state (authoritative)
+        and shared_state["kill_switch_level"] (read cache) while holding self._lock,
+        so they are always in sync.
+
+        risk_watchdog calls kill_switch.trigger() — it never writes
+        shared_state["kill_switch_level"] directly.
+        """
         async with self._lock:
             current = self.state["level"]
 
@@ -71,6 +84,9 @@ class KillSwitch:
             self.state["active"] = True
             self.state["reason"] = reason
             self.state["triggered_at"] = datetime.now(tz=IST)
+
+            # Mirror level to shared_state read cache atomically (same lock)
+            self._shared_state["kill_switch_level"] = level
 
             log.critical("kill_switch_triggered",
                          level=level, reason=reason,
@@ -119,6 +135,8 @@ class KillSwitch:
             "reason": "",
             "triggered_at": None,
         }
+        # Keep shared_state read cache in sync
+        self._shared_state["kill_switch_level"] = 0
         log.info("kill_switch_reset", operator="manual")
         return True
 
@@ -138,17 +156,21 @@ class KillSwitch:
 
 ## Wiring into the Async System
 
+`KillSwitch` requires `shared_state` at construction so `trigger()` can atomically
+update `shared_state["kill_switch_level"]`. Always create it after `_init_shared_state()`.
+
 ```python
-# In main.py — single instance, shared across all tasks
-kill_switch = KillSwitch()
+# In main.py — create shared_state first, then KillSwitch
+shared_state = _init_shared_state()
+kill_switch = KillSwitch(shared_state=shared_state)  # binds to the same dict
 
 async def main():
     await asyncio.gather(
-        websocket_listener_task(kill_switch),
-        signal_processor_task(kill_switch),
-        order_monitor_task(kill_switch),
-        risk_watchdog_task(kill_switch),
-        heartbeat_task(kill_switch),
+        websocket_listener_task(kill_switch, shared_state),
+        signal_processor_task(kill_switch, shared_state),
+        order_monitor_task(kill_switch, shared_state),
+        risk_watchdog_task(kill_switch, shared_state),
+        heartbeat_task(kill_switch, shared_state),
     )
 ```
 
