@@ -1,0 +1,758 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-websocket-resilience",
+    "skill_path": ".claude/skills/tradeos-websocket-resilience",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T16:48:17Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses asyncio.sleep() (never time.sleep()) for all delays",
+          "passed": true,
+          "evidence": "Two asyncio.sleep() calls are present: `await asyncio.sleep(1)` for the healthy-connection idle poll and `await asyncio.sleep(wait_seconds)` for the backoff delay. The string 'time.sleep' does not appear anywhere in the file."
+        },
+        {
+          "text": "Delay sequence is exactly 2, 4, 8, 16, 30, 30... (min(2**attempt, 30) formula or equivalent)",
+          "passed": true,
+          "evidence": "Line: `wait_seconds = min(BACKOFF_BASE ** attempt, BACKOFF_CAP_SECONDS)` where BACKOFF_BASE=2 and BACKOFF_CAP_SECONDS=30. With attempt starting at 1: 2**1=2, 2**2=4, 2**3=8, 2**4=16, 2**5=32\u2192capped to 30, 2**6=64\u2192capped to 30. Sequence: 2, 4, 8, 16, 30, 30, 30..."
+        },
+        {
+          "text": "Logs each attempt with attempt number and wait time",
+          "passed": true,
+          "evidence": "log.warning(\"ws_reconnect_attempt\", attempt=attempt, wait_seconds=wait_seconds, reason=\"ws_disconnected\") is called on every reconnect attempt before the sleep, recording both the attempt number and the computed wait duration."
+        },
+        {
+          "text": "Sends Telegram alert from attempt 5 onward (not attempt 1-4)",
+          "passed": true,
+          "evidence": "Guarded by `if attempt >= TELEGRAM_ALERT_FROM_ATTEMPT:` where TELEGRAM_ALERT_FROM_ATTEMPT=5. This block executes on every attempt >= 5 (not only once), matching the skill-context requirement: 'every attempt, not just the first'."
+        },
+        {
+          "text": "Resets reconnect_attempt counter to 0 on successful reconnect",
+          "passed": true,
+          "evidence": "Inside the `if ws_state.get('ws_connected', False):` branch: `if ws_state.get('reconnect_attempt', 0) != 0: ws_state['reconnect_attempt'] = 0` \u2014 resets the counter to 0 the first loop iteration where the connection is found healthy, and logs the reset event."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Compares signal.generated_at against datetime.now() in IST timezone",
+          "passed": true,
+          "evidence": "now_ist = datetime.now(IST) then signal_age = now_ist - signal.generated_at on lines 50-52"
+        },
+        {
+          "text": "Threshold is exactly 5 minutes (timedelta(minutes=5))",
+          "passed": true,
+          "evidence": "STALE_SIGNAL_THRESHOLD = timedelta(minutes=5) on line 22; used in comparison: if signal_age > STALE_SIGNAL_THRESHOLD on line 54"
+        },
+        {
+          "text": "Stale signals are discarded with WARNING log showing signal age",
+          "passed": true,
+          "evidence": "log.warning('stale_signal_discarded', age_minutes=round(age_minutes, 2), symbol=signal.symbol, ...) on lines 57-64; returns False on line 65"
+        },
+        {
+          "text": "Fresh signals pass through without being discarded",
+          "passed": true,
+          "evidence": "return True on line 68 \u2014 executed when signal_age <= STALE_SIGNAL_THRESHOLD, no log, no discard"
+        },
+        {
+          "text": "Uses pytz Asia/Kolkata for IST timezone (not UTC offset or hardcoded +5:30)",
+          "passed": true,
+          "evidence": "IST = pytz.timezone('Asia/Kolkata') on line 19; used in datetime.now(IST) \u2014 named timezone, not a fixed UTC offset"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses loop.call_soon_threadsafe() to bridge from KiteTicker thread to asyncio",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(ws_state.__setitem__, 'last_tick_timestamp', now) and loop.call_soon_threadsafe(tick_queue.put_nowait, ticks) \u2014 both cross-thread calls go through call_soon_threadsafe; loop is captured at build_on_ticks() call time via the closure"
+        },
+        {
+          "text": "Calls queue.put_nowait (not queue.put which is a coroutine)",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(tick_queue.put_nowait, ticks) \u2014 put_nowait is the synchronous, non-coroutine variant, correct for scheduling from a non-async thread"
+        },
+        {
+          "text": "Zero processing logic inside on_ticks \u2014 no validation, strategy, or order placement",
+          "passed": true,
+          "evidence": "The on_ticks body contains only: datetime.now(IST) for timestamping, one call_soon_threadsafe for state update, one call_soon_threadsafe for queue push. No tick inspection, no validation gates, no signal generation, no order calls."
+        },
+        {
+          "text": "on_ticks is a plain function (not async def)",
+          "passed": true,
+          "evidence": "Defined as 'def on_ticks(ws: Any, ticks: list) -> None:' \u2014 no async keyword; the outer factory build_on_ticks is also a plain def"
+        },
+        {
+          "text": "Updates last_tick_timestamp in shared state from the callback",
+          "passed": true,
+          "evidence": "now = datetime.now(IST) captured immediately on entry; loop.call_soon_threadsafe(ws_state.__setitem__, 'last_tick_timestamp', now) schedules the update onto the asyncio loop thread-safely, matching the reference pattern exactly"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 38.034,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Runs as an async task using asyncio.sleep(30) not time.sleep()",
+          "passed": true,
+          "evidence": "Function is defined as 'async def heartbeat_monitor_task(...)' and uses 'await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)' where HEARTBEAT_INTERVAL_SECONDS = 30. No time.sleep() is present anywhere in the file. The task loops via 'while not kill_switch.get(\"level3_active\", False)' making it a long-running async task."
+        },
+        {
+          "text": "Checks last_tick_timestamp from shared ws_state dict",
+          "passed": true,
+          "evidence": "Line 111: 'last_tick: datetime | None = ws_state.get(\"last_tick_timestamp\")'. The function reads last_tick_timestamp from the shared ws_state dict on every iteration. It also handles the None case (no tick ever received) and uses the timestamp to compute elapsed_seconds via '(now_ist - last_tick).total_seconds()' on line 138."
+        },
+        {
+          "text": "Triggers reconnect (sets ws_connected=False or calls reconnect()) when silence > 30s",
+          "passed": true,
+          "evidence": "Lines 140-165: when 'elapsed_seconds > SILENCE_THRESHOLD_SECONDS' (where SILENCE_THRESHOLD_SECONDS = 30), the code sets 'ws_state[\"ws_connected\"] = False' (line 152), sets 'ws_state[\"disconnect_timestamp\"] = now_ist' (line 153), and calls 'kws.reconnect()' (line 159). Both ws_connected=False and kws.reconnect() are triggered."
+        },
+        {
+          "text": "Only checks during market hours (09:15\u201315:30 IST) \u2014 skips outside market hours",
+          "passed": true,
+          "evidence": "Lines 27-28 define MARKET_OPEN_IST = dt_time(9, 15) and MARKET_CLOSE_IST = dt_time(15, 30). The is_market_hours() function on lines 35-38 checks 'MARKET_OPEN_IST <= now_ist <= MARKET_CLOSE_IST'. Lines 91-96 check 'if not is_market_hours(): ... continue' \u2014 skipping the entire disconnect check when outside market hours."
+        },
+        {
+          "text": "Logs WARNING when silent disconnect is detected with elapsed time",
+          "passed": true,
+          "evidence": "Lines 142-148: 'log.warning(\"heartbeat_silent_disconnect_detected\", elapsed_seconds=round(elapsed_seconds, 2), last_tick_timestamp=last_tick.isoformat(), threshold_seconds=SILENCE_THRESHOLD_SECONDS, action=\"triggering_reconnect\")'. The WARNING log event name exactly matches the skill context specification and includes elapsed_seconds as required."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Records disconnect_timestamp when WebSocket goes down (IST-aware datetime)",
+          "passed": true,
+          "evidence": "record_disconnect() sets ws_state['disconnect_timestamp'] = datetime.now(IST) (IST = pytz.timezone('Asia/Kolkata')) on the first transition from connected to disconnected. watch_for_60s_kill_switch() also reads this timestamp and computes elapsed = (now_ist() - disconnect_ts).total_seconds(), confirming it is IST-aware throughout."
+        },
+        {
+          "text": "Checks elapsed time >= 60 seconds before triggering",
+          "passed": true,
+          "evidence": "In watch_for_60s_kill_switch(): 'if elapsed >= WS_KILL_SWITCH_TIMEOUT_SECONDS and is_market_hours()' where WS_KILL_SWITCH_TIMEOUT_SECONDS = 60. The kill switch is only triggered after this condition is satisfied."
+        },
+        {
+          "text": "Only triggers kill switch during market hours (09:15\u201315:30 IST)",
+          "passed": true,
+          "evidence": "is_market_hours() checks 'MARKET_OPEN <= now_ist().time() <= MARKET_CLOSE' where MARKET_OPEN = dtime(9, 15) and MARKET_CLOSE = dtime(15, 30). The trigger condition requires both elapsed >= 60 AND is_market_hours() to be True."
+        },
+        {
+          "text": "Calls kill switch at level=2 with reason='ws_timeout_60s' (or equivalent)",
+          "passed": true,
+          "evidence": "await trigger_kill_switch(kill_switch, level=2, reason='ws_timeout_60s') is called in the threshold branch. trigger_kill_switch() invokes the underlying trigger callable with keyword arguments level=2, reason='ws_timeout_60s', handling both dict-based and object-based kill switch handles."
+        },
+        {
+          "text": "Uses asyncio.sleep() (not time.sleep()) to wait and monitor",
+          "passed": true,
+          "evidence": "All waits use 'await asyncio.sleep(1)' \u2014 the idle path, the connected path, the missing-timestamp path, and the below-threshold path all use asyncio.sleep. time.sleep is never imported or called. Blocking kill switch calls use asyncio.to_thread() to preserve event loop responsiveness."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Calls ticker.subscribe(instrument_tokens) and ticker.set_mode() to re-subscribe",
+          "passed": true,
+          "evidence": "ws.subscribe(watchlist) and ws.set_mode(ws.MODE_QUOTE, watchlist) are both called inside on_connect before any state update"
+        },
+        {
+          "text": "Sets ws_connected=True in shared state via loop.call_soon_threadsafe()",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(ws_state.update, {\"ws_connected\": True, ...}) is used \u2014 correct pattern for mutating asyncio state from a KiteTicker thread"
+        },
+        {
+          "text": "Resets reconnect_attempt to 0 in shared state",
+          "passed": true,
+          "evidence": "\"reconnect_attempt\": 0 is included in the dict passed to ws_state.update via call_soon_threadsafe"
+        },
+        {
+          "text": "Logs INFO with the count of instruments subscribed",
+          "passed": true,
+          "evidence": "log.info(\"kiteticker_connected\", instruments=len(watchlist), reconnect_attempt=0) \u2014 structlog call with instruments count"
+        },
+        {
+          "text": "Uses MODE_QUOTE (not MODE_FULL or MODE_LTP) for Phase 1",
+          "passed": true,
+          "evidence": "ws.set_mode(ws.MODE_QUOTE, watchlist) \u2014 explicitly uses MODE_QUOTE as required; MODE_FULL and MODE_LTP are not referenced anywhere"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Checks current IST time against market close (15:30) before each reconnect",
+          "passed": true,
+          "evidence": "is_market_hours() is called at the top of the while loop before each connect attempt AND again after a failed connection before sleeping: 'if not is_market_hours():' appears in both locations"
+        },
+        {
+          "text": "Stops retrying after 15:30 IST \u2014 exits or returns from the reconnect loop",
+          "passed": true,
+          "evidence": "'return  # Stop the reconnect loop' is executed whenever is_market_hours() returns False, exiting run_with_reconnect() entirely"
+        },
+        {
+          "text": "Logs INFO when stopping due to market close (not ERROR or WARNING)",
+          "passed": true,
+          "evidence": "log.info(\"ws_reconnect_stopped_market_closed\", ...) is used in both exit points \u2014 neither log.error nor log.warning is used for the market-close stop event"
+        },
+        {
+          "text": "Uses IST timezone (pytz Asia/Kolkata) for market hours comparison",
+          "passed": true,
+          "evidence": "IST = pytz.timezone(\"Asia/Kolkata\") and datetime.now(IST).time() are used inside is_market_hours() to obtain the current IST time"
+        },
+        {
+          "text": "Continues retrying during market hours (09:15\u201315:30) without stopping",
+          "passed": true,
+          "evidence": "The while self._running loop only exits via 'return' when is_market_hours() is False; during market hours the loop continues, sleeping with exponential backoff (2\u21924\u21928\u219216\u219230s cap) and retrying connect_fn indefinitely"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses loop.call_soon_threadsafe() for thread-safe communication",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(tick_queue.put_nowait, ticks) in on_ticks()"
+        },
+        {
+          "text": "Gets the running event loop with asyncio.get_event_loop() or asyncio.get_running_loop()",
+          "passed": true,
+          "evidence": "loop = asyncio.get_running_loop() called inside initialise() which is called from async def main()"
+        },
+        {
+          "text": "Does NOT call queue.put() directly from thread (would need await)",
+          "passed": true,
+          "evidence": "on_ticks never calls tick_queue.put() or await tick_queue.put(); uses only put_nowait via call_soon_threadsafe"
+        },
+        {
+          "text": "on_ticks callback is a plain function (not async def \u2014 KiteTicker calls it synchronously)",
+          "passed": true,
+          "evidence": "def on_ticks(ws: KiteTicker, ticks: list) -> None \u2014 plain def, not async def"
+        },
+        {
+          "text": "Returns immediately from on_ticks without blocking \u2014 no I/O or heavy computation",
+          "passed": true,
+          "evidence": "on_ticks body: guard check + single call_soon_threadsafe(); no I/O, no loops, no computation; returns implicitly"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses asyncio.sleep() (never time.sleep()) for all delays",
+          "passed": true,
+          "evidence": "Line 97: `await asyncio.sleep(wait_seconds)` \u2014 no time.sleep() present anywhere in the file"
+        },
+        {
+          "text": "Delay sequence is exactly 2, 4, 8, 16, 30, 30... (min(2**attempt, 30) formula or equivalent)",
+          "passed": true,
+          "evidence": "Line 80: `wait_seconds = min(base_delay ** reconnect_attempt, max_delay)` with base_delay=2, max_delay=30. Evaluates to: attempt 1\u21922, attempt 2\u21924, attempt 3\u21928, attempt 4\u219216, attempt 5\u219230 (32 capped), attempt 6+\u219230"
+        },
+        {
+          "text": "Logs each attempt with attempt number and wait time",
+          "passed": true,
+          "evidence": "Lines 82-87: `log.warning('websocket_reconnect_scheduled', attempt=reconnect_attempt, wait_seconds=wait_seconds, error=str(exc))`"
+        },
+        {
+          "text": "Sends Telegram alert from attempt 5 onward (not attempt 1-4)",
+          "passed": true,
+          "evidence": "Lines 89-95: `if reconnect_attempt >= telegram_alert_from_attempt:` where telegram_alert_from_attempt=5 \u2014 alert fires for attempts 5, 6, 7... and is skipped for attempts 1-4"
+        },
+        {
+          "text": "Resets reconnect_attempt counter to 0 on successful reconnect",
+          "passed": true,
+          "evidence": "Line 71: `reconnect_attempt = 0` executed immediately after connect_websocket() returns successfully, before returning from the loop"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Compares signal.generated_at against datetime.now() in IST timezone",
+          "passed": true,
+          "evidence": "In is_signal_stale(): 'now_ist: datetime = datetime.now(tz=IST)' and 'age: timedelta = now_ist - signal.generated_at'. Also in WebSocketSignalFilter.filter_after_reconnect(): 'now_ist = datetime.now(tz=IST)' and 'age: timedelta = now_ist - signal.generated_at'."
+        },
+        {
+          "text": "Threshold is exactly 5 minutes (timedelta(minutes=5))",
+          "passed": true,
+          "evidence": "Module-level constant: 'STALE_SIGNAL_THRESHOLD = timedelta(minutes=5)'. Used in both is_signal_stale() ('age > STALE_SIGNAL_THRESHOLD') and WebSocketSignalFilter (default parameter 'threshold: timedelta = STALE_SIGNAL_THRESHOLD')."
+        },
+        {
+          "text": "Stale signals are discarded with WARNING log showing signal age",
+          "passed": true,
+          "evidence": "log.warning('stale_signal_discarded_after_reconnect', ..., signal_age_seconds=age.total_seconds(), signal_age_human=str(age), ...) is called in both discard_stale_signals() and WebSocketSignalFilter.filter_after_reconnect() when age > threshold. The age is shown via signal_age_seconds and signal_age_human fields."
+        },
+        {
+          "text": "Fresh signals pass through without being discarded",
+          "passed": true,
+          "evidence": "In both implementations, the else branch appends the signal to the 'fresh' list and returns it: 'fresh.append(signal)' followed by 'return fresh'. Smoke test asserts: 'assert fresh_signal in result' and 'assert boundary_signal in result'."
+        },
+        {
+          "text": "Uses pytz Asia/Kolkata for IST timezone (not UTC offset or hardcoded +5:30)",
+          "passed": true,
+          "evidence": "Module-level: 'import pytz' and 'IST = pytz.timezone(\"Asia/Kolkata\")'. All datetime.now() calls use 'datetime.now(tz=IST)'. The Signal.__post_init__ uses 'IST.localize()' and '.astimezone(IST)'. No UTC offset or +5:30 string appears anywhere in the file."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses loop.call_soon_threadsafe() to bridge from KiteTicker thread to asyncio",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(tick_queue.put_nowait, ticks) \u2014 called inside on_ticks; init_tick_bridge stores the running event loop in the module-level `loop` variable before KiteTicker starts"
+        },
+        {
+          "text": "Calls queue.put_nowait (not queue.put which is a coroutine)",
+          "passed": true,
+          "evidence": "loop.call_soon_threadsafe(tick_queue.put_nowait, ticks) \u2014 put_nowait is passed as the callable; the coroutine queue.put() is never used"
+        },
+        {
+          "text": "Zero processing logic inside on_ticks \u2014 no validation, strategy, or order placement",
+          "passed": true,
+          "evidence": "on_ticks body contains exactly two statements: shared_state['last_tick_timestamp'] = time.time() and loop.call_soon_threadsafe(tick_queue.put_nowait, ticks). No filtering, no indicator calculation, no order calls."
+        },
+        {
+          "text": "on_ticks is a plain function (not async def)",
+          "passed": true,
+          "evidence": "Declared as 'def on_ticks(ws, ticks: List[Dict[str, Any]]) -> None:' \u2014 plain synchronous function, no async keyword"
+        },
+        {
+          "text": "Updates last_tick_timestamp in shared state from the callback",
+          "passed": true,
+          "evidence": "shared_state['last_tick_timestamp'] = time.time() \u2014 written as the first statement of on_ticks using time.time() (epoch float)"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Runs as an async task using asyncio.sleep(30) not time.sleep()",
+          "passed": true,
+          "evidence": "Line 114: `await asyncio.sleep(check_interval)` where check_interval defaults to HEARTBEAT_INTERVAL_SECONDS=30. No time.sleep() exists anywhere in the file. Function is defined as `async def heartbeat_monitor(...)` and spawned via `asyncio.create_task()` in line 212."
+        },
+        {
+          "text": "Checks last_tick_timestamp from shared ws_state dict",
+          "passed": true,
+          "evidence": "Line 125: `last_tick_ts = ws_state.get(\"last_tick_timestamp\")` \u2014 reads directly from the shared ws_state dict. The ws_state dict is defined with key `last_tick_timestamp` (line 208) and updated in the demo tick handler at line 185: `ws_state[\"last_tick_timestamp\"] = time.monotonic()`."
+        },
+        {
+          "text": "Triggers reconnect (sets ws_connected=False or calls reconnect()) when silence > 30s",
+          "passed": true,
+          "evidence": "Lines 151-156: on detecting elapsed > silence_threshold, sets `ws_state[\"ws_connected\"] = False` and then `await reconnect_callback()` if a callback was provided. Both mechanisms are implemented: flag-based (ws_connected=False) and callback-based (reconnect_callback coroutine)."
+        },
+        {
+          "text": "Only checks during market hours (09:15\u201315:30 IST) \u2014 skips outside market hours",
+          "passed": true,
+          "evidence": "Lines 118-123: `if not _is_market_hours(now): ... continue` skips the silence check outside market hours. The `_is_market_hours()` function (lines 39-70) checks MARKET_OPEN_HOUR=9, MARKET_OPEN_MINUTE=15, MARKET_CLOSE_HOUR=15, MARKET_CLOSE_MINUTE=30 in IST timezone, and also rejects weekends (line 54)."
+        },
+        {
+          "text": "Logs WARNING when silent disconnect is detected with elapsed time",
+          "passed": true,
+          "evidence": "Lines 142-148: `log.warning(\"heartbeat_silent_disconnect_detected\", elapsed_seconds=elapsed_display, silence_threshold_seconds=silence_threshold, current_time_ist=..., action=\"triggering_reconnect\")` \u2014 structured WARNING log with elapsed_seconds included. A second log.warning fires at line 131-135 when no tick has ever arrived."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Records disconnect_timestamp when WebSocket goes down (IST-aware datetime)",
+          "passed": true,
+          "evidence": "In on_disconnect(): now_ist = datetime.now(tz=IST); self._disconnect_timestamp = now_ist \u2014 IST timezone is defined as timezone(timedelta(hours=5, minutes=30)) and applied via datetime.now(tz=IST)"
+        },
+        {
+          "text": "Checks elapsed time >= 60 seconds before triggering",
+          "passed": true,
+          "evidence": "WS_TIMEOUT_SECONDS = 60; the monitor loop runs while elapsed < WS_TIMEOUT_SECONDS, and after the loop exits elapsed is computed as (datetime.now(tz=IST) - disconnect_ts).total_seconds() which is >= 60 before the kill switch is called"
+        },
+        {
+          "text": "Only triggers kill switch during market hours (09:15\u201315:30 IST)",
+          "passed": true,
+          "evidence": "_is_market_hours() checks 09:15 <= dt_ist <= 15:30; checked via 'if not _is_market_hours(now_ist): return' before calling kill_switch.trigger, so outside market hours the function returns without triggering"
+        },
+        {
+          "text": "Calls kill switch at level=2 with reason='ws_timeout_60s' (or equivalent)",
+          "passed": true,
+          "evidence": "await self._kill_switch.trigger(level=2, reason='ws_timeout_60s') is called after confirming still disconnected and in market hours"
+        },
+        {
+          "text": "Uses asyncio.sleep() (not time.sleep()) to wait and monitor",
+          "passed": true,
+          "evidence": "await asyncio.sleep(MONITOR_POLL_INTERVAL) is used inside _monitor_disconnect() coroutine; time.sleep is not imported or used anywhere in the file"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Calls ticker.subscribe(instrument_tokens) and ticker.set_mode() to re-subscribe",
+          "passed": true,
+          "evidence": "Lines 48-51: 'ticker.subscribe(instrument_tokens)' is called first, then 'ticker.set_mode(ticker.MODE_QUOTE, instrument_tokens)' is called immediately after, both inside the 'if instrument_tokens:' guard."
+        },
+        {
+          "text": "Sets ws_connected=True in shared state via loop.call_soon_threadsafe()",
+          "passed": true,
+          "evidence": "Lines 54-57: An inner '_update_state' closure sets 'shared_state[\"ws_connected\"] = True', and line 59 passes it to 'loop.call_soon_threadsafe(_update_state)' \u2014 the standard thread-safe mechanism to set asyncio-owned state from the KiteTicker thread."
+        },
+        {
+          "text": "Resets reconnect_attempt to 0 in shared state",
+          "passed": true,
+          "evidence": "Line 56 inside '_update_state': 'shared_state[\"reconnect_attempt\"] = 0' \u2014 reset happens atomically in the same call_soon_threadsafe closure as the ws_connected flag."
+        },
+        {
+          "text": "Logs INFO with the count of instruments subscribed",
+          "passed": true,
+          "evidence": "Lines 62-67: 'log.info(\"websocket_connected\", ..., instruments_subscribed=len(instrument_tokens), ...)' \u2014 structured INFO log via structlog with explicit instrument count field."
+        },
+        {
+          "text": "Uses MODE_QUOTE (not MODE_FULL or MODE_LTP) for Phase 1",
+          "passed": true,
+          "evidence": "Line 51: 'ticker.set_mode(ticker.MODE_QUOTE, instrument_tokens)' \u2014 MODE_QUOTE is used explicitly. MODE_FULL and MODE_LTP are not referenced anywhere in the implementation. A comment on line 50 explains the rationale: 'MODE_QUOTE provides OHLC + bid/ask depth \u2014 appropriate for Phase 1'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Checks current IST time against market close (15:30) before each reconnect",
+          "passed": true,
+          "evidence": "is_market_closed() is called at the top of the while-True loop in reconnect_with_market_hours_guard() before every connection attempt \u2014 line: 'if is_market_closed(): ... return False'. _now_ist() uses pytz IST and compares now >= market_close_time_today() which is set to 15:30."
+        },
+        {
+          "text": "Stops retrying after 15:30 IST \u2014 exits or returns from the reconnect loop",
+          "passed": true,
+          "evidence": "Two guard points both execute 'return False' when is_market_closed() is True: (1) at the start of each loop iteration before the connect attempt, and (2) after a failed attempt before sleeping, preventing the loop from sleeping and re-running past market close."
+        },
+        {
+          "text": "Logs INFO when stopping due to market close (not ERROR or WARNING)",
+          "passed": true,
+          "evidence": "log.info('websocket_reconnect_stopped_market_closed', ...) is used in both market-closed exit paths inside reconnect_with_market_hours_guard, and log.info('websocket_reconnect_skipped_market_closed', ...) is used in start_reconnect_loop. No log.error or log.warning is used for the market-close stop condition."
+        },
+        {
+          "text": "Uses IST timezone (pytz Asia/Kolkata) for market hours comparison",
+          "passed": true,
+          "evidence": "IST = pytz.timezone('Asia/Kolkata') is defined as a module-level constant. _now_ist() calls datetime.datetime.now(tz=IST), and _market_close_time_today() / _market_open_time_today() both call now.replace(...) on that IST-aware datetime, ensuring all comparisons are in Asia/Kolkata timezone."
+        },
+        {
+          "text": "Continues retrying during market hours (09:15\u201315:30) without stopping",
+          "passed": true,
+          "evidence": "The while-True loop only exits via: (a) is_market_closed() returning True, (b) max_attempts exceeded (test safety valve, None by default = unlimited), or (c) successful connection. During market hours is_market_closed() returns False (now < 15:30), so the loop keeps retrying with exponential backoff (2s->4s->8s->16s->30s cap) indefinitely."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Uses loop.call_soon_threadsafe() for thread-safe communication",
+          "passed": true,
+          "evidence": "self._loop.call_soon_threadsafe(self._enqueue, ticks) in on_ticks callback \u2014 schedules _enqueue on the event loop thread from the KiteTicker thread"
+        },
+        {
+          "text": "Gets the running event loop with asyncio.get_event_loop() or asyncio.get_running_loop()",
+          "passed": true,
+          "evidence": "self._loop: asyncio.AbstractEventLoop = asyncio.get_running_loop() in TickBridge.__init__, called from async context where the loop is guaranteed to be running"
+        },
+        {
+          "text": "Does NOT call queue.put() directly from thread (would need await)",
+          "passed": true,
+          "evidence": "on_ticks never calls queue.put() or queue.put_nowait() directly; only _enqueue does, and _enqueue is scheduled via call_soon_threadsafe to run on the event loop thread"
+        },
+        {
+          "text": "on_ticks callback is a plain function (not async def \u2014 KiteTicker calls it synchronously)",
+          "passed": true,
+          "evidence": "def on_ticks(self, ws: KiteTicker, ticks: ...) -> None \u2014 defined as a plain def, not async def, matching KiteTicker's synchronous callback contract"
+        },
+        {
+          "text": "Returns immediately from on_ticks without blocking \u2014 no I/O or heavy computation",
+          "passed": true,
+          "evidence": "on_ticks body is a single call_soon_threadsafe() invocation; no I/O, no loops, no heavy computation. All actual work is deferred to _enqueue running on the event loop thread."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 4.7542,
+        "stddev": 13.447,
+        "min": 0,
+        "max": 38.034
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+4.8",
+      "tokens": "+0"
+    }
+  },
+  "notes": []
+}

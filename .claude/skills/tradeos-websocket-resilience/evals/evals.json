@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "exponential_backoff_sequence",
+    "description": "Reconnect loop with exact backoff: 2, 4, 8, 16, 30, 30... seconds",
+    "prompt": "Write the reconnect loop with exponential backoff for the TradeOS WebSocket — it needs to retry with delays of 2s, 4s, 8s, 16s, then cap at 30s, using asyncio.sleep(). Each attempt must be logged. From attempt 5 onward it should also send a Telegram alert. Reset the counter when reconnect succeeds.",
+    "expectations": [
+      {
+        "text": "Uses asyncio.sleep() (never time.sleep()) for all delays",
+        "key": "uses_asyncio_sleep"
+      },
+      {
+        "text": "Delay sequence is exactly 2, 4, 8, 16, 30, 30... (min(2**attempt, 30) formula or equivalent)",
+        "key": "exact_backoff_sequence"
+      },
+      {
+        "text": "Logs each attempt with attempt number and wait time",
+        "key": "logs_each_attempt"
+      },
+      {
+        "text": "Sends Telegram alert from attempt 5 onward (not attempt 1-4)",
+        "key": "telegram_from_attempt_5"
+      },
+      {
+        "text": "Resets reconnect_attempt counter to 0 on successful reconnect",
+        "key": "resets_counter_on_success"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "stale_signal_discard",
+    "description": "5-minute stale signal detection with IST timezone",
+    "prompt": "Write the stale signal detection check for after WebSocket reconnect — signals older than 5 minutes must be discarded with a WARNING log showing the age, and fresh signals must pass through normally. Use IST timezone.",
+    "expectations": [
+      {
+        "text": "Compares signal.generated_at against datetime.now() in IST timezone",
+        "key": "compares_in_ist"
+      },
+      {
+        "text": "Threshold is exactly 5 minutes (timedelta(minutes=5))",
+        "key": "five_minute_threshold"
+      },
+      {
+        "text": "Stale signals are discarded with WARNING log showing signal age",
+        "key": "warns_with_age"
+      },
+      {
+        "text": "Fresh signals pass through without being discarded",
+        "key": "fresh_signals_pass"
+      },
+      {
+        "text": "Uses pytz Asia/Kolkata for IST timezone (not UTC offset or hardcoded +5:30)",
+        "key": "uses_pytz_ist"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "on_ticks_non_blocking",
+    "description": "KiteTicker on_ticks callback must be non-blocking — push to queue immediately",
+    "prompt": "Write the on_ticks callback for KiteTicker — it needs to pass tick data to the asyncio queue without doing any processing. KiteTicker runs in its own thread so you need the right bridge pattern.",
+    "expectations": [
+      {
+        "text": "Uses loop.call_soon_threadsafe() to bridge from KiteTicker thread to asyncio",
+        "key": "uses_call_soon_threadsafe"
+      },
+      {
+        "text": "Calls queue.put_nowait (not queue.put which is a coroutine)",
+        "key": "uses_put_nowait"
+      },
+      {
+        "text": "Zero processing logic inside on_ticks — no validation, strategy, or order placement",
+        "key": "no_processing_in_callback"
+      },
+      {
+        "text": "on_ticks is a plain function (not async def)",
+        "key": "not_async_def"
+      },
+      {
+        "text": "Updates last_tick_timestamp in shared state from the callback",
+        "key": "updates_last_tick_timestamp"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "heartbeat_silent_disconnect_detection",
+    "description": "Async heartbeat task that detects silent disconnects via tick silence",
+    "prompt": "Write the heartbeat monitor that detects silent WebSocket disconnects — it should run as an async task checking every 30 seconds if a tick has been received. If no tick arrived in the last 30 seconds during market hours, trigger a reconnect.",
+    "expectations": [
+      {
+        "text": "Runs as an async task using asyncio.sleep(30) not time.sleep()",
+        "key": "async_task_asyncio_sleep"
+      },
+      {
+        "text": "Checks last_tick_timestamp from shared ws_state dict",
+        "key": "reads_last_tick_timestamp"
+      },
+      {
+        "text": "Triggers reconnect (sets ws_connected=False or calls reconnect()) when silence > 30s",
+        "key": "triggers_reconnect_on_silence"
+      },
+      {
+        "text": "Only checks during market hours (09:15–15:30 IST) — skips outside market hours",
+        "key": "market_hours_only"
+      },
+      {
+        "text": "Logs WARNING when silent disconnect is detected with elapsed time",
+        "key": "logs_warning_on_silence"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "kill_switch_trigger_at_60s",
+    "description": "Level 2 kill switch fires after 60 seconds of WebSocket disconnect during market hours",
+    "prompt": "Write the disconnect handler that triggers Level 2 kill switch after 60 seconds of WebSocket being down — it records the disconnect timestamp when the connection drops, waits to see if it stays down, and if we're still disconnected after 60 seconds during market hours, calls kill_switch.trigger(level=2, reason='ws_timeout_60s').",
+    "expectations": [
+      {
+        "text": "Records disconnect_timestamp when WebSocket goes down (IST-aware datetime)",
+        "key": "records_disconnect_timestamp"
+      },
+      {
+        "text": "Checks elapsed time >= 60 seconds before triggering",
+        "key": "checks_60s_elapsed"
+      },
+      {
+        "text": "Only triggers kill switch during market hours (09:15–15:30 IST)",
+        "key": "market_hours_guard"
+      },
+      {
+        "text": "Calls kill switch at level=2 with reason='ws_timeout_60s' (or equivalent)",
+        "key": "level2_kill_switch_call"
+      },
+      {
+        "text": "Uses asyncio.sleep() (not time.sleep()) to wait and monitor",
+        "key": "asyncio_sleep_not_time_sleep"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "reconnect_resubscribes_all_instruments",
+    "description": "on_connect callback re-subscribes watchlist and resets shared state",
+    "prompt": "Write the on_connect callback for after a successful KiteTicker reconnect — it needs to re-subscribe to all instruments from the watchlist, set ws_connected=True in shared state, reset the reconnect_attempt counter, and log INFO with the instrument count.",
+    "expectations": [
+      {
+        "text": "Calls ticker.subscribe(instrument_tokens) and ticker.set_mode() to re-subscribe",
+        "key": "resubscribes_instruments"
+      },
+      {
+        "text": "Sets ws_connected=True in shared state via loop.call_soon_threadsafe()",
+        "key": "sets_ws_connected_true"
+      },
+      {
+        "text": "Resets reconnect_attempt to 0 in shared state",
+        "key": "resets_reconnect_attempt"
+      },
+      {
+        "text": "Logs INFO with the count of instruments subscribed",
+        "key": "logs_instrument_count"
+      },
+      {
+        "text": "Uses MODE_QUOTE (not MODE_FULL or MODE_LTP) for Phase 1",
+        "key": "uses_mode_quote"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "no_reconnect_after_market_close",
+    "description": "Reconnect loop stops after 15:30 IST market close",
+    "prompt": "Write the reconnect logic that stops after market close — during market hours 09:15-15:30 IST it should keep retrying, but once the market closes at 15:30 it should stop attempting reconnects and log that the market is closed.",
+    "expectations": [
+      {
+        "text": "Checks current IST time against market close (15:30) before each reconnect",
+        "key": "checks_market_close_time"
+      },
+      {
+        "text": "Stops retrying after 15:30 IST — exits or returns from the reconnect loop",
+        "key": "stops_after_market_close"
+      },
+      {
+        "text": "Logs INFO when stopping due to market close (not ERROR or WARNING)",
+        "key": "logs_info_market_closed"
+      },
+      {
+        "text": "Uses IST timezone (pytz Asia/Kolkata) for market hours comparison",
+        "key": "uses_ist_timezone"
+      },
+      {
+        "text": "Continues retrying during market hours (09:15–15:30) without stopping",
+        "key": "retries_during_market_hours"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "thread_to_asyncio_bridge",
+    "description": "KiteTicker thread-to-asyncio bridge using call_soon_threadsafe",
+    "prompt": "KiteTicker runs in a thread but our signal processor is in the asyncio event loop. Write the bridge that safely passes tick data from the KiteTicker thread into the asyncio queue — show how to get the event loop reference and use it correctly.",
+    "expectations": [
+      {
+        "text": "Uses loop.call_soon_threadsafe() for thread-safe communication",
+        "key": "uses_call_soon_threadsafe"
+      },
+      {
+        "text": "Gets the running event loop with asyncio.get_event_loop() or asyncio.get_running_loop()",
+        "key": "gets_event_loop"
+      },
+      {
+        "text": "Does NOT call queue.put() directly from thread (would need await)",
+        "key": "no_direct_queue_put_from_thread"
+      },
+      {
+        "text": "on_ticks callback is a plain function (not async def — KiteTicker calls it synchronously)",
+        "key": "sync_callback"
+      },
+      {
+        "text": "Returns immediately from on_ticks without blocking — no I/O or heavy computation",
+        "key": "returns_immediately"
+      }
+    ]
+  }
+]
