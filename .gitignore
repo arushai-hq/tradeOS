@@ -29,3 +29,5 @@ data_engine/cache/
 # OS
 .DS_Store
 Thumbs.db
+.claude/*-workspace/
+.claude/settings.local.json
