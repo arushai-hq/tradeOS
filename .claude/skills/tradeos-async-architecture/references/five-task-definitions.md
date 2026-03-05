@@ -138,7 +138,7 @@ This is the fastest-running task and the most critical.
 **Check interval:** Exactly 1 second (`asyncio.sleep(1)`)
 **Checks on every cycle:**
 - `daily_pnl_pct` vs `MAX_DAILY_LOSS_PCT` (0.03) → Level 2 if breached
-- `consecutive_losses` vs threshold (3) → Level 1 if breached
+- `consecutive_losses >= 5 AND daily_pnl_pct <= -0.015` → Level 1 if breached (compound condition)
 - `ws_connected` during market hours → Level 1 if disconnected > 60s
 - `open_positions` count vs `MAX_OPEN_POSITIONS` (3)
 
@@ -152,7 +152,8 @@ async def risk_watchdog_fn(shared_state: dict) -> None:
             if shared_state["daily_pnl_pct"] <= -MAX_DAILY_LOSS_PCT:
                 kill_switch.trigger(level=2, reason="daily_loss_exceeded")
 
-            if shared_state["consecutive_losses"] >= 3:
+            if (shared_state["consecutive_losses"] >= 5
+                    and shared_state["daily_pnl_pct"] <= -0.015):
                 kill_switch.trigger(level=1, reason="consecutive_losses")
         except Exception as e:
             log.critical("risk_watchdog_crashed", error=str(e))
