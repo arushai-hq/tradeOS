@@ -1,5 +1,10 @@
 # Pre-Market Checks — TradeOS Startup Gate Sequence
 
+> **SUPERSEDED by D9 — tradeos-session-guardian**
+> This file is kept for reference only. For all session lifecycle implementation
+> (pre-market gate, startup sequence, mid-session monitors, EOD shutdown),
+> use the `tradeos-session-guardian` skill instead.
+
 These checks run **synchronously before any market connection is attempted**. If any hard-stop check fails, the system exits with `sys.exit(1)`. No asyncio event loop. No WebSocket. No Zerodha API call (except the token probe in step 4).
 
 The sequence is strictly ordered — each step must pass before the next begins.

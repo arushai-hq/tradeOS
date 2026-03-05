@@ -213,7 +213,7 @@ Kite MCP server (Claude native): https://mcp.kite.trade/mcp
 
 ```
 Skill Phase: COMPLETE ✅
-  All 8 discipline skills built (D1–D8) + 5 architecture fixes applied.
+  All 9 discipline skills built (D1–D9) + 5 architecture fixes applied.
   Audit passed (6/6 verification checks). Ready for Data Engine implementation.
 
 Phase 1 Components:
@@ -232,14 +232,15 @@ Docs & Specs:
   config/settings.yaml                           ✅ Complete
 
 Skills (.claude/skills/):
-  tradeos-kill-switch-guardian  ✅ D1 — includes pre-market-checks.md (token/holiday/Telegram)
+  tradeos-kill-switch-guardian  ✅ D1 — 3-level kill switch hierarchy + is_trading_allowed gate
   tradeos-order-state-machine   ✅ D2
   tradeos-websocket-resilience  ✅ D3
-  tradeos-observability         ✅ D4 — includes Telegram rate-limiting rules
+  tradeos-observability         ✅ D4 — structlog + Telegram rate-limiting + Prometheus Phase 2
   tradeos-tick-validator        ✅ D5
-  tradeos-async-architecture    ✅ D6 — includes 5-task definitions + shared state contract
+  tradeos-async-architecture    ✅ D6 — 5-task definitions + shared state contract
   tradeos-position-reconciler   ✅ D7 — uses kite.positions()["day"] (MIS-only fix applied)
   tradeos-test-pyramid          ✅ D8
+  tradeos-session-guardian      ✅ D9 — pre-market gate (6 checks) + startup + mid-session + EOD shutdown
 ```
 
 ---
@@ -299,5 +300,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 4 — Skill Phase Complete (D1–D8 + audit)*
+*Last updated: Session 5 — Skill Phase Complete (D1–D9 + audit)*
 *Next milestone: Data Engine implementation*

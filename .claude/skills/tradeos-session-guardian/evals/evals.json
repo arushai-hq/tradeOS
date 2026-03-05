@@ -1,0 +1,109 @@
+{
+  "skill_name": "tradeos-session-guardian",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Write Phase 0 Check 2 that blocks startup when the Zerodha access token is from yesterday. The check should read token_date from secrets.yaml and compare it to today's IST date. Save the implementation to solution.py",
+      "expected_output": "A Python function run_token_freshness_check() that compares token_date from secrets to today's IST date, calls sys.exit(1) when stale, logs CRITICAL, and sends a Telegram alert before exit",
+      "files": [],
+      "expectations": [
+        "The code compares token_date to today's date using IST timezone (Asia/Kolkata)",
+        "The code calls sys.exit(1) when the token_date does not match today",
+        "The code calls log.critical() or structlog CRITICAL level when token is stale",
+        "The code attempts a Telegram alert before calling sys.exit(1)",
+        "The code uses pytz or zoneinfo with Asia/Kolkata timezone for the comparison"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Write Phase 0 Check 4 for NSE holiday detection that exits cleanly when today is a holiday or weekend. Save the implementation to solution.py",
+      "expected_output": "A Python function run_holiday_check() that loads nse_holidays.yaml, checks if today_ist is in the holiday list, also checks weekday() for Saturday/Sunday, calls sys.exit(0) on holiday (not sys.exit(1)), sends a Telegram notification, and uses INFO log level not CRITICAL",
+      "files": [],
+      "expectations": [
+        "The code loads config/nse_holidays.yaml (or similar holiday config file)",
+        "The code calls sys.exit(0) for holiday/weekend — NOT sys.exit(1)",
+        "The code checks weekday() to detect Saturday (5) and Sunday (6)",
+        "The code sends a Telegram message before sys.exit(0)",
+        "The code uses log.info() for the holiday detection — not log.critical() or log.error()"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write Phase 0 Check 5 for Telegram credential validation. The check should test that the alert path works, and if Telegram is unreachable, set a flag but NOT block startup. Save the implementation to solution.py",
+      "expected_output": "A Python function run_telegram_check() that sends a test message, catches any exception, sets telegram_active=False on failure and True on success, logs WARNING (not CRITICAL) on failure, does NOT call sys.exit(), and references [TELEGRAM_FAILED] prefix for subsequent alerts",
+      "files": [],
+      "expectations": [
+        "The code wraps the Telegram send in a try/except block",
+        "The code sets telegram_active = False (in shared_state or as a variable) when Telegram fails",
+        "The code does NOT call sys.exit() anywhere in the function",
+        "The code uses log.warning() (not log.critical() or log.error()) for the failure case",
+        "The code references [TELEGRAM_FAILED] prefix for subsequent alert degradation"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write Phase 0 Check 6 for IST time window validation. Before 08:45 sleep, between 09:10 and 12:00 warn and continue, after 12:00 abort. Save the implementation to solution.py",
+      "expected_output": "A Python function run_time_window_check() that uses IST timezone for all comparisons, sleeps until 08:45 if too early, logs WARNING and continues for 09:10-12:00 range, and calls sys.exit(1) with ERROR log if after 12:00",
+      "files": [],
+      "expectations": [
+        "All time comparisons use IST timezone (Asia/Kolkata via pytz or zoneinfo)",
+        "The code calls sys.exit(1) only when current IST time is after 12:00",
+        "The code includes a sleep or wait mechanism for times before 08:45",
+        "The code logs a warning (not error) for the late-but-acceptable 09:10-12:00 window",
+        "The code does NOT call sys.exit() for the 09:10-12:00 range — it continues"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write the Phase 1 startup check that blocks startup when prior session positions are found. The check runs D7 reconciliation and if any open_positions remain, it should halt. Save the implementation to solution.py",
+      "expected_output": "An async function that calls reconciliation (D7), checks whether open_positions is non-empty after reconciliation, calls sys.exit(1) if positions exist, logs CRITICAL with position details, and sends a Telegram alert before exiting",
+      "files": [],
+      "expectations": [
+        "The code calls a reconciliation function (run_reconciliation, reconcile, or similar D7 integration)",
+        "The code checks whether open_positions is non-empty after reconciliation",
+        "The code calls sys.exit(1) when open_positions is not empty",
+        "The code calls log.critical() when stale positions are found",
+        "The code sends a Telegram alert before calling sys.exit(1)"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Write the 15:00 IST hard exit trigger that should run inside risk_watchdog. At 15:00, set accepting_signals=False and drain the tick_queue without processing. Save the implementation to solution.py",
+      "expected_output": "Code inside risk_watchdog_fn that checks IST time on each 1s cycle, sets accepting_signals=False at 15:00, drains tick_queue by emptying it, logs INFO (not CRITICAL), and does NOT trigger the kill switch — this is a scheduled EOD event not an anomaly",
+      "files": [],
+      "expectations": [
+        "The code checks IST time (using Asia/Kolkata timezone) to detect the 15:00 boundary",
+        "The code sets accepting_signals = False when 15:00 is reached",
+        "The code drains or empties the tick_queue when the hard exit fires",
+        "The code uses log.info() for the hard exit event — not log.critical() or log.warning()",
+        "The code does NOT call kill_switch.trigger() for the 15:00 EOD event"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Write the mid-session token validity check that runs inside risk_watchdog every 60 minutes. If Zerodha returns 401 or 403, trigger Level 3 kill switch. Save the implementation to solution.py",
+      "expected_output": "An async function _check_mid_session_token_validity() called every 3600 seconds from risk_watchdog that calls kite.profile() via asyncio.to_thread(), triggers Level 3 kill switch on 401/403 response, sends a Telegram alert before halting, and does NOT attempt token refresh",
+      "files": [],
+      "expectations": [
+        "The code uses asyncio.sleep(3600) or tracks 60-minute intervals between checks",
+        "The code calls kite.profile() to validate the token mid-session",
+        "The code triggers kill_switch level 3 (or Level 3) on authentication error (401, 403, or token-related error)",
+        "The code sends a Telegram alert before or as part of triggering the kill switch",
+        "The code does NOT attempt to refresh the token or call any auth/login endpoint"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Write the full Phase 0 pre-market gate function run_pre_market_gate() that runs all 6 checks in the correct sequential order and sets pre_market_gate_passed=True after all pass. Save the implementation to solution.py",
+      "expected_output": "A function run_pre_market_gate(shared_state) that calls all 6 checks sequentially (config, token_date, kite.profile, holiday, telegram, time_window), sets shared_state['pre_market_gate_passed']=True after all pass, and returns a KiteConnect instance",
+      "files": [],
+      "expectations": [
+        "The function calls all 6 checks in sequence (config validation, token date, API probe, holiday, telegram, time window)",
+        "The checks run sequentially, not in parallel (no asyncio.gather or threading for the checks)",
+        "The function sets pre_market_gate_passed = True (in shared_state or as a flag) after all 6 pass",
+        "The function returns a KiteConnect instance (kite object) on success",
+        "The function uses shared_state dict to store session metadata like telegram_active or zerodha_user_id"
+      ]
+    }
+  ]
+}
