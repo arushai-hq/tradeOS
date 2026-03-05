@@ -212,8 +212,12 @@ Kite MCP server (Claude native): https://mcp.kite.trade/mcp
 ## Current Build Status
 
 ```
+Skill Phase: COMPLETE ✅
+  All 8 discipline skills built (D1–D8) + 5 architecture fixes applied.
+  Audit passed (6/6 verification checks). Ready for Data Engine implementation.
+
 Phase 1 Components:
-  data_engine/          🔴 Empty — BUILD THIS FIRST
+  data_engine/          🔴 Empty — BUILD THIS FIRST  ← NEXT
   risk_manager/         🔴 Empty — BUILD SECOND (D1 Kill Switch + D7 Reconcile)
   strategies/s1_intraday/ 🔴 Empty — BUILD THIRD
   backtester/           🔴 Empty — BUILD FOURTH
@@ -226,6 +230,16 @@ Docs & Specs:
   docs/brainstorm/session_001_architecture.md    ✅ Complete
   docs/brainstorm/session_002_research_findings.md ✅ Complete
   config/settings.yaml                           ✅ Complete
+
+Skills (.claude/skills/):
+  tradeos-kill-switch-guardian  ✅ D1 — includes pre-market-checks.md (token/holiday/Telegram)
+  tradeos-order-state-machine   ✅ D2
+  tradeos-websocket-resilience  ✅ D3
+  tradeos-observability         ✅ D4 — includes Telegram rate-limiting rules
+  tradeos-tick-validator        ✅ D5
+  tradeos-async-architecture    ✅ D6 — includes 5-task definitions + shared state contract
+  tradeos-position-reconciler   ✅ D7 — uses kite.positions()["day"] (MIS-only fix applied)
+  tradeos-test-pyramid          ✅ D8
 ```
 
 ---
@@ -285,5 +299,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 3 — Reliability Engineering Design Phase*
-*Next milestone: Data Engine build*
+*Last updated: Session 4 — Skill Phase Complete (D1–D8 + audit)*
+*Next milestone: Data Engine implementation*

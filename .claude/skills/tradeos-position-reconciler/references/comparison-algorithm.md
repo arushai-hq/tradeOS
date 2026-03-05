@@ -9,7 +9,7 @@ it never writes to it directly.
 ## Data Structures
 
 ```python
-# Broker position record (from kite.positions()["net"])
+# Broker position record (from kite.positions()["day"] — always "day", not "net")
 BrokerPosition = {
     "tradingsymbol": str,          # e.g. "RELIANCE"
     "instrument_token": int,       # e.g. 738561
