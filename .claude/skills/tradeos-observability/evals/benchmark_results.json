@@ -1,0 +1,838 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-observability",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T17:03:15Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "uses_structlog",
+          "text": "Uses structlog (not Python's stdlib logging or print())",
+          "passed": true,
+          "evidence": "solution.py imports structlog and uses log = structlog.get_logger(). No stdlib logging import and no print() calls are used for the event. structlog.configure() sets up JSONRenderer for Phase 1 compliance."
+        },
+        {
+          "key": "all_schema_fields_present",
+          "text": "Includes all required fields: symbol, strategy, entry_price, exit_price, pnl_rs, pnl_pct, hold_duration_minutes, exit_reason",
+          "passed": true,
+          "evidence": "log.info('position_closed', symbol='RELIANCE', strategy='s1', entry_price=2451.00, exit_price=2487.50, pnl_rs=365.0, pnl_pct=1.49, hold_duration_minutes=47, exit_reason='target_hit') \u2014 all 8 required schema fields are present as keyword arguments."
+        },
+        {
+          "key": "pnl_rs_correct",
+          "text": "pnl_rs is calculated correctly (365.0 = (2487.50-2451.00)*10)",
+          "passed": true,
+          "evidence": "pnl_rs = round((2487.50 - 2451.00) * 10, 2) = round(36.50 * 10, 2) = 365.0. The calculation matches the expected value exactly."
+        },
+        {
+          "key": "correct_event_name",
+          "text": "event name is 'position_closed' (exact string)",
+          "passed": true,
+          "evidence": "log.info('position_closed', ...) \u2014 the first positional argument to log.info() is the exact string 'position_closed', matching the canonical event name from event-schemas.md."
+        },
+        {
+          "key": "exit_reason_correct",
+          "text": "exit_reason is 'target_hit' (consistent with schema convention)",
+          "passed": true,
+          "evidence": "exit_reason='target_hit' \u2014 matches the exact value defined in event-schemas.md position_closed schema comment: '\"target_hit\" | \"stop_loss\" | \"hard_exit_time\" | \"kill_switch\" | \"manual\"'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "human_readable_format",
+          "text": "Message is human-readable multi-line format (not raw JSON or dict)",
+          "passed": true,
+          "evidence": "The demo() function builds and the CRITICAL template produces a multi-line string: '\ud83d\udd34 CRITICAL | TradeOS\\nEvent: kill_switch_triggered\\nLevel: 2 | Reason: daily_loss_exceeded\\nDaily PnL: -3.1% | Positions: 2 open\\nTime: 11:32:00 IST'. This matches the exact CRITICAL template from telegram-alerting-rules.md and is human-readable, not raw JSON."
+        },
+        {
+          "key": "includes_critical_emoji",
+          "text": "Includes \ud83d\udd34 emoji or equivalent CRITICAL indicator",
+          "passed": true,
+          "evidence": "Message line 1 is '\ud83d\udd34 CRITICAL | TradeOS' \u2014 the \ud83d\udd34 red circle emoji is included as the first character, directly matching the CRITICAL template in telegram-alerting-rules.md."
+        },
+        {
+          "key": "uses_async_http",
+          "text": "Uses httpx (or python-telegram-bot) for async HTTP \u2014 not requests library",
+          "passed": true,
+          "evidence": "The solution imports 'import httpx' and uses 'async with httpx.AsyncClient(timeout=10.0) as client: resp = await client.post(url, json=payload)'. The requests library is never imported or used. The docstring explicitly states 'async HTTP via httpx (not requests)'."
+        },
+        {
+          "key": "includes_key_fields_in_message",
+          "text": "Includes level (2), reason (daily_loss_exceeded), and PnL (-3.1%) in message body",
+          "passed": true,
+          "evidence": "The message contains: 'Level: 2 | Reason: daily_loss_exceeded' and 'Daily PnL: -3.1% | Positions: 2 open'. All three required fields (level=2, reason=daily_loss_exceeded, pnl=-3.1%) are present in the message body."
+        },
+        {
+          "key": "shows_ist_time",
+          "text": "Time is shown in IST (not UTC)",
+          "passed": true,
+          "evidence": "The demo() function sets ist_time_str = '11:32:00 IST' matching the task requirement (11:32 IST). The send_critical_alert() function uses 'datetime.now(IST).strftime(\"%H:%M:%S IST\")' where IST = pytz.timezone('Asia/Kolkata'), ensuring real-time calls display IST. The time label explicitly appends ' IST' suffix."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "tracks_last_sent_per_type",
+          "text": "Tracks last_sent_at (or equivalent) per alert_type as a dict",
+          "passed": true,
+          "evidence": "Module-level dict '_last_sent: dict[str, datetime] = {}' is declared at line 44. It is keyed by alert_type string and updated with '_last_sent[alert_type] = now' inside send_warning_alert before each successful send. The helper get_last_sent() exposes per-type lookup for tests."
+        },
+        {
+          "key": "five_minute_rate_limit",
+          "text": "Skips send if less than 5 minutes (300 seconds) since last send for same alert_type",
+          "passed": true,
+          "evidence": "In send_warning_alert: 'elapsed = (now - last).total_seconds()' followed by 'if elapsed < WARN_RATE_LIMIT_SECONDS: ... return'. WARN_RATE_LIMIT_SECONDS = 300 matches the D4 spec constant. The function returns early without calling send_telegram when the window is still open."
+        },
+        {
+          "key": "critical_bypasses_rate_limit",
+          "text": "CRITICAL alerts bypass rate limiting (always send immediately)",
+          "passed": true,
+          "evidence": "send_critical_alert() calls send_telegram() directly \u2014 it contains no reference to _last_sent and performs no elapsed-time check. alert_kill_switch() routes exclusively through send_critical_alert(), so kill_switch_triggered always dispatches immediately regardless of frequency. The docstring explicitly states 'Rate limiting does NOT apply'."
+        },
+        {
+          "key": "independent_windows_per_type",
+          "text": "Different alert types have independent 5-minute windows",
+          "passed": true,
+          "evidence": "The rate-limit key is the alert_type string passed to send_warning_alert (e.g. 'ws_disconnected', 'daily_loss_warning', 'order_rejected'). Each type gets its own entry in _last_sent. Suppressing ws_disconnected does not affect the daily_loss_warning window, and vice versa. The convenience dispatchers (alert_ws_disconnected, alert_daily_loss_warning, alert_order_rejected) each pass a distinct alert_type string."
+        },
+        {
+          "key": "logs_when_rate_limited",
+          "text": "Logs when a warning is rate-limited (suppressed)",
+          "passed": true,
+          "evidence": "Inside the rate-limit branch of send_warning_alert: 'log.warning(\"telegram_warning_rate_limited\", alert_type=alert_type, event=event, elapsed_seconds=round(elapsed, 1), limit_seconds=WARN_RATE_LIMIT_SECONDS)'. Uses structlog (not print), includes alert_type and elapsed_seconds so the suppression is traceable in the JSON log file."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "correct_processor_chain",
+          "text": "Configures structlog with the 5-step processor chain: add_log_level, add_logger_name, TimeStamper(fmt='iso', utc=False), StackInfoRenderer, JSONRenderer",
+          "passed": true,
+          "evidence": "Lines 102-109 of solution.py define exactly the required 5-step chain in order: structlog.stdlib.add_log_level, structlog.stdlib.add_logger_name, structlog.processors.TimeStamper(fmt='iso', utc=False), structlog.processors.StackInfoRenderer, structlog.processors.JSONRenderer()"
+        },
+        {
+          "key": "rotating_file_handler_configured",
+          "text": "Uses RotatingFileHandler with maxBytes=10MB and backupCount=7",
+          "passed": true,
+          "evidence": "Lines 78-85 of solution.py instantiate logging.handlers.RotatingFileHandler with maxBytes=10 * 1024 * 1024 (10 MB) and backupCount=7"
+        },
+        {
+          "key": "no_prometheus_import",
+          "text": "Zero imports of prometheus_client anywhere in the Phase 1 setup code",
+          "passed": true,
+          "evidence": "Grep for 'prometheus_client' across solution.py returned 0 matches. No prometheus_client import exists anywhere in the file."
+        },
+        {
+          "key": "stderr_for_warnings",
+          "text": "WARNING or higher logs go to stderr",
+          "passed": true,
+          "evidence": "Line 88 sets stdlib_handler_stderr.setLevel(logging.WARNING) on a StreamHandler(sys.stderr) created at line 87, ensuring WARNING+ events are emitted to stderr"
+        },
+        {
+          "key": "correct_log_path",
+          "text": "Log file path is logs/tradeos.log (not hardcoded absolute path)",
+          "passed": true,
+          "evidence": "Line 39 defines LOG_PATH = Path('logs/tradeos.log') \u2014 a relative path. No absolute path is used. The RotatingFileHandler on line 78 references LOG_PATH directly."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "env_var_guard",
+          "text": "Reads OBSERVABILITY_PHASE from environment and only registers metrics when it equals '2'",
+          "passed": true,
+          "evidence": "Line: OBSERVABILITY_PHASE = int(os.environ.get('OBSERVABILITY_PHASE', '1')). init_observability() checks `if OBSERVABILITY_PHASE >= 2` before calling _register_prometheus_metrics(). Verified: Phase 1 (no env var set) leaves _metrics as {}, Phase 2 (OBSERVABILITY_PHASE=2) populates all 6 metrics."
+        },
+        {
+          "key": "all_six_metrics_defined",
+          "text": "Defines all 6 required metrics: trades_total (Counter), pnl_rupees (Gauge), drawdown_pct (Gauge), api_latency (Histogram), ws_reconnects (Counter), kill_switch_level (Gauge)",
+          "passed": true,
+          "evidence": "All 6 metrics defined inside _register_prometheus_metrics(): trades_total=Counter('tradeos_trades_total',...), pnl_rupees=Gauge('tradeos_pnl_rupees',...), drawdown_pct=Gauge('tradeos_drawdown_pct',...), api_latency=Histogram('tradeos_api_latency_seconds',...,buckets=[0.05,0.1,0.25,0.5,1.0,2.5,5.0]), ws_reconnects=Counter('tradeos_ws_reconnects_total',...), kill_switch_level=Gauge('tradeos_kill_switch_level',...). Runtime check confirmed isinstance assertions all pass."
+        },
+        {
+          "key": "lazy_import_prometheus",
+          "text": "prometheus_client import is inside the conditional block (not at module level)",
+          "passed": true,
+          "evidence": "AST analysis confirmed: zero module-level imports of prometheus_client. The import `from prometheus_client import Counter, Gauge, Histogram, start_http_server` appears only inside the _register_prometheus_metrics() function body. Module can be imported in a Python environment without prometheus_client installed without any ImportError."
+        },
+        {
+          "key": "trades_total_has_correct_labels",
+          "text": "trades_total has labels: strategy, direction, outcome",
+          "passed": true,
+          "evidence": "Counter defined as Counter('tradeos_trades_total', 'Total number of trades placed', ['strategy', 'direction', 'outcome']). Runtime check: list(m._labelnames) == ['strategy', 'direction', 'outcome'] confirmed True."
+        },
+        {
+          "key": "phase1_runs_without_error",
+          "text": "Phase 1 path (OBSERVABILITY_PHASE != 2) runs without ImportError or NameError",
+          "passed": true,
+          "evidence": "Executed full Phase 1 simulation: module imported with no OBSERVABILITY_PHASE set, init_observability() called, all 6 metric helper functions called (record_trade, update_pnl, update_drawdown, record_api_latency, record_ws_reconnect, update_kill_switch_level). No ImportError, no NameError, no exception of any kind. All helpers silently no-op because _metrics is empty dict."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "no_credential_values_in_log",
+          "text": "Does NOT log the actual api_key, api_secret, or access_token values anywhere",
+          "passed": true,
+          "evidence": "The solution never references api_key, api_secret, or access_token as field values. The skill rule 'Never log sensitive values \u2014 log the error type, not the credential' is explicitly followed. A comment in the code states: 'Do NOT add: api_key=..., api_secret=..., access_token=...' and the NEVER-included section documents exactly why those fields are omitted."
+        },
+        {
+          "key": "logs_error_type",
+          "text": "Logs the error type or reason (e.g., 'access_token_expired' or 'TokenException')",
+          "passed": true,
+          "evidence": "The log.error() call includes both error_type='TokenException' (the KiteConnect exception class name) and reason='access_token_expired', providing a clear and searchable description of the failure without exposing any credential value."
+        },
+        {
+          "key": "includes_safe_context_fields",
+          "text": "Includes non-sensitive context: order_id and/or symbol",
+          "passed": true,
+          "evidence": "Both safe context fields are included: order_id='ORD123' and symbol='RELIANCE'. These are operationally necessary for debugging and contain no sensitive data. The function signature accepts them as parameters, making the pattern reusable for any auth failure event."
+        },
+        {
+          "key": "appropriate_log_level",
+          "text": "Log level is error or critical (not info or debug)",
+          "passed": true,
+          "evidence": "log.error() is used, which maps to log level 'error'. Per the event-schemas.md level guide, 'error' is correct for 'recoverable errors (API call failed, retry will happen)' \u2014 an expired token is recoverable via a token refresh. Using 'error' rather than 'critical' is intentional since no kill switch is involved."
+        },
+        {
+          "key": "uses_structlog",
+          "text": "Uses structlog (not print() or stdlib logging directly)",
+          "passed": true,
+          "evidence": "The solution imports structlog, configures it with the canonical Phase 1 processor chain from references/structlog-configuration.md, and calls log.error() via a structlog BoundLogger. There are no print() statements and no direct stdlib logging.error() calls in the business logic. The stdlib logging setup is only the backend sink, as required by the structlog architecture."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "async_task_asyncio_sleep",
+          "text": "Runs as an async task using asyncio.sleep() (not time.sleep() or threading.Timer)",
+          "passed": true,
+          "evidence": "schedule_daily_summary is defined as 'async def' and uses 'await asyncio.sleep(wait_seconds)' in the main wait loop and 'await asyncio.sleep(60)' after firing. No time.sleep() or threading.Timer anywhere in the file. Spawned via asyncio.create_task()."
+        },
+        {
+          "key": "fires_at_1535_ist",
+          "text": "Fires at exactly 15:35 IST (uses IST timezone via pytz or similar)",
+          "passed": true,
+          "evidence": "IST = pytz.timezone('Asia/Kolkata') is defined at module level. _compute_wait_seconds() uses datetime.now(IST) and replaces hour=15, minute=35, second=0 to compute target_today. The wait is the precise delta to that moment in IST."
+        },
+        {
+          "key": "includes_all_summary_fields",
+          "text": "Message includes trades count, winners/losers breakdown, total PnL in rupees, and max drawdown",
+          "passed": true,
+          "evidence": "_build_summary_message() constructs a message with: 'Trades: {trades} ({winners}W / {losers}L) | Win rate: {win_rate}%', 'Total PnL: {pnl_sign}\u20b9{total_pnl_rs:,.0f}' (INR with rupee symbol), and 'Max drawdown: {max_drawdown_pct:+.1f}%'. All four required fields are present."
+        },
+        {
+          "key": "handles_post_1535_startup",
+          "text": "Handles the case where current time is already past 15:35 (waits for next day)",
+          "passed": true,
+          "evidence": "In _compute_wait_seconds(): 'if now >= target_today:' branch computes 'wait_seconds = _SECONDS_PER_DAY - seconds_past_target' \u2014 subtracting time already elapsed past 15:35 from 86400 to arrive at the correct next-day 15:35. Logs 'daily_summary_scheduling_next_day' to confirm the branch was taken."
+        },
+        {
+          "key": "human_readable_summary_format",
+          "text": "Message format is human-readable (not raw JSON), uses \ud83d\udcca emoji or equivalent",
+          "passed": true,
+          "evidence": "Message starts with '\ud83d\udcca Daily Summary | TradeOS' exactly matching the canonical template from telegram-alerting-rules.md. Multi-line format with labelled fields (Date, Mode, Trades, Win rate, Total PnL, Max drawdown, Time). Uses \u20b9 symbol for rupees. No JSON is sent to Telegram."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "shows_log_from_coroutine",
+          "text": "Demonstrates calling log.info() from an async def coroutine",
+          "passed": true,
+          "evidence": "signal_processor_task is defined as 'async def signal_processor_task(...)' and contains a direct 'log.info(\"signal_generated\", ...)' call at line ~110. The docstring explicitly notes that structlog is not async and the call runs to completion on the event loop thread. A second example in high_frequency_log_task also shows logging from an async coroutine."
+        },
+        {
+          "key": "explains_nonblocking_nature",
+          "text": "Explains or demonstrates that structlog's JSONRenderer is CPU-bound (not I/O-bound) and does not block asyncio",
+          "passed": true,
+          "evidence": "The module-level docstring dedicates a full section to 'WHY log.info() IS NON-BLOCKING' explaining that JSONRenderer is CPU-bound (json.dumps on a small dict) and never calls select()/epoll_wait(). The signal_processor_task docstring contains an inline call-stack trace showing each processor (add_log_level, add_logger_name, TimeStamper, JSONRenderer) is a few-microsecond O(1) operation. The structlog-configuration.md reference is explicitly cited: 'structlog's JSONRenderer runs synchronously but is CPU-bound and fast \u2014 it does not block on I/O.' Both sources of truth are consistent."
+        },
+        {
+          "key": "no_time_sleep_or_sync_io",
+          "text": "Does NOT use time.sleep() or synchronous file I/O in the hot path",
+          "passed": true,
+          "evidence": "The solution uses 'await asyncio.sleep(0)' (not time.sleep()) for yielding and 'await asyncio.sleep(0.01)' in the producer. The only synchronous file I/O present is (a) the RotatingFileHandler inside stdlib logging \u2014 which is noted as acceptable for low-frequency events \u2014 and (b) _flush_pending_logs_sync() which is explicitly wrapped in asyncio.to_thread() so it runs off the event loop thread. No bare time.sleep() appears anywhere in the solution."
+        },
+        {
+          "key": "schema_compliant_signal_log",
+          "text": "signal_generated log includes required fields: symbol, strategy, direction, entry_price, indicators",
+          "passed": true,
+          "evidence": "The log.info('signal_generated', ...) call includes all five required fields: symbol=signal['symbol'], strategy=signal['strategy'], direction=signal['direction'], entry_price=signal['entry_price'], and indicators={...} containing ema9, ema21, rsi, vwap, volume_ratio. The sample_signal dict also includes stop_loss and target as defined in event-schemas.md. Schema is fully compliant."
+        },
+        {
+          "key": "mentions_asyncio_to_thread",
+          "text": "Mentions asyncio.to_thread() as the approach for high-frequency file writes",
+          "passed": true,
+          "evidence": "asyncio.to_thread() is mentioned in three places: (1) the module-level docstring under 'FILE WRITE (RotatingFileHandler)' section, (2) the high_frequency_log_task function which calls 'await asyncio.to_thread(_flush_pending_logs_sync)' with a comment explaining that it offloads os.write() to a worker thread, and (3) a comment noting 'asyncio.to_thread() wraps the blocking call in loop.run_in_executor()'. This directly mirrors the canonical pattern from structlog-configuration.md: 'await asyncio.to_thread(flush_pending_logs)'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "uses_structlog",
+          "text": "Uses structlog (not Python's stdlib logging or print())",
+          "passed": true,
+          "evidence": "import structlog used; log = structlog.get_logger(); log.info() called \u2014 no stdlib logging or bare print() for the event"
+        },
+        {
+          "key": "all_schema_fields_present",
+          "text": "Includes all required fields: symbol, strategy, entry_price, exit_price, pnl_rs, pnl_pct, hold_duration_minutes, exit_reason",
+          "passed": true,
+          "evidence": "All 8 required fields present in log.info() call: symbol='RELIANCE', strategy='s1', entry_price=2451.00, exit_price=2487.50, pnl_rs=365.0, pnl_pct=1.4892, hold_duration_minutes=47, exit_reason='target_hit'"
+        },
+        {
+          "key": "pnl_rs_correct",
+          "text": "pnl_rs is calculated correctly (365.0 = (2487.50-2451.00)*10)",
+          "passed": true,
+          "evidence": "pnl_rs = round((2487.50 - 2451.00) * 10, 2) = round(36.50 * 10, 2) = 365.0; confirmed in JSON output: \"pnl_rs\": 365.0"
+        },
+        {
+          "key": "correct_event_name",
+          "text": "event name is 'position_closed' (exact string)",
+          "passed": true,
+          "evidence": "log.info('position_closed', ...) \u2014 JSON output confirms: \"event\": \"position_closed\""
+        },
+        {
+          "key": "exit_reason_correct",
+          "text": "exit_reason is 'target_hit' (consistent with schema convention)",
+          "passed": true,
+          "evidence": "exit_reason = 'target_hit' passed as keyword argument; JSON output confirms: \"exit_reason\": \"target_hit\""
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "human_readable_format",
+          "text": "Message is human-readable multi-line format (not raw JSON or dict)",
+          "passed": true,
+          "evidence": "format_kill_switch_alert() builds a multi-line f-string with labeled fields (Level, Reason, Daily PnL, Positions, Time, Action). No dict or JSON object is passed as the message body."
+        },
+        {
+          "key": "includes_critical_emoji",
+          "text": "Includes \ud83d\udd34 emoji or equivalent CRITICAL indicator",
+          "passed": true,
+          "evidence": "First line of the formatted message is '\ud83d\udd34 CRITICAL \u2014 Kill Switch Triggered' (line 78 of solution.py)."
+        },
+        {
+          "key": "uses_async_http",
+          "text": "Uses httpx (or python-telegram-bot) for async HTTP \u2014 not requests library",
+          "passed": true,
+          "evidence": "import httpx used throughout. send_telegram_alert() uses 'async with httpx.AsyncClient() as client: response = await client.post(...)'. No import of requests anywhere in the file."
+        },
+        {
+          "key": "includes_key_fields_in_message",
+          "text": "Includes level (2), reason (daily_loss_exceeded), and PnL (-3.1%) in message body",
+          "passed": true,
+          "evidence": "Message includes 'Level    : 2 \u2014 Position Stop', 'Reason   : Daily loss limit breached' (mapped from daily_loss_exceeded), and 'Daily PnL: -3.1%' via f'{daily_pnl_pct:+.1f}%' with value -3.1."
+        },
+        {
+          "key": "shows_ist_time",
+          "text": "Time is shown in IST (not UTC)",
+          "passed": true,
+          "evidence": "event_time_ist parameter defaults to '11:32 IST' and is rendered in the message as 'Time     : 11:32 IST'. pytz.timezone('Asia/Kolkata') is imported and IST constant is defined for use in any timestamp conversions."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "tracks_last_sent_per_type",
+          "text": "Tracks last_sent_at (or equivalent) per alert_type as a dict",
+          "passed": true,
+          "evidence": "TelegramAlertHandler.__init__ initialises self._last_sent_at: Dict[str, float] = {}. On every successful send, self._last_sent_at[alert_type] = now is written (line in send_alert). The demo's final block prints the dict showing three independent entries: ws_disconnected, api_error, order_rejected."
+        },
+        {
+          "key": "five_minute_rate_limit",
+          "text": "Skips send if less than 5 minutes (300 seconds) since last send for same alert_type",
+          "passed": true,
+          "evidence": "RATE_LIMIT_SECONDS = 300 constant defined at module level. In send_alert: elapsed = now - last_sent; if elapsed < RATE_LIMIT_SECONDS: return False. Scenario 1 calls 2 and 3 for ws_disconnected return False (elapsed ~0.0s < 300s), confirmed by output lines showing sent=False."
+        },
+        {
+          "key": "critical_bypasses_rate_limit",
+          "text": "CRITICAL alerts bypass rate limiting (always send immediately)",
+          "passed": true,
+          "evidence": "send_alert checks: if severity == CRITICAL_SEVERITY: await self._dispatch(...); return True \u2014 before any rate-limit check. Scenario 2 sends kill_switch_triggered twice in immediate succession with severity=CRITICAL; both return True (confirmed in output). Note: CRITICAL sends do NOT update _last_sent_at so they never affect the WARNING window for the same type."
+        },
+        {
+          "key": "independent_windows_per_type",
+          "text": "Different alert types have independent 5-minute windows",
+          "passed": true,
+          "evidence": "_last_sent_at is keyed by alert_type, so each type has its own timestamp. Scenario 3 sends api_error immediately after ws_disconnected was suppressed \u2014 api_error is a fresh key so it sends successfully (sent=True). Scenario 4 confirms order_rejected sends even while api_error is still within its window."
+        },
+        {
+          "key": "logs_when_rate_limited",
+          "text": "Logs when a warning is rate-limited (suppressed)",
+          "passed": true,
+          "evidence": "When elapsed < RATE_LIMIT_SECONDS, code calls log.warning('alert_rate_limited', alert_type=..., severity=..., elapsed_seconds=..., rate_limit_seconds=..., message=...). Output shows two JSON log lines with event='alert_rate_limited' and level='warning' for the suppressed ws_disconnected calls in Scenario 1."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "correct_processor_chain",
+          "text": "Configures structlog with the 5-step processor chain: add_log_level, add_logger_name, TimeStamper(fmt='iso', utc=False), StackInfoRenderer, JSONRenderer",
+          "passed": true,
+          "evidence": "shared_processors list in configure_logging() contains exactly: structlog.stdlib.add_log_level, structlog.stdlib.add_logger_name, structlog.processors.TimeStamper(fmt='iso', utc=False), structlog.processors.StackInfoRenderer(), structlog.processors.JSONRenderer() \u2014 in that order, passed to structlog.configure(processors=shared_processors)."
+        },
+        {
+          "key": "rotating_file_handler_configured",
+          "text": "Uses RotatingFileHandler with maxBytes=10MB and backupCount=7",
+          "passed": true,
+          "evidence": "logging.handlers.RotatingFileHandler instantiated with maxBytes=10 * 1024 * 1024 (LOG_MAX_BYTES constant = 10485760 bytes = 10 MB) and backupCount=7 (LOG_BACKUP_COUNT constant). Both constants are named and used consistently throughout the module."
+        },
+        {
+          "key": "no_prometheus_import",
+          "text": "Zero imports of prometheus_client anywhere in the Phase 1 setup code",
+          "passed": true,
+          "evidence": "No import of prometheus_client, prometheus, or any metrics-push library appears anywhere in solution.py. The module imports are: logging, logging.handlers, os, sys, asyncio, pathlib.Path, typing.Optional, structlog. Prometheus/Grafana explicitly excluded per task requirements."
+        },
+        {
+          "key": "stderr_for_warnings",
+          "text": "WARNING or higher logs go to stderr",
+          "passed": true,
+          "evidence": "stderr_handler = logging.StreamHandler(stream=sys.stderr) is created and stderr_handler.setLevel(logging.WARNING) is set, ensuring only WARNING, ERROR, and CRITICAL records reach stderr. Handler is added to the root logger via root_logger.addHandler(stderr_handler)."
+        },
+        {
+          "key": "correct_log_path",
+          "text": "Log file path is logs/tradeos.log (not hardcoded absolute path)",
+          "passed": true,
+          "evidence": "LOG_DIR = Path('logs') and LOG_FILE = LOG_DIR / 'tradeos.log' are defined as relative Path objects at module level. The RotatingFileHandler receives filename=str(LOG_FILE) which resolves to 'logs/tradeos.log' relative to the current working directory \u2014 no absolute path is hardcoded."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "env_var_guard",
+          "text": "Reads OBSERVABILITY_PHASE from environment and only registers metrics when it equals '2'",
+          "passed": true,
+          "evidence": "os.environ.get('OBSERVABILITY_PHASE', '1') is called in __init__; _register_prometheus_metrics() is only invoked when self._phase == '2' (line 60 conditional). Phase 1 path calls _register_noop_metrics() for all other values."
+        },
+        {
+          "key": "all_six_metrics_defined",
+          "text": "Defines all 6 required metrics: trades_total (Counter), pnl_rupees (Gauge), drawdown_pct (Gauge), api_latency (Histogram), ws_reconnects (Counter), kill_switch_level (Gauge)",
+          "passed": true,
+          "evidence": "All 6 metrics registered in _register_prometheus_metrics(): trades_total=Counter, pnl_rupees=Gauge, drawdown_pct=Gauge, api_latency=Histogram, ws_reconnects=Counter, kill_switch_level=Gauge. Corresponding _NoOpMetric stubs assigned in _register_noop_metrics() for Phase 1."
+        },
+        {
+          "key": "lazy_import_prometheus",
+          "text": "prometheus_client import is inside the conditional block (not at module level)",
+          "passed": true,
+          "evidence": "'from prometheus_client import Counter, Gauge, Histogram' appears at line 75, col_offset=8, inside the _register_prometheus_metrics() method body. No prometheus_client import exists at module level (col_offset=0). Confirmed by AST analysis."
+        },
+        {
+          "key": "trades_total_has_correct_labels",
+          "text": "trades_total has labels: strategy, direction, outcome",
+          "passed": true,
+          "evidence": "trades_total = Counter('tradeos_trades_total', ..., labelnames=['strategy', 'direction', 'outcome']). All three required label names are present. Smoke-test calls metrics.trades_total.labels(strategy='s1', direction='long', outcome='win').inc() without error."
+        },
+        {
+          "key": "phase1_runs_without_error",
+          "text": "Phase 1 path (OBSERVABILITY_PHASE != 2) runs without ImportError or NameError",
+          "passed": true,
+          "evidence": "Running 'python solution.py' without OBSERVABILITY_PHASE set completes with exit code 0. No ImportError (prometheus_client not imported), no NameError (all 6 metric attributes exist as _NoOpMetric stubs). All .inc(), .set(), .observe(), .labels() calls succeed."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "no_credential_values_in_log",
+          "text": "Does NOT log the actual api_key, api_secret, or access_token values anywhere",
+          "passed": true,
+          "evidence": "The log.error() call in solution.py passes only error_type, order_id, symbol, and exc_type. No api_key, api_secret, or access_token variable values are passed to the logger at any point. A comment explicitly notes that credentials are intentionally excluded."
+        },
+        {
+          "key": "logs_error_type",
+          "text": "Logs the error type or reason (e.g., 'access_token_expired' or 'TokenException')",
+          "passed": true,
+          "evidence": "The field error_type='access_token_expired' is passed to log.error(), clearly identifying the failure reason. Additionally exc_type captures 'Exception' (the Python class name)."
+        },
+        {
+          "key": "includes_safe_context_fields",
+          "text": "Includes non-sensitive context: order_id and/or symbol",
+          "passed": true,
+          "evidence": "Both order_id='ORD123' and symbol='RELIANCE' are explicitly included as keyword arguments in the log.error() call, providing full safe context."
+        },
+        {
+          "key": "appropriate_log_level",
+          "text": "Log level is error or critical (not info or debug)",
+          "passed": true,
+          "evidence": "log.error() is used, which corresponds to the ERROR level \u2014 appropriate for a failed authentication event that would block order placement."
+        },
+        {
+          "key": "uses_structlog",
+          "text": "Uses structlog (not print() or stdlib logging directly)",
+          "passed": true,
+          "evidence": "The module imports structlog, configures it with JSONRenderer, obtains a logger via structlog.get_logger(), and calls log.error(). No print() statements or stdlib logging imports are present."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 7,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "async_task_asyncio_sleep",
+          "text": "Runs as an async task using asyncio.sleep() (not time.sleep() or threading.Timer)",
+          "passed": true,
+          "evidence": "daily_summary_task() is an async def coroutine that uses 'await asyncio.sleep(wait_seconds)' to wait until 15:35, and 'await asyncio.sleep(60)' to avoid re-firing. No time.sleep() or threading.Timer anywhere in the file. Lines 241 and 264."
+        },
+        {
+          "key": "fires_at_1535_ist",
+          "text": "Fires at exactly 15:35 IST (uses IST timezone via pytz or similar)",
+          "passed": true,
+          "evidence": "IST = pytz.timezone('Asia/Kolkata') (line 26). SUMMARY_HOUR=15, SUMMARY_MINUTE=35 (lines 27-28). _seconds_until_next_1535() localizes target times with IST.localize() and computes precise sleep duration. datetime.now(IST) used at each loop iteration."
+        },
+        {
+          "key": "includes_all_summary_fields",
+          "text": "Message includes trades count, winners/losers breakdown, total PnL in \u20b9, and max drawdown",
+          "passed": true,
+          "evidence": "format_daily_summary() builds message with: 'Total Trades: {stats[total_trades]}', 'Winners: {stats[winners]}', 'Losers: {stats[losers]}', 'Total PnL: \u20b9{total_pnl:,.2f}', 'Max Drawdown: \u20b9{stats[max_drawdown]:,.2f}'. All four fields present (lines 176-182). Verified by demo output."
+        },
+        {
+          "key": "handles_post_1535_startup",
+          "text": "Handles the case where current time is already past 15:35 (waits for next day)",
+          "passed": true,
+          "evidence": "_seconds_until_next_1535() explicitly checks: if now >= today_target, it builds next_target = tomorrow's date at 15:35 IST using timedelta(days=1) (lines 210-215). Demo run at 22:28 IST correctly printed 'waiting for TOMORROW' and computed ~17 hours wait."
+        },
+        {
+          "key": "human_readable_summary_format",
+          "text": "Message format is human-readable (not raw JSON), uses \ud83d\udcca emoji or equivalent",
+          "passed": true,
+          "evidence": "format_daily_summary() produces a formatted multi-line string (not JSON) with labels, dividers, and emojis: \ud83d\udcca in the title (line 173), \u2705 for winners, \u274c for losers, \ud83d\udfe2/\ud83d\udd34 for PnL, \ud83d\udcc9 for drawdown. HTML bold tags for Telegram rendering."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 8,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "key": "shows_log_from_coroutine",
+          "text": "Demonstrates calling log.info() from an async def coroutine",
+          "passed": true,
+          "evidence": "signal_processor_task() is defined as `async def` and calls `log.info('signal_generated', ...)` directly inside the coroutine body. signal_processor_task_file_safe() is also async and uses asyncio.to_thread() to call log.info(). Both patterns are demonstrated."
+        },
+        {
+          "key": "explains_nonblocking_nature",
+          "text": "Explains or demonstrates that structlog's JSONRenderer is CPU-bound (not I/O-bound) and does not block asyncio",
+          "passed": true,
+          "evidence": "Section 2 in solution.py ('Why log.info() inside a coroutine is NON-BLOCKING') explicitly states: 'structlog.log.info() does: a) Walk the processor chain (pure Python dict operations) ~1\u20133 \u00b5s, b) Call JSONRenderer: json.dumps(event_dict) ~2\u20135 \u00b5s'. It then explains that the total ~5\u201315 \u00b5s wall-clock time is negligible compared to asyncio's millisecond-granularity task scheduling. The module docstring also states: 'structlog's JSONRenderer is CPU-bound (pure string/dict formatting in memory). It does NOT perform any I/O itself.'"
+        },
+        {
+          "key": "no_time_sleep_or_sync_io",
+          "text": "Does NOT use time.sleep() or synchronous file I/O in the hot path",
+          "passed": true,
+          "evidence": "The solution uses `await asyncio.sleep(0)` (not time.sleep()) exclusively for yielding control. `time` is only imported and used for `time.strftime()` (non-blocking string formatting). No synchronous file I/O (open(), write(), etc.) appears anywhere in the hot path. The only sync write is StreamHandler to stdout inside structlog, which is explicitly discussed as acceptable at low-to-medium frequency."
+        },
+        {
+          "key": "schema_compliant_signal_log",
+          "text": "signal_generated log includes required fields: symbol, strategy, direction, entry_price, indicators",
+          "passed": true,
+          "evidence": "The log.info() call in signal_processor_task() includes all five required fields: symbol=symbol, strategy=strategy, direction=direction, entry_price=entry_price, indicators=indicators. The indicators dict contains ema_9, ema_21, vwap, rsi_14, volume_ratio \u2014 realistic values matching S1 intraday momentum strategy indicators defined in the project spec."
+        },
+        {
+          "key": "mentions_asyncio_to_thread",
+          "text": "Mentions asyncio.to_thread() as the approach for high-frequency file writes",
+          "passed": true,
+          "evidence": "Section 4 ('asyncio.to_thread() \u2014 for high-frequency or file-backed log sinks') explicitly discusses this pattern. The signal_processor_task_file_safe() coroutine demonstrates it with `await asyncio.to_thread(_blocking_log_write, 'signal_generated', ...)`. The comment explains: 'asyncio.to_thread() runs _blocking_log_write in a ThreadPoolExecutor. The coroutine suspends (yields control to the event loop) while waiting for the thread to complete.'"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.00",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": []
+}

@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "name": "structlog_json_schema_compliant",
+    "description": "position_closed log event must contain all required schema fields",
+    "prompt": "Log a position_closed event using structlog for a RELIANCE trade — it was a long, entered at 2451.00, exited at 2487.50, 10 shares, held for 47 minutes, exited because target was hit, using the S1 strategy.",
+    "expectations": [
+      {
+        "text": "Uses structlog (not Python's stdlib logging or print())",
+        "key": "uses_structlog"
+      },
+      {
+        "text": "Includes all required fields: symbol, strategy, entry_price, exit_price, pnl_rs, pnl_pct, hold_duration_minutes, exit_reason",
+        "key": "all_schema_fields_present"
+      },
+      {
+        "text": "pnl_rs is calculated correctly (365.0 = (2487.50-2451.00)*10)",
+        "key": "pnl_rs_correct"
+      },
+      {
+        "text": "event name is 'position_closed' (exact string)",
+        "key": "correct_event_name"
+      },
+      {
+        "text": "exit_reason is 'target_hit' (consistent with schema convention)",
+        "key": "exit_reason_correct"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "telegram_critical_alert_format",
+    "description": "Telegram alert for kill_switch_triggered must be human-readable with emoji, not raw JSON",
+    "prompt": "Send a Telegram alert for kill_switch_triggered Level 2 — daily PnL dropped to -3.1%, reason is daily_loss_exceeded, 2 positions open, time is 11:32 IST. Use async HTTP, not requests.",
+    "expectations": [
+      {
+        "text": "Message is human-readable multi-line format (not raw JSON or dict)",
+        "key": "human_readable_format"
+      },
+      {
+        "text": "Includes 🔴 emoji or equivalent CRITICAL indicator",
+        "key": "includes_critical_emoji"
+      },
+      {
+        "text": "Uses httpx (or python-telegram-bot) for async HTTP — not requests library",
+        "key": "uses_async_http"
+      },
+      {
+        "text": "Includes level (2), reason (daily_loss_exceeded), and PnL (-3.1%) in message body",
+        "key": "includes_key_fields_in_message"
+      },
+      {
+        "text": "Time is shown in IST (not UTC)",
+        "key": "shows_ist_time"
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "telegram_rate_limiting_warnings",
+    "description": "WARNING alerts must be batched — max 1 per 5 minutes per alert type",
+    "prompt": "Write the Telegram alert handler that batches WARNING alerts to max 1 per 5 minutes per alert type — if ws_disconnected fires 3 times in 2 minutes it should only send once, but kill_switch_triggered should always send immediately.",
+    "expectations": [
+      {
+        "text": "Tracks last_sent_at (or equivalent) per alert_type as a dict",
+        "key": "tracks_last_sent_per_type"
+      },
+      {
+        "text": "Skips send if less than 5 minutes (300 seconds) since last send for same alert_type",
+        "key": "five_minute_rate_limit"
+      },
+      {
+        "text": "CRITICAL alerts bypass rate limiting (always send immediately)",
+        "key": "critical_bypasses_rate_limit"
+      },
+      {
+        "text": "Different alert types have independent 5-minute windows (ws_disconnected and order_rejected are tracked separately)",
+        "key": "independent_windows_per_type"
+      },
+      {
+        "text": "Logs when a warning is rate-limited (suppressed) — so silence is not invisible",
+        "key": "logs_when_rate_limited"
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "name": "phase1_no_prometheus_dependency",
+    "description": "Phase 1 observability setup must NOT import or require prometheus_client",
+    "prompt": "Set up the full observability stack for TradeOS Phase 1 — configure structlog with IST timestamps, rotating file handler at logs/tradeos.log, WARNING+ to stderr, and initialize Telegram alerting. No Prometheus or Grafana should be required.",
+    "expectations": [
+      {
+        "text": "Configures structlog with the 5-step processor chain: add_log_level, add_logger_name, TimeStamper(fmt='iso', utc=False), StackInfoRenderer, JSONRenderer",
+        "key": "correct_processor_chain"
+      },
+      {
+        "text": "Uses RotatingFileHandler with maxBytes=10MB and backupCount=7",
+        "key": "rotating_file_handler_configured"
+      },
+      {
+        "text": "Zero imports of prometheus_client anywhere in the Phase 1 setup code",
+        "key": "no_prometheus_import"
+      },
+      {
+        "text": "WARNING or higher logs go to stderr (for terminal visibility)",
+        "key": "stderr_for_warnings"
+      },
+      {
+        "text": "Log file path is logs/tradeos.log (not hardcoded absolute path)",
+        "key": "correct_log_path"
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "name": "prometheus_metrics_phase2_conditional",
+    "description": "Prometheus metrics registration must be conditional on OBSERVABILITY_PHASE=2 env var",
+    "prompt": "Write the metrics registration that only activates Prometheus in Phase 2 — define the 6 TradeOS metrics (trades_total, pnl_rupees, drawdown_pct, api_latency, ws_reconnects, kill_switch_level) but only register them when OBSERVABILITY_PHASE env var is '2'. Phase 1 must run without prometheus_client installed.",
+    "expectations": [
+      {
+        "text": "Reads OBSERVABILITY_PHASE from environment (os.environ.get) and only registers metrics when it equals '2'",
+        "key": "env_var_guard"
+      },
+      {
+        "text": "Defines all 6 required metrics: trades_total (Counter), pnl_rupees (Gauge), drawdown_pct (Gauge), api_latency (Histogram), ws_reconnects (Counter), kill_switch_level (Gauge)",
+        "key": "all_six_metrics_defined"
+      },
+      {
+        "text": "prometheus_client import is inside the conditional block (not at module level)",
+        "key": "lazy_import_prometheus"
+      },
+      {
+        "text": "trades_total has labels: strategy, direction, outcome",
+        "key": "trades_total_has_correct_labels"
+      },
+      {
+        "text": "Phase 1 path (OBSERVABILITY_PHASE != 2) runs without ImportError or NameError",
+        "key": "phase1_runs_without_error"
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "name": "no_sensitive_data_in_logs",
+    "description": "Failed API auth log must NOT include api_key, api_secret, or access_token values",
+    "prompt": "Write a log entry for a failed Zerodha API authentication — the error is that the access_token has expired, the order_id being placed was 'ORD123', symbol RELIANCE. Make sure no sensitive values are leaked.",
+    "expectations": [
+      {
+        "text": "Does NOT log the actual api_key, api_secret, or access_token values anywhere",
+        "key": "no_credential_values_in_log"
+      },
+      {
+        "text": "Logs the error type or reason (e.g., 'access_token_expired' or 'TokenException')",
+        "key": "logs_error_type"
+      },
+      {
+        "text": "Includes non-sensitive context: order_id and/or symbol",
+        "key": "includes_safe_context_fields"
+      },
+      {
+        "text": "Log level is error or critical (not info or debug)",
+        "key": "appropriate_log_level"
+      },
+      {
+        "text": "Uses structlog (not print() or stdlib logging directly)",
+        "key": "uses_structlog"
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "name": "daily_summary_telegram_at_1535",
+    "description": "Daily PnL summary must be sent exactly once at 15:35 IST as an async task",
+    "prompt": "Write the daily PnL summary that sends to Telegram at 15:35 IST — it should run as an asyncio task, fire once per day at 15:35, and include: number of trades, win/loss count, total PnL in rupees, and max drawdown of the session.",
+    "expectations": [
+      {
+        "text": "Runs as an async task using asyncio.sleep() (not time.sleep() or threading.Timer)",
+        "key": "async_task_asyncio_sleep"
+      },
+      {
+        "text": "Fires at exactly 15:35 IST (target time = 15:35, uses IST timezone via pytz)",
+        "key": "fires_at_1535_ist"
+      },
+      {
+        "text": "Message includes trades count, winners/losers breakdown, total PnL in ₹, and max drawdown",
+        "key": "includes_all_summary_fields"
+      },
+      {
+        "text": "Handles the case where current time is already past 15:35 (waits for next day, not immediate send)",
+        "key": "handles_post_1535_startup"
+      },
+      {
+        "text": "Message format is human-readable (not raw JSON), uses 📊 emoji or equivalent",
+        "key": "human_readable_summary_format"
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "name": "async_log_write_nonblocking",
+    "description": "structlog writes from asyncio coroutines must not block the event loop",
+    "prompt": "Show how to write structlog events from inside an asyncio coroutine — specifically a signal_generated event from the signal processor task — without blocking the event loop. Explain why the approach is non-blocking.",
+    "expectations": [
+      {
+        "text": "Demonstrates calling log.info() (or equivalent structlog call) directly from an async def coroutine",
+        "key": "shows_log_from_coroutine"
+      },
+      {
+        "text": "Explains or demonstrates that structlog's JSONRenderer is CPU-bound (not I/O-bound) and does not block asyncio",
+        "key": "explains_nonblocking_nature"
+      },
+      {
+        "text": "Does NOT use time.sleep() or synchronous file I/O in the hot path",
+        "key": "no_time_sleep_or_sync_io"
+      },
+      {
+        "text": "signal_generated log includes the required schema fields: symbol, strategy, direction, entry_price, indicators",
+        "key": "schema_compliant_signal_log"
+      },
+      {
+        "text": "Mentions asyncio.to_thread() as the approach if file writes become a bottleneck (high-frequency path)",
+        "key": "mentions_asyncio_to_thread"
+      }
+    ]
+  }
+]
