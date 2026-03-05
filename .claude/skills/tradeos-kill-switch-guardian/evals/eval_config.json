@@ -1,0 +1,83 @@
+{
+  "skill_name": "tradeos-kill-switch-guardian",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write the kill switch check for 3 consecutive losses triggering Level 1 in TradeOS. The function receives a trade_history list (dicts with 'pnl' key) and a kill_switch_state dict. It should trigger Level 1 when the last 3 trades all have negative pnl.",
+      "expected_output": "Code sets stop_new_signals or level=1 via kill switch, does NOT close positions, does NOT call level 2 actions, logs a WARNING or CRITICAL entry. The function checks the last 3 items in trade_history, confirms all pnl values are negative, then triggers Level 1 kill switch.",
+      "files": [],
+      "expectations": [
+        "Code checks that the last 3 trades in trade_history all have negative pnl",
+        "Code triggers Level 1 (not Level 2 or 3) kill switch",
+        "Code does NOT cancel orders or close positions (Level 2 actions are absent)",
+        "Code includes a log entry (structlog log.critical or log.warning)",
+        "Function signature accepts trade_history list and kill_switch_state dict"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Implement the daily loss circuit breaker that fires Level 2 at 3% drawdown for TradeOS. The function receives daily_pnl (float, negative means loss) and kill_switch_state dict. Total capital is 500000 (₹5L). MAX_DAILY_LOSS_PCT is 0.03.",
+      "expected_output": "Code checks daily_pnl / 500000 <= -0.03, then triggers Level 2 which cancels orders, closes positions, logs CRITICAL. Uses the correct threshold constant and capital value.",
+      "files": [],
+      "expectations": [
+        "Code computes daily_pnl_pct = daily_pnl / 500000 (or equivalent total capital value)",
+        "Code triggers Level 2 when daily_pnl_pct <= -0.03",
+        "Code includes cancel_all_orders and/or close_all_positions calls (Level 2 actions)",
+        "Code logs a CRITICAL entry when Level 2 fires",
+        "Threshold 0.03 (3%) and capital 500000 appear as constants, not magic numbers"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write the is_trading_allowed() gate method for the TradeOS KillSwitch class. This method must be called by every order placement path. It should return False when the kill switch is at any active level (1, 2, or 3), and True only when level is 0.",
+      "expected_output": "Method returns False when kill_switch state is active (level >= 1), True only when level == 0. Simple, fast check. No side effects.",
+      "files": [],
+      "expectations": [
+        "Method returns False when kill_switch_state['level'] >= 1 or state['active'] is True",
+        "Method returns True when kill_switch_state['level'] == 0",
+        "Method has no side effects (no logging, no state mutation)",
+        "Method is a simple one-liner or minimal implementation (fast gate check)",
+        "Code includes an example or comment showing it is called before order placement"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Write the kill switch reset function for TradeOS. The reset should be manual-only and must reject resets during market hours (09:15–15:30 IST). Return True on success, False if rejected.",
+      "expected_output": "Function checks current IST time, raises an error or returns False if between 09:15 and 15:30. Outside market hours, resets level to 0, active to False, clears reason and triggered_at.",
+      "files": [],
+      "expectations": [
+        "Function checks current time in IST timezone (Asia/Kolkata)",
+        "Function returns False (or raises) if current time is between 09:15 and 15:30",
+        "Function resets level to 0, active to False, reason to empty string, triggered_at to None when outside market hours",
+        "Function returns True on successful reset",
+        "Function includes a log entry indicating manual reset"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Implement Level 3 system stop for TradeOS. Level 3 must execute all Level 2 actions first (cancel orders, close positions), then halt the asyncio event loop. It should log CRITICAL and send a Telegram alert.",
+      "expected_output": "Code explicitly calls Level 2 actions (cancel orders + close positions) before stopping the event loop. Uses asyncio.get_event_loop().stop(). Logs CRITICAL. Sends Telegram alert.",
+      "files": [],
+      "expectations": [
+        "Code calls _execute_level2_actions() or equivalent before halting the event loop",
+        "Code calls asyncio.get_event_loop().stop() to halt the event loop",
+        "Code logs CRITICAL level entry for the system stop",
+        "Code sends a Telegram alert before or after halting",
+        "Level 2 actions are called BEFORE loop.stop() (ordering is explicit)"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Write the WebSocket disconnect handler for TradeOS that triggers Level 2 kill switch after 60 seconds of disconnection during market hours (09:15–15:30 IST). Use async patterns. The function monitors ws_state dict with 'connected' and 'disconnect_start' keys.",
+      "expected_output": "Async function checks if ws is disconnected during market hours, records disconnect_start time, then after 60 seconds of continuous disconnection calls kill_switch.trigger(level=2, reason='ws_disconnected_60s'). Uses asyncio.sleep() not time.sleep().",
+      "files": [],
+      "expectations": [
+        "Function is async (uses async def)",
+        "Function checks is_market_hours() or equivalent before triggering",
+        "Function measures elapsed disconnection time and triggers Level 2 after >= 60 seconds",
+        "Function uses asyncio.sleep() — NOT time.sleep()",
+        "Function calls kill_switch trigger with level=2 and a reason referencing ws_timeout or ws_disconnected"
+      ]
+    }
+  ]
+}

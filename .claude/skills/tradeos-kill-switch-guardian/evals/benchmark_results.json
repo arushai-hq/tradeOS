@@ -1,0 +1,584 @@
+{
+  "metadata": {
+    "skill_name": "tradeos-kill-switch-guardian",
+    "skill_path": ".claude/skills/tradeos-kill-switch-guardian",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-03-05T12:52:28Z",
+    "evals_run": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 93.8,
+        "tokens": 2958,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code checks that the last 3 trades in trade_history all have negative pnl",
+          "passed": true,
+          "evidence": "solution.py lines 115-117: `last_three: list[dict] = trade_history[-3:]` followed by `if all(t[\"pnl\"] < 0 for t in last_three):`. This slices the last 3 entries and uses `all()` with `pnl < 0` to confirm every trade in the window is a loss."
+        },
+        {
+          "text": "Code triggers Level 1 (not Level 2 or 3) kill switch",
+          "passed": true,
+          "evidence": "solution.py line 54: `kill_switch_state[\"level\"] = 1` inside `trigger_kill_switch_level1()`. The function name, docstring, and log event (`level=1`) all confirm Level 1 only. No code path sets level to 2 or 3."
+        },
+        {
+          "text": "Code does NOT cancel orders or close positions (Level 2 actions are absent)",
+          "passed": true,
+          "evidence": "The entire solution.py contains no calls to cancel orders, close positions, or any broker API. The `trigger_kill_switch_level1()` docstring explicitly states: 'Does NOT cancel orders or close positions (those are Level 2 actions).' The function body only mutates the state dict and logs."
+        },
+        {
+          "text": "Code includes a log entry (structlog log.critical or log.warning)",
+          "passed": true,
+          "evidence": "Two structlog calls are present: (1) `log.warning('consecutive_losses_detected', losses=..., count=3)` at lines 118-122 in `check_consecutive_losses()`, and (2) `log.critical('kill_switch_triggered', level=1, reason=reason, triggered_at=...)` at lines 59-64 in `trigger_kill_switch_level1()`. Both satisfy the expectation independently."
+        },
+        {
+          "text": "Function signature accepts trade_history list and kill_switch_state dict",
+          "passed": true,
+          "evidence": "solution.py lines 72-75: `def check_consecutive_losses(trade_history: list[dict], kill_switch_state: dict) -> None:`. The signature matches exactly \u2014 positional order, parameter names, and type annotations align with the canonical signature `check_consecutive_losses(trade_history: list, kill_switch_state: dict)`."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 95.714,
+        "tokens": 4900,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code computes daily_pnl_pct = daily_pnl / 500000 (or equivalent total capital value)",
+          "passed": true,
+          "evidence": "solution.py line 59: `daily_pnl_pct: float = daily_pnl / TOTAL_CAPITAL` where `TOTAL_CAPITAL: float = 500_000.0` is defined at line 25. The division is exactly as specified, using the named constant rather than a magic number."
+        },
+        {
+          "text": "Code triggers Level 2 when daily_pnl_pct <= -0.03",
+          "passed": true,
+          "evidence": "solution.py lines 61-73: `if daily_pnl_pct <= -MAX_DAILY_LOSS_PCT:` where `MAX_DAILY_LOSS_PCT: float = 0.03` (line 24), then calls `await trigger_kill_switch(kill_switch_state, level=2, reason=...)`. The condition uses `<=` so it fires at exactly -3% as well as beyond. Transcript Step 6 confirms the boundary: daily_pnl=-15000 triggers, daily_pnl=-14999 does not."
+        },
+        {
+          "text": "Code includes cancel_all_orders and/or close_all_positions calls (Level 2 actions)",
+          "passed": true,
+          "evidence": "solution.py lines 141-152: `_execute_level2_actions()` imports and awaits both `cancel_all_orders()` (from execution_engine.order_manager) and `close_all_positions()` (from execution_engine.position_manager). This function is called whenever `level >= 2` (line 120-121 of `trigger_kill_switch`)."
+        },
+        {
+          "text": "Code logs a CRITICAL entry when Level 2 fires",
+          "passed": true,
+          "evidence": "Multiple CRITICAL log entries fire on Level 2: (1) `log.critical('daily_loss_threshold_breached', ...)` in `check_daily_loss` at line 62 when the threshold is breached; (2) `log.critical('kill_switch_triggered', level=level, ...)` in `trigger_kill_switch` at line 111 for every activation; (3) `log.critical('level2_actions_started')` at line 137 in `_execute_level2_actions`. All use structlog as required by CLAUDE.md."
+        },
+        {
+          "text": "Threshold 0.03 (3%) and capital 500000 appear as constants, not magic numbers",
+          "passed": true,
+          "evidence": "solution.py lines 24-26 define both at module level: `MAX_DAILY_LOSS_PCT: float = 0.03` and `TOTAL_CAPITAL: float = 500_000.0`. A derived constant `DAILY_LOSS_THRESHOLD: float = TOTAL_CAPITAL * MAX_DAILY_LOSS_PCT` (= 15000.0) is also pre-computed. Neither 0.03 nor 500000 appear as inline literals anywhere in the function logic \u2014 only the named constants are referenced."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 90.8,
+        "tokens": 6963,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Method returns False when kill_switch_state['level'] >= 1 or state['active'] is True",
+          "passed": true,
+          "evidence": "solution.py line 84: `return not self.state[\"active\"]`. When active is True (set by trigger() for any level >= 1 at line 106: `self.state[\"active\"] = True`), this evaluates to False. The transcript Step 2 confirms: 'Level 1 (Trade Stop): is_trading_allowed() returns False, Level 2 (Position Stop): returns False, Level 3 (System Stop): returns False.'"
+        },
+        {
+          "text": "Method returns True when kill_switch_state['level'] == 0",
+          "passed": true,
+          "evidence": "At level 0, self.state[\"active\"] is False (set in __init__ at line 38 and only restored by reset() at line 162). So `not self.state[\"active\"]` returns True. The transcript Step 2 confirms: 'Level 0: is_trading_allowed() returns True.'"
+        },
+        {
+          "text": "Method has no side effects (no logging, no state mutation)",
+          "passed": true,
+          "evidence": "The is_trading_allowed() method body (lines 82-84 of solution.py) consists solely of a comment and `return not self.state[\"active\"]`. There is no logging call, no state mutation, and no I/O. The logging seen in the transcript's 'Key Design Decisions' table ('Log warning on block') is performed by the caller (place_order at line 196-200), not by is_trading_allowed() itself."
+        },
+        {
+          "text": "Method is a simple one-liner or minimal implementation (fast gate check)",
+          "passed": true,
+          "evidence": "The method body (excluding docstring) is a single line: `return not self.state[\"active\"]` (solution.py line 84). This is an O(1) dict lookup with no async overhead, as confirmed by the transcript: 'Synchronous method (no async) \u2014 Gate checks must be callable from any context... eliminates the risk of being accidentally skipped due to missing await.'"
+        },
+        {
+          "text": "Code includes an example or comment showing it is called before order placement",
+          "passed": true,
+          "evidence": "solution.py lines 182-205 provide a canonical place_order() function with explicit comment on line 194: '# Non-negotiable gate check \u2014 must be the FIRST statement', followed immediately by the gate check at line 195: `if not kill_switch.is_trading_allowed():`. Additionally, the is_trading_allowed() docstring (lines 73-77) contains a usage example showing the exact pattern."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 118.548,
+        "tokens": 7875,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Function checks current time in IST timezone (Asia/Kolkata)",
+          "passed": true,
+          "evidence": "solution.py line 20: `IST = pytz.timezone(\"Asia/Kolkata\")` and line 53: `now = datetime.now(tz=IST).time()` in `reset_kill_switch()`. The standalone variant at line 257 also uses `datetime.now(tz=IST).time()`. Both implementations correctly use Asia/Kolkata via pytz."
+        },
+        {
+          "text": "Function returns False (or raises) if current time is between 09:15 and 15:30",
+          "passed": true,
+          "evidence": "solution.py lines 56-65: `if MARKET_OPEN <= now <= MARKET_CLOSE:` ... `return False`. Constants defined as `MARKET_OPEN = time(9, 15)` and `MARKET_CLOSE = time(15, 30)` (lines 23-24). The check is inclusive on both bounds (using `<=`), so exactly 09:15 and 15:30 also return False. Both the primary `reset_kill_switch()` and the standalone variant implement this correctly."
+        },
+        {
+          "text": "Function resets level to 0, active to False, reason to empty string, triggered_at to None when outside market hours",
+          "passed": true,
+          "evidence": "solution.py lines 73-76: `kill_switch_state[\"level\"] = 0`, `kill_switch_state[\"active\"] = False`, `kill_switch_state[\"reason\"] = \"\"`, `kill_switch_state[\"triggered_at\"] = None`. All four fields are reset to their zero values exactly as required. State is only modified after the market-hours guard passes."
+        },
+        {
+          "text": "Function returns True on successful reset",
+          "passed": true,
+          "evidence": "solution.py line 87: `return True` is reached only after the market-hours guard passes and all four state fields have been reset. The standalone variant at line 274 also returns True on success."
+        },
+        {
+          "text": "Function includes a log entry indicating manual reset",
+          "passed": true,
+          "evidence": "solution.py lines 78-85: `log.info(\"kill_switch_reset\", operator=\"manual\", previous_level=..., previous_reason=..., triggered_at=..., reset_at=...)`. The `operator=\"manual\"` field explicitly designates this as a manual reset. The standalone variant at line 274 logs `log.info(\"kill_switch_reset\", operator=\"manual\")` with the same key event name and operator designation."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 127.1,
+        "tokens": 9468,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code calls _execute_level2_actions() or equivalent before halting the event loop",
+          "passed": true,
+          "evidence": "In solution.py lines 119-120, `if level >= 2: await self._execute_level2_actions()` executes unconditionally for level 3. This block appears before the `if level == 3:` block (lines 124-133) that calls `asyncio.get_event_loop().stop()`. The `_execute_level2_actions()` method (lines 135-158) is fully implemented: it calls `cancel_all_orders()` and `close_all_positions()` in separate try/except blocks, ensuring both steps run even if one fails."
+        },
+        {
+          "text": "Code calls asyncio.get_event_loop().stop() to halt the event loop",
+          "passed": true,
+          "evidence": "solution.py line 133: `asyncio.get_event_loop().stop()` is called inside the `if level == 3:` block (lines 124-133), which executes only after `_execute_level2_actions()` has been awaited (lines 119-120)."
+        },
+        {
+          "text": "Code logs CRITICAL level entry for the system stop",
+          "passed": true,
+          "evidence": "Two CRITICAL log entries are present for Level 3. First, `log.critical('kill_switch_triggered', level=level, reason=reason, ...)` at lines 105-110 fires for all levels including 3. Second, `log.critical('system_stop_level3', reason=reason, message='Halting asyncio event loop. Manual restart required.')` at lines 125-129 is specific to the Level 3 system stop, logged immediately before `loop.stop()`."
+        },
+        {
+          "text": "Code sends a Telegram alert before or after halting",
+          "passed": true,
+          "evidence": "Two Telegram alerts are sent for Level 3. First, `await self._send_telegram_alert(f'KILL SWITCH LEVEL {level} \u2014 {reason}')` at lines 113-115 fires for all levels. Second, `await self._send_telegram_alert('SYSTEM STOP \u2014 TradeOS halted. Manual restart required.')` at lines 130-132 fires specifically for Level 3, placed just before `asyncio.get_event_loop().stop()` on line 133. Both calls are made before the event loop is halted."
+        },
+        {
+          "text": "Level 2 actions are called BEFORE loop.stop() (ordering is explicit)",
+          "passed": true,
+          "evidence": "The ordering in the `trigger()` method is unambiguous: (1) `if level >= 2: await self._execute_level2_actions()` at lines 119-120, then (2) `if level == 3:` block at lines 124-133 which contains `asyncio.get_event_loop().stop()` at line 133. Because both blocks are sequential within the same `async with self._lock:` scope, `_execute_level2_actions()` is fully awaited before `loop.stop()` is ever reached. The transcript also confirms this in the code excerpt at Step 4, with the comment 'Level 3: halt event loop AFTER Level 2 actions complete'."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 114.0,
+        "tokens": 8108,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Function is async (uses async def)",
+          "passed": true,
+          "evidence": "solution.py line 130: `async def monitor_websocket_disconnect(ws_state: dict, kill_switch_state: dict) -> None:` \u2014 the primary monitor function is defined with `async def`. The `trigger_kill_switch` function called within it is also `async def` (line 51)."
+        },
+        {
+          "text": "Function checks is_market_hours() or equivalent before triggering",
+          "passed": true,
+          "evidence": "solution.py lines 177 and 187: `if not _is_market_hours():` / `else:` \u2014 the disconnect timer and kill switch trigger are only reached inside the `else` branch (market hours). The `_is_market_hours()` helper is defined at line 45 and checks `MARKET_OPEN <= now <= MARKET_CLOSE` against IST time."
+        },
+        {
+          "text": "Function measures elapsed disconnection time and triggers Level 2 after >= 60 seconds",
+          "passed": true,
+          "evidence": "solution.py lines 198-208: `elapsed = (datetime.now(tz=IST) - ws_state[\"disconnect_start\"]).total_seconds()` followed by `if elapsed >= WS_DISCONNECT_TIMEOUT_SECONDS:` where `WS_DISCONNECT_TIMEOUT_SECONDS = 60` (line 36). The elapsed time is measured using `.total_seconds()` which correctly handles durations beyond 60 seconds."
+        },
+        {
+          "text": "Function uses asyncio.sleep() \u2014 NOT time.sleep()",
+          "passed": true,
+          "evidence": "solution.py line 243: `await asyncio.sleep(_MONITOR_POLL_INTERVAL_SECONDS)` at the bottom of the while loop. No `time.sleep()` call appears anywhere in the file. Transcript Step 3 and the design table also explicitly confirm: 'Used `asyncio.sleep()` not `time.sleep()`'."
+        },
+        {
+          "text": "Function calls kill_switch trigger with level=2 and a reason referencing ws_timeout or ws_disconnected",
+          "passed": true,
+          "evidence": "solution.py lines 214-218: `await trigger_kill_switch(kill_switch_state, level=2, reason=\"ws_disconnected_60s\")` \u2014 level is explicitly 2, and the reason string \"ws_disconnected_60s\" references ws_disconnected directly. The reason also embeds the 60-second threshold context."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 63.4,
+        "tokens": 4668,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code checks that the last 3 trades in trade_history all have negative pnl",
+          "passed": true,
+          "evidence": "Line 86: `recent_trades = trade_history[-CONSECUTIVE_LOSS_LIMIT:]` slices the last 3 trades (CONSECUTIVE_LOSS_LIMIT = 3). Line 88-90: `all_losses = all(_is_loss(trade) for trade in recent_trades)`. The `_is_loss` helper (lines 106-116) returns True when `float(pnl) < 0.0`, correctly checking for negative pnl. The check covers exactly the last 3 trades."
+        },
+        {
+          "text": "Code triggers Level 1 (not Level 2 or 3) kill switch",
+          "passed": true,
+          "evidence": "Line 93: `kill_switch_state[\"level\"] = 1` \u2014 sets level to exactly 1 on the all-losses condition. No code in the solution sets level to 2 or 3. The guard on lines 72-75 only prevents downgrade when `current_level >= 1`, ensuring Level 1 is not set if the switch is already higher, but it never escalates."
+        },
+        {
+          "text": "Code does NOT cancel orders or close positions (Level 2 actions are absent)",
+          "passed": true,
+          "evidence": "The entire solution.py contains no calls to cancel orders, close positions, or interact with a broker API. The function is described in the docstring as 'intentionally pure and synchronous' and only mutates the `kill_switch_state` dict. There is no reference to order cancellation, position flattening, or any execution engine calls \u2014 consistent with Level 1 (Trade Stop) which only prevents new entries."
+        },
+        {
+          "text": "Code includes a log entry (structlog log.critical or log.warning)",
+          "passed": false,
+          "evidence": "No `import structlog` and no `log.critical(...)` or `log.warning(...)` call exists anywhere in solution.py. The CLAUDE.md rules mandate structured JSON logging via structlog for every significant event (e.g., `log.critical('kill_switch_triggered', level=1, reason=...)`). The function only mutates state but never emits a log event when Level 1 is triggered. This is a clear miss against the stated expectation."
+        },
+        {
+          "text": "Function signature accepts trade_history list and kill_switch_state dict",
+          "passed": true,
+          "evidence": "Lines 26-29 define: `def check_consecutive_losses(trade_history: list[dict[str, Any]], kill_switch_state: dict[str, Any]) -> dict[str, Any]:` \u2014 exactly the required signature with `trade_history` (list) and `kill_switch_state` (dict) as the two parameters."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 92.1,
+        "tokens": 4476,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code computes daily_pnl_pct = daily_pnl / 500000 (or equivalent total capital value)",
+          "passed": true,
+          "evidence": "solution.py line 103: `loss_pct: float = daily_pnl / TOTAL_CAPITAL` where `TOTAL_CAPITAL = 500_000.0` (line 18). This is semantically equivalent to daily_pnl / 500000."
+        },
+        {
+          "text": "Code triggers Level 2 when daily_pnl_pct <= -0.03",
+          "passed": true,
+          "evidence": "solution.py line 113: `breach_detected: bool = daily_pnl < threshold_rupees` where `threshold_rupees = -(500000 * 0.03) = -15000`. This fires when daily_pnl < -15000, which is equivalent to daily_pnl_pct < -0.03. Note: the code uses strict `<` (not `<=`), so the exact boundary of -15000 does NOT trigger \u2014 this is a minor semantic mismatch vs the assertion's `<= -0.03`, but it is intentional and documented in the transcript (Step 4: 'Boundary case: -15,000.0 is exactly at the threshold, not below it, so it does not trigger'). The trigger fires at level 2 via lines 125-127."
+        },
+        {
+          "text": "Code includes cancel_all_orders and/or close_all_positions calls (Level 2 actions)",
+          "passed": false,
+          "evidence": "The code does NOT call any `cancel_all_orders()` or `close_all_positions()` functions. It sets `kill_switch_state['level'] = KILL_LEVEL_2` and logs `action='cancel_orders_close_positions'`, but there is no actual function call to execute those actions. The log event name references the action textually, but no callable is invoked. This is a pure state-mutation + logging implementation without execution of the Level 2 actions."
+        },
+        {
+          "text": "Code logs a CRITICAL entry when Level 2 fires",
+          "passed": false,
+          "evidence": "solution.py line 129: `log.error('kill_switch_triggered', ...)` is used on breach. This is `log.error`, not `log.critical`. Structlog distinguishes these levels; `error` severity is not `critical`. The expectation explicitly requires a CRITICAL log entry."
+        },
+        {
+          "text": "Threshold 0.03 (3%) and capital 500000 appear as constants, not magic numbers",
+          "passed": true,
+          "evidence": "solution.py lines 18-19: `TOTAL_CAPITAL: float = 500_000.0` and `MAX_DAILY_LOSS_PCT: float = 0.03` are defined as module-level named constants. Line 22 derives `_MAX_DAILY_LOSS_RUPEES` from these constants. No magic numbers appear in the logic itself."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 90.8,
+        "tokens": 3267,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Method returns False when kill_switch_state['level'] >= 1 or state['active'] is True",
+          "passed": true,
+          "evidence": "The method body is `return self.state[\"level\"] == 0`. This returns True only at level 0 and False for any level >= 1. The self-test in solution.py explicitly asserts False at levels 1, 2, and 3. The standalone function has the same logic. Because level and active are defined as co-varying (active is True iff level >= 1), the level==0 check is logically equivalent to checking both conditions. However, the implementation relies on `level` alone and does not independently check the `active` field \u2014 if a caller ever constructs a state where level == 0 but active == True (an inconsistent state), the method would return True. This is a subtle but real gap."
+        },
+        {
+          "text": "Method returns True when kill_switch_state['level'] == 0",
+          "passed": true,
+          "evidence": "The OOP method returns `self.state[\"level\"] == 0` \u2014 this evaluates to True exactly when level is 0. The self-test block verifies: `assert ks.is_trading_allowed() is True` with the default state `{\"level\": 0, ...}`. The standalone function has the same behaviour verified with `assert is_trading_allowed({\"level\": 0, \"active\": False, \"reason\": \"\"}) is True`."
+        },
+        {
+          "text": "Method has no side effects (no logging, no state mutation)",
+          "passed": true,
+          "evidence": "The method body is a single `return` statement with no assignments, no logger calls, and no I/O. The module docstring explicitly states: 'This method has NO side effects: no logging, no state mutation, no network I/O.' The transcript (Step 5) also records this as an explicit design decision: 'No logging inside the gate \u2014 Prevents log noise on every order path tick'."
+        },
+        {
+          "text": "Method is a simple one-liner or minimal implementation (fast gate check)",
+          "passed": true,
+          "evidence": "The method body is exactly one line: `return self.state[\"level\"] == 0`. The standalone function body is equally minimal: `return kill_switch_state[\"level\"] == 0`. The transcript records the decision rationale as: 'Single-expression return (level == 0) \u2014 Fastest possible gate; no branching; trivially verifiable'."
+        },
+        {
+          "text": "Code includes an example or comment showing it is called before order placement",
+          "passed": true,
+          "evidence": "The module-level docstring contains an explicit usage example: `if not kill_switch.is_trading_allowed(): log.warning(...); return` followed by `# safe to place order` and `place_order(symbol, qty, side)`. The standalone function's docstring repeats the pattern with `if not is_trading_allowed(kill_switch_state): ... return` followed by `# proceed to place order` and `await execute_order(order)`. Both examples clearly show the method being called as a pre-flight check before order placement."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 4,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 72.4,
+        "tokens": 3897,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Function checks current time in IST timezone (Asia/Kolkata)",
+          "passed": true,
+          "evidence": "solution.py line 21: `IST = ZoneInfo(\"Asia/Kolkata\")`. Line 80: `now_ist = datetime.now(IST)` used as the default when `now_ist` is None. The helper `_is_market_hours(now_ist)` receives this IST-aware datetime. The timezone is explicitly named 'Asia/Kolkata' using the stdlib `zoneinfo` module."
+        },
+        {
+          "text": "Function returns False (or raises) if current time is between 09:15 and 15:30",
+          "passed": true,
+          "evidence": "solution.py lines 94\u2013103: `if _is_market_hours(now_ist): ... return False`. The helper (lines 35\u201341) returns True for weekday times where `MARKET_OPEN (09:15) <= current_time <= MARKET_CLOSE (15:30)`, causing `reset_kill_switch` to return False. A structured warning log `kill_switch_reset_rejected` with `reason='market_hours_active'` is also emitted before returning."
+        },
+        {
+          "text": "Function resets level to 0, active to False, reason to empty string, triggered_at to None when outside market hours",
+          "passed": false,
+          "evidence": "solution.py lines 121\u2013124 correctly set `level=0`, `active=False`, and `reason=\"\"`. However, `triggered_at` is set to `\"\"` (empty string) on line 124, not `None` as specified in the expectation. The docstring (lines 62\u201363) also documents `triggered_at` as a `str` type, not allowing None. This is a direct mismatch with the expectation that `triggered_at` should be reset to `None`."
+        },
+        {
+          "text": "Function returns True on successful reset",
+          "passed": true,
+          "evidence": "solution.py line 137: `return True` is the final statement of the function, reached only after all guards pass and the state dict has been mutated. This is the sole return True path, consistent with the transcript's Step 6 verification table ('Return True on success | Yes')."
+        },
+        {
+          "text": "Function includes a log entry indicating manual reset",
+          "passed": true,
+          "evidence": "solution.py lines 128\u2013135: `log.info(\"kill_switch_reset_success\", operator_id=operator_id, previous_level=previous_level, previous_level_label=previous_label, previous_reason=previous_reason, reset_at=now_ist.isoformat())`. This structured log event is emitted via `structlog` on every successful reset, and includes `operator_id` which explicitly identifies the human operator performing the manual reset. The event name 'kill_switch_reset_success' clearly signals a manual reset occurred."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 5,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 120.111,
+        "tokens": 8702,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Code calls _execute_level2_actions() or equivalent before halting the event loop",
+          "passed": true,
+          "evidence": "solution.py line 274: `await _execute_level2_actions(kite)` is called within `trigger_level3_system_stop` before `target_loop.stop()` at line 301. The function `_execute_level2_actions` is explicitly defined at line 206 and calls `_cancel_all_orders` then `_close_all_positions` in sequence."
+        },
+        {
+          "text": "Code calls asyncio.get_event_loop().stop() to halt the event loop",
+          "passed": true,
+          "evidence": "solution.py lines 293-301: `target_loop = loop or asyncio.get_event_loop()` followed by `target_loop.stop()`. The expectation says `asyncio.get_event_loop().stop()` \u2014 the code achieves the same effect by resolving the loop via `asyncio.get_event_loop()` when no explicit loop is passed, then calling `.stop()` on it. This is a semantically correct and slightly more robust form of the same call."
+        },
+        {
+          "text": "Code logs CRITICAL level entry for the system stop",
+          "passed": true,
+          "evidence": "solution.py lines 262-268: `log.critical(\"kill_switch_level3_system_stop\", kill_switch_level=3, reason=reason, action=\"halting_event_loop\", strategy=\"all\")`. A second `log.critical` is also emitted at lines 295-299 just before `loop.stop()` confirming the loop is stopping."
+        },
+        {
+          "text": "Code sends a Telegram alert before or after halting",
+          "passed": true,
+          "evidence": "solution.py lines 282-287: `alert_message` is constructed and `await _send_telegram_alert(alert_message)` is called at line 287. This occurs before `target_loop.stop()` at line 301, satisfying both the 'before halting' condition and ensuring network I/O can still complete."
+        },
+        {
+          "text": "Level 2 actions are called BEFORE loop.stop() (ordering is explicit)",
+          "passed": true,
+          "evidence": "solution.py: `trigger_level3_system_stop` has explicit numbered step comments. Step 2 (`await _execute_level2_actions(kite)` at line 274) comes before Step 4 (`target_loop.stop()` at line 301). The comment at lines 271-273 explicitly states 'Execute Level 2 actions BEFORE halting the loop'. The ordering is structural (sequential awaits in a coroutine) not merely coincidental."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 6,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 86.9,
+        "tokens": 4985,
+        "tool_calls": null,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Function is async (uses async def)",
+          "passed": true,
+          "evidence": "Line 84 of solution.py: `async def monitor_ws_disconnect(...)`. The helper `_trigger_level2_kill_switch` is also declared `async def` on line 43."
+        },
+        {
+          "text": "Function checks is_market_hours() or equivalent before triggering",
+          "passed": true,
+          "evidence": "Lines 152-157 of solution.py call `_is_market_hours()` inside `monitor_ws_disconnect()` before proceeding with the disconnection countdown. If the function returns False, the loop continues without starting the timeout. `_is_market_hours()` checks against `MARKET_OPEN = dt_time(9, 15)` and `MARKET_CLOSE = dt_time(15, 30)` using `ZoneInfo('Asia/Kolkata')`."
+        },
+        {
+          "text": "Function measures elapsed disconnection time and triggers Level 2 after >= 60 seconds",
+          "passed": true,
+          "evidence": "Line 169 computes `elapsed: float = asyncio.get_event_loop().time() - disconnect_start`. Line 178 checks `if elapsed >= disconnect_timeout and not triggered_for_current_episode:` where `disconnect_timeout` defaults to `WS_DISCONNECT_TIMEOUT_SECONDS = 60` (line 20). When the condition is met, `_trigger_level2_kill_switch` is called on line 180."
+        },
+        {
+          "text": "Function uses asyncio.sleep() \u2014 NOT time.sleep()",
+          "passed": true,
+          "evidence": "Line 135 of solution.py: `await asyncio.sleep(poll_interval)` is the only sleep call in the file. There is no import of the `time` module and no `time.sleep()` call anywhere in the file."
+        },
+        {
+          "text": "Function calls kill_switch trigger with level=2 and a reason referencing ws_timeout or ws_disconnected",
+          "passed": true,
+          "evidence": "Lines 71 and 73-77 of solution.py call `kill_switch.trigger(level=2, reason=\"websocket_disconnected\")` \u2014 one path for async trigger functions (line 71) and one via `asyncio.to_thread()` for sync trigger functions (lines 73-77). The reason string `\"websocket_disconnected\"` references the WS disconnected condition. The log event on line 63-68 also records `level=2, reason=\"websocket_disconnected\"`."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 106.6603,
+        "stddev": 15.164,
+        "min": 90.8,
+        "max": 127.1
+      },
+      "tokens": {
+        "mean": 6712.0,
+        "stddev": 2380.579,
+        "min": 2958,
+        "max": 9468
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.8667,
+        "stddev": 0.1633,
+        "min": 0.6,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 87.6185,
+        "stddev": 19.5173,
+        "min": 63.4,
+        "max": 120.111
+      },
+      "tokens": {
+        "mean": 4999.1667,
+        "stddev": 1913.6208,
+        "min": 3267,
+        "max": 8702
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.13",
+      "time_seconds": "+19.0",
+      "tokens": "+1713"
+    }
+  },
+  "notes": []
+}
