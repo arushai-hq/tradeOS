@@ -21,6 +21,18 @@ This skill enforces the D1 reliability discipline from the TradeOS architecture.
 
 **Reset rule:** Manual only. Never auto-reset during market hours (09:15–15:30 IST).
 
+## Trigger Conditions (canonical — do not substitute values)
+
+| Trigger | Level | Condition | Note |
+|---------|-------|-----------|------|
+| L1-T1 | 1 | `consecutive_losses >= 5 AND daily_pnl_pct <= -0.015` | Compound. P=3.1% at 50% WR — prevents false fires on S1 variance. |
+| L1-T2 | 1 | `daily_pnl_pct <= -0.030` | 3% daily loss hard cap. |
+| L2-T1 | 2 | WebSocket disconnected > 60s during market hours | Time-based, hardcoded. |
+| L2-T2 | 2 | Zerodha API errors > 5 in rolling 5-minute window | pybreaker circuit breaker. |
+| L2-T3 | 2 | Position mismatch detected by D7 reconciliation | D7 integration point. |
+| L3-T1 | 3 | Manual `/killswitch3` Telegram command | Human override. |
+| L3-T2 | 3 | Unrecoverable exception in core event loop | Always escalates. |
+
 ## State Dict (shared across all 5 async tasks)
 
 ```python

@@ -24,7 +24,7 @@ Key testing principle: Gate 4 uses `exchange_timestamp` from the Zerodha tick pa
 
 ---
 
-## tests/unit/test_kill_switch.py (10 mandatory tests)
+## tests/unit/test_kill_switch.py (12 mandatory tests)
 
 Kill switch has 3 levels. The escalation semantics (Level 1 ≠ Level 2, Level 3 includes Level 2 actions) are the most error-prone area.
 
@@ -35,7 +35,9 @@ Kill switch has 3 levels. The escalation semantics (Level 1 ≠ Level 2, Level 3
 | `test_level2_closes_all_positions` | Level 2 → close_all_positions() called |
 | `test_level2_cancels_all_orders` | Level 2 → cancel_all_open_orders() called |
 | `test_level3_halts_event_loop` | Level 3 → asyncio loop shutdown triggered |
-| `test_consecutive_losses_trigger_level1` | 3rd consecutive loss → level == 1 |
+| `test_consecutive_losses_trigger_level1` | consecutive_losses=5 AND daily_pnl_pct=-0.016 → level == 1 (compound condition both met) |
+| `test_consecutive_losses_no_trigger_without_pnl_condition` | consecutive_losses=5, daily_pnl_pct=-0.005 → level == 0 (pnl condition not breached) |
+| `test_consecutive_losses_no_trigger_below_threshold` | consecutive_losses=4, daily_pnl_pct=-0.020 → level == 0 (count not yet reached) |
 | `test_daily_loss_3pct_triggers_level2` | daily_pnl_pct <= -0.030 → level == 2 |
 | `test_kill_switch_blocks_order_placement` | is_trading_allowed() returns False at any level >= 1 |
 | `test_no_auto_reset_during_market_hours` | reset() raises during 09:15–15:30 IST window |

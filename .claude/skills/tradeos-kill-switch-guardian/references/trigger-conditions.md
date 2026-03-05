@@ -19,25 +19,34 @@ def is_market_hours() -> bool:
 
 ## Level 1 Triggers
 
-### L1-T1: Three Consecutive Losing Trades
+### L1-T1: Five Consecutive Losses AND Daily PnL Below -1.5% (Compound Condition)
 
 ```python
-# In RiskManager — tracked per session, reset on system restart
-trade_history: list[dict] = []   # appended after every fill
+# Compound condition prevents false fires on normal S1 variance at 45-50% win rate
+# (P=3.1% vs old P=12.5% — old threshold of 3 fired ~1 in 8 trading days)
+# Adding daily_pnl_pct guard ensures tiny losses on small positions don't trigger.
 
-def check_consecutive_losses(trade_history: list, kill_switch_state: dict) -> None:
-    """Call after every trade fill event."""
-    if len(trade_history) < 3:
-        return
-    last_three = trade_history[-3:]
-    if all(t["pnl"] < 0 for t in last_three):
-        trigger_kill_switch(kill_switch_state, level=1,
-                            reason="3_consecutive_losses")
+def check_consecutive_losses(shared_state: dict, kill_switch: KillSwitch) -> None:
+    """
+    Call after every trade fill event.
+    COMPOUND CONDITION: both thresholds must be breached simultaneously.
+    """
+    consecutive = shared_state["consecutive_losses"]
+    daily_pnl_pct = shared_state["daily_pnl_pct"]
+
+    if consecutive >= 5 and daily_pnl_pct <= -0.015:
+        asyncio.create_task(
+            kill_switch.trigger(level=1, reason="consecutive_losses_compound")
+        )
 ```
 
-- Tracks `pnl` (realised P&L per trade after fill)
-- Three consecutive negatives → Level 1
-- Does NOT require the losses to exceed any threshold — any negative counts
+- **Compound condition**: `consecutive_losses >= 5 AND daily_pnl_pct <= -0.015`
+- `consecutive_losses >= 5`: Calibrated to S1's expected 45–50% win rate.
+  P(5 consecutive losses) = 3.1% — genuinely anomalous, not normal variance.
+  Old threshold of 3 had P=12.5%, firing roughly 1 in 8 trading days — an operational blocker, not a risk gate.
+- `daily_pnl_pct <= -0.015`: Requires both run length AND capital impact to be anomalous.
+  5 losses on small positions (e.g., 5 × ₹50 = ₹250 loss) will not trigger; 5 losses that also pushed daily PnL below -1.5% will.
+- Leaves a 2-loss buffer before the backtested maximum of 7 consecutive losses (D8 Layer 3 threshold).
 
 ### L1-T2: Daily Loss Exceeds 3%
 
