@@ -64,6 +64,7 @@ Read these when implementing specific components:
 | `references/trigger-conditions.md` | Wiring up auto-trigger conditions (losses, drawdown, WS disconnect, API errors) |
 | `references/pybreaker-patterns.md` | Using pybreaker, writing `KillSwitch` class, `is_trading_allowed()` method |
 | `references/testing-kill-switch.md` | Writing pytest fixtures and test cases for kill switch behaviour |
+| `references/pre-market-checks.md` | Startup gate sequence: token validation, NSE holiday check, Telegram probe |
 
 ## What This Skill Prevents
 

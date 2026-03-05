@@ -230,6 +230,20 @@ Docs & Specs:
 
 ---
 
+## Pending Implementation TODOs (Architecture Review — Code Phase)
+
+These gaps were identified during architecture review and deferred to the code phase.
+Each must be handled when building the relevant module — do not skip.
+
+| # | Gap | Module | Details |
+|---|-----|--------|---------|
+| T1 | **Instrument subscription** | `data_engine/` | Before starting WebSocket, call `kite.subscribe(instrument_tokens)` and `kite.set_mode(kite.MODE_FULL, tokens)` for all watchlist instruments. Subscription must happen after token validation and before the WS `on_ticks` callback is registered. Tokens fetched via `kite.instruments("NSE")` filtered to watchlist symbols. |
+| T2 | **Partial fill + Level 2 interaction** | `risk_manager/` | When Level 2 fires and a position is in `PARTIALLY_FILLED` state, the close-out order must account for the partial fill quantity (not the original order quantity). `order_monitor` must pass current filled qty to the Level 2 close routine — not stale order qty. |
+| T3 | **consecutive_losses counter reset** | `risk_manager/` | Counter resets to 0 on a winning fill. Also resets at session start (midnight IST or first tick of trading day). Never carries over across days. Implementation: `order_monitor` decrements on FILLED-win detection; `risk_watchdog` resets at start-of-day. |
+| T4 | **Hard exit at 15:00 IST** | `risk_manager/` | `risk_watchdog` must check `datetime.now(IST).time() >= time(15, 0)` on each 1s cycle. On crossing 15:00: close all open positions via market order (same as Level 2 position close), set `stop_new_signals = True`, do NOT trigger kill switch (this is scheduled, not anomalous). Log INFO `hard_exit_triggered`. |
+
+---
+
 ## How to Work With Me in This Session
 
 1. **Tell me what to build next** — I will read the relevant spec/diagram first, then code

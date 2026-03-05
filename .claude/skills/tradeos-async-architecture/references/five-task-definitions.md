@@ -59,6 +59,10 @@ check `kill_switch.is_trading_allowed()`, and push approved signals to `order_qu
 
 Gate 0 runs once at task startup (config is static after load). Gates 1–3 run per signal.
 
+> Gate 3 cross-reference: See `tradeos-position-reconciler/references/instrument-lock-mechanism.md`
+> for how instruments are added to and removed from `locked_instruments`, and when locks
+> are automatically cleared after successful reconciliation.
+
 **On exception in strategy logic:** Log ERROR with full traceback, continue — one bad tick does not stop processing.
 
 ```python
