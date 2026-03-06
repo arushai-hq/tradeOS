@@ -694,14 +694,19 @@ async def run_trading_session(
 
     Task exceptions are logged but do not re-raise (return_exceptions=True).
     """
-    results = await asyncio.gather(
-        data_engine.run(),           # D6 Task 1: ws_listener + tick storage
-        strategy_engine.run(),       # D6 Task 2: signal_processor
-        exec_engine.run(),           # D6 Tasks 3: order placer + order monitor
-        risk_watchdog(shared_state, config, secrets, exec_engine),  # D6 Task 4
-        heartbeat(shared_state, secrets),  # D6 Task 5
-        return_exceptions=True,
-    )
+    try:
+        results = await asyncio.gather(
+            data_engine.run(),           # D6 Task 1: ws_listener + tick storage
+            strategy_engine.run(),       # D6 Task 2: signal_processor
+            exec_engine.run(),           # D6 Tasks 3: order placer + order monitor
+            risk_watchdog(shared_state, config, secrets, exec_engine),  # D6 Task 4
+            heartbeat(shared_state, secrets),  # D6 Task 5
+            return_exceptions=True,
+        )
+    except asyncio.CancelledError:
+        # risk_watchdog cancelled main() task at 15:30 — EOD shutdown, not an error
+        log.info("run_trading_session_cancelled", reason="eod_shutdown_15_30")
+        return
 
     task_names = [
         "data_engine", "strategy_engine", "exec_engine",
@@ -931,6 +936,10 @@ if __name__ == "__main__":
         log.info("tradeos_keyboard_interrupt_clean_shutdown")
     except SystemExit as exc:
         log.info("tradeos_system_exit", code=exc.code)
+    except asyncio.CancelledError:
+        # Normal EOD shutdown — risk_watchdog cancelled tasks cleanly at 15:30
+        log.info("tradeos_system_exit", code=0, reason="eod_shutdown")
+        sys.exit(0)
     except Exception as exc:
         log.critical("tradeos_unhandled_exception", error=str(exc), exc_info=True)
         sys.exit(1)
