@@ -64,6 +64,7 @@ class StrategyEngine:
         order_queue: asyncio.Queue,
         db_pool: asyncpg.Pool,
         kill_switch: Optional[KillSwitchProtocol] = None,
+        regime_detector=None,
     ) -> None:
         """
         Args:
@@ -75,6 +76,8 @@ class StrategyEngine:
             db_pool: asyncpg connection pool (candles_15m + signals tables).
             kill_switch: Optional D1 KillSwitch instance.
                          Falls back to shared_state["kill_switch_level"] if None.
+            regime_detector: Optional RegimeDetector instance.
+                             If None, Gate 7 in RiskGate is skipped.
         """
         self._kite = kite
         self._config = config
@@ -83,6 +86,7 @@ class StrategyEngine:
         self._order_queue = order_queue
         self._db_pool = db_pool
         self._kill_switch = kill_switch
+        self._regime_detector = regime_detector
 
         self._instruments: list[dict] = []
         self._candle_builders: dict[int, CandleBuilder] = {}
@@ -129,7 +133,10 @@ class StrategyEngine:
 
         # Steps 5: SignalGenerator + RiskGate
         self._signal_generator = SignalGenerator()
-        self._risk_gate = RiskGate(kill_switch=self._kill_switch)
+        self._risk_gate = RiskGate(
+            kill_switch=self._kill_switch,
+            regime_detector=self._regime_detector,
+        )
 
         log.info(
             "strategy_engine_ready",
