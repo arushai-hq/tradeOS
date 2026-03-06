@@ -1,0 +1,318 @@
+"""
+TradeOS — Order Monitor (Execution Engine / D6 Task 3)
+
+Polls order state and drives the post-fill accounting pipeline:
+  ENTRY fill  → risk_manager.on_fill() + exit_manager.register_position()
+  EXIT fill   → risk_manager.on_close()
+  REJECTION   → log WARNING (consecutive_losses already incremented by OSM)
+
+Paper mode: iterates OSM registry every 5s for fills (no kite API calls).
+Live mode:  polls kite.orders() every 5s, maps Zerodha status → OrderState,
+            drives OSM transitions, then processes fills via OSM.
+
+D2 Zerodha status mapping:
+  "OPEN"           → ACKNOWLEDGED
+  "COMPLETE"       → FILLED
+  "CANCELLED"      → CANCELLED
+  "REJECTED"       → REJECTED
+  "TRIGGER PENDING"→ ACKNOWLEDGED
+  Unknown status   → log WARNING, skip (do not transition)
+
+PARTIALLY_FILLED detection: status == "OPEN" AND filled_qty > 0 AND pending_qty > 0.
+"""
+from __future__ import annotations
+
+import asyncio
+import structlog
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Optional
+
+import pytz
+
+from execution_engine.state_machine import (
+    Order,
+    OrderState,
+    OrderStateMachine,
+    TERMINAL_STATES,
+    map_zerodha_status,
+)
+
+if TYPE_CHECKING:
+    from execution_engine.exit_manager import ExitManager
+    from risk_manager import RiskManager
+
+log = structlog.get_logger()
+IST = pytz.timezone("Asia/Kolkata")
+
+# Maps exit_type → exit_reason for RiskManager.on_close()
+_EXIT_REASON_MAP: dict[str, str] = {
+    "TARGET":      "TARGET_HIT",
+    "STOP":        "STOP_HIT",
+    "HARD_EXIT":   "HARD_EXIT_1500",
+    "KILL_SWITCH": "KILL_SWITCH",
+}
+
+
+class OrderMonitor:
+    """
+    Monitors order state and drives the post-fill accounting pipeline.
+
+    Runs as a perpetual asyncio task (D6 Task 3 — order_monitor).
+    Polls every 5 seconds per D6 spec.
+
+    Paper mode: OSM processes fills inline — no kite.orders() call needed.
+    Live mode:  polls kite.orders(), updates OSM, then processes fills.
+
+    Tracks processed order IDs to avoid duplicate fill callbacks.
+
+    Args:
+        kite:          Authenticated KiteConnect instance.
+        osm:           Shared OrderStateMachine registry.
+        shared_state:  D6 shared state dict.
+        risk_manager:  RiskManager for on_fill() / on_close() callbacks.
+        exit_manager:  ExitManager for register_position() after ENTRY fill.
+        config:        Loaded settings.yaml dict.
+    """
+
+    def __init__(
+        self,
+        kite,
+        osm: OrderStateMachine,
+        shared_state: dict,
+        risk_manager: "RiskManager",
+        exit_manager: "ExitManager",
+        config: dict,
+    ) -> None:
+        self._kite = kite
+        self._osm = osm
+        self._shared_state = shared_state
+        self._risk_manager = risk_manager
+        self._exit_manager = exit_manager
+        self._mode: str = config.get("system", {}).get("mode", "paper")
+        self._is_paper: bool = self._mode == "paper"
+
+        # Set of order_ids already sent to accounting callbacks
+        self._processed_order_ids: set[str] = set()
+
+    # ------------------------------------------------------------------
+    # Main run loop (D6 Task 3)
+    # ------------------------------------------------------------------
+
+    async def run(self) -> None:
+        """
+        Perpetual polling loop. Runs until cancelled.
+
+        CancelledError is never suppressed per D6 rule.
+        API errors are logged and polling continues — never stop monitoring.
+        """
+        log.info("order_monitor_started", mode=self._mode)
+        while True:
+            try:
+                if not self._is_paper:
+                    await self._poll_zerodha()
+                await self._process_osm_fills()
+                self._update_shared_state()
+            except asyncio.CancelledError:
+                raise  # D6 rule — never suppress
+            except Exception as exc:
+                log.error("order_monitor_error", error=str(exc), exc_info=True)
+            await asyncio.sleep(5)
+
+    # ------------------------------------------------------------------
+    # Zerodha polling (live mode)
+    # ------------------------------------------------------------------
+
+    async def _poll_zerodha(self) -> None:
+        """Fetch kite.orders() and sync OSM states."""
+        try:
+            broker_orders: list[dict] = await asyncio.to_thread(self._kite.orders)
+        except Exception as exc:
+            log.error("order_monitor_zerodha_fetch_failed", error=str(exc))
+            return
+
+        for broker_order in broker_orders:
+            await self._sync_order_from_zerodha(broker_order)
+
+    async def _sync_order_from_zerodha(self, broker_order: dict) -> None:
+        """Sync a single Zerodha order dict into the OSM."""
+        order_id: str = broker_order.get("order_id", "")
+        symbol: str = broker_order.get("tradingsymbol", "")
+        zerodha_status: str = broker_order.get("status", "")
+        filled_qty: int = broker_order.get("filled_quantity", 0)
+        pending_qty: int = broker_order.get("pending_quantity", 0)
+
+        order = self._osm.get_order(order_id)
+        if order is None:
+            # Order on Zerodha but not in local OSM → skip (startup reconciliation handles this)
+            return
+
+        if order.state in TERMINAL_STATES:
+            return  # Already terminal — no action needed
+
+        # Detect partial fill: status OPEN but some qty filled and some pending
+        target_state: Optional[OrderState]
+        if zerodha_status == "OPEN" and filled_qty > 0 and pending_qty > 0:
+            target_state = OrderState.PARTIALLY_FILLED
+        else:
+            target_state = map_zerodha_status(zerodha_status, order_id, symbol)
+            if target_state is None:
+                return  # Unknown status — do not transition per D2 spec
+
+        if order.state == target_state:
+            return  # No change
+
+        # Drive the state machine to the new state
+        fill_price: Optional[Decimal] = None
+        if target_state == OrderState.FILLED:
+            avg_price = broker_order.get("average_price")
+            if avg_price:
+                fill_price = Decimal(str(avg_price))
+
+        reject_reason: Optional[str] = None
+        if target_state == OrderState.REJECTED:
+            reject_reason = broker_order.get("status_message", "")
+
+        try:
+            self._osm.transition(
+                order_id,
+                target_state,
+                fill_price=fill_price,
+                reject_reason=reject_reason,
+            )
+            log.info(
+                "order_state_synced_from_zerodha",
+                order_id=order_id,
+                symbol=symbol,
+                new_state=target_state.value,
+            )
+        except Exception as exc:
+            log.error(
+                "order_monitor_transition_error",
+                order_id=order_id,
+                symbol=symbol,
+                error=str(exc),
+            )
+
+    # ------------------------------------------------------------------
+    # Fill processing (paper + live)
+    # ------------------------------------------------------------------
+
+    async def _process_osm_fills(self) -> None:
+        """
+        Iterate all OSM orders and process any newly-filled or rejected orders.
+
+        Idempotent: uses _processed_order_ids to avoid double-calling accounting.
+        """
+        for order in self._osm.get_all_orders():
+            if order.order_id in self._processed_order_ids:
+                continue
+
+            if order.state == OrderState.FILLED:
+                self._processed_order_ids.add(order.order_id)
+                if order.order_type == "ENTRY":
+                    await self._on_entry_fill(order)
+                elif order.order_type == "EXIT":
+                    await self._on_exit_fill(order)
+
+            elif order.state == OrderState.REJECTED:
+                self._processed_order_ids.add(order.order_id)
+                await self._on_rejected(order)
+
+    async def _on_entry_fill(self, order: Order) -> None:
+        """Handle ENTRY fill: notify RiskManager + register with ExitManager."""
+        fill_price = order.fill_price or order.price
+
+        log.info(
+            "entry_filled",
+            order_id=order.order_id,
+            symbol=order.symbol,
+            direction=order.direction,
+            qty=order.qty,
+            fill_price=float(fill_price),
+        )
+
+        # Notify RiskManager
+        await self._risk_manager.on_fill(
+            symbol=order.symbol,
+            direction=order.direction,
+            qty=order.qty,
+            fill_price=fill_price,
+            order_id=order.order_id,
+            signal_id=order.signal_id,
+        )
+
+        # Register with ExitManager (stop_loss and target from Signal via Order)
+        stop_loss = order.stop_loss or fill_price
+        target = order.target or fill_price
+
+        await self._exit_manager.register_position(
+            symbol=order.symbol,
+            direction=order.direction,
+            entry_price=fill_price,
+            stop_loss=stop_loss,
+            target=target,
+            qty=order.qty,
+            signal_id=order.signal_id,
+        )
+
+        # Update shared_state
+        self._shared_state["fills_today"] = (
+            self._shared_state.get("fills_today", 0) + 1
+        )
+
+    async def _on_exit_fill(self, order: Order) -> None:
+        """Handle EXIT fill: notify RiskManager.on_close()."""
+        fill_price = order.fill_price or order.price
+        exit_type = order.exit_type or "MANUAL"
+        exit_reason = _EXIT_REASON_MAP.get(exit_type, "MANUAL")
+
+        log.info(
+            "exit_filled",
+            order_id=order.order_id,
+            symbol=order.symbol,
+            exit_type=exit_type,
+            fill_price=float(fill_price),
+        )
+
+        await self._risk_manager.on_close(
+            symbol=order.symbol,
+            exit_price=fill_price,
+            exit_reason=exit_reason,
+            exit_order_id=order.order_id,
+        )
+
+        # Remove from shared_state open_positions
+        positions: dict = self._shared_state.get("open_positions", {})
+        positions.pop(order.symbol, None)
+
+    async def _on_rejected(self, order: Order) -> None:
+        """Handle order REJECTION. consecutive_losses already incremented by OSM."""
+        log.warning(
+            "order_rejected",
+            order_id=order.order_id,
+            symbol=order.symbol,
+            order_type=order.order_type,
+            reject_reason=order.reject_reason,
+            consecutive_losses=self._shared_state.get("consecutive_losses", 0),
+        )
+
+    # ------------------------------------------------------------------
+    # Shared state sync
+    # ------------------------------------------------------------------
+
+    def _update_shared_state(self) -> None:
+        """Sync open_orders and open_positions in shared_state from OSM."""
+        # open_orders: all non-terminal orders
+        active = self._osm.get_active_orders()
+        self._shared_state["open_orders"] = {
+            o.order_id: {
+                "symbol": o.symbol,
+                "direction": o.direction,
+                "order_type": o.order_type,
+                "qty": o.qty,
+                "state": o.state.value,
+                "placed_at": o.placed_at.isoformat(),
+            }
+            for o in active
+        }
