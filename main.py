@@ -453,6 +453,12 @@ def run_pre_market_gate(shared_state: dict) -> tuple[KiteConnect, dict, dict]:
         f"🟢 TradeOS {today_str}: Pre-market gate passed. Starting up.",
     )
 
+    # Diagnostic mode: stop after Phase 0 without starting engines.
+    # Run with: TRADEOS_PHASE0_ONLY=1 python main.py
+    if os.environ.get("TRADEOS_PHASE0_ONLY"):
+        log.info("phase0_only_mode", note="TRADEOS_PHASE0_ONLY set — stopping after gate. System OK.")
+        sys.exit(0)
+
     return kite, config, secrets
 
 

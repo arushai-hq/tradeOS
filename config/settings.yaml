@@ -7,6 +7,9 @@ system:
   exchange: NSE
   timezone: Asia/Kolkata
 
+database:
+  dsn: "postgresql://tradeos:tradeos@localhost:5432/tradeos"  # Update with your DSN
+
 capital:
   total: 500000        # ₹5L
   allocation:
