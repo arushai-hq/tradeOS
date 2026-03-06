@@ -22,12 +22,13 @@ Data Engine  →  Strategy Engine  →  Risk Manager  →  Execution Engine
 (KiteConnect)   (S1/S2/S3/S4)       (Kill Switch)    (Zerodha orders)
 ```
 
-**Current Phase: PAPER TRADING SESSION 02 — Session 01 complete, awaiting next trading day**
+**Current Phase: PAPER TRADING SESSION 02 — Session 01 complete, regime detector added**
 - Session 01 ran 6hr (2026-03-06): 129k ticks, 340 candles, 0 signals (VWAP bug fixed)
 - Two bugs fixed post Session 01: `average_price` → `average_traded_price` + EOD CancelledError
+- Regime detector module built: 4-regime classifier (BULL/BEAR/HIGH_VOL/CRASH) + RiskGate Gate 7
 - venv is now required — run `source activate.sh` before any python command
 - docker-compose.yml moved to `docker/` — use `bash scripts/db_start.sh`
-- Next: Session 02 Monday — first real signal evaluation with VWAP fix active
+- Next: Session 02 Monday — first signal evaluation with VWAP fix + regime gating active
 
 **Capital:** ₹5L total. ₹50K for Phase 1 live. Paper trade until proven.
 **Exchange:** NSE Equities only. No F&O until Phase 3.
@@ -51,6 +52,7 @@ tradeOS/
 ├── strategy_engine/                  ← CandleBuilder, IndicatorEngine, S1SignalGenerator
 ├── risk_manager/                     ← PositionSizer, LossTracker, PnlTracker
 ├── execution_engine/                 ← OrderStateMachine (8 states), paper orders
+├── regime_detector/                  ← 4-regime market classifier (Nifty 50 + VIX)
 ├── utils/                            ← time_utils, telegram, db_events
 ├── strategies/
 │   ├── s1_intraday/                  ← ELIMINATED — S1 logic in strategy_engine/
@@ -70,11 +72,12 @@ tradeOS/
 │   ├── db_stop.sh                    ← Stop container (data preserved)
 │   ├── db_migrate.sh                 ← Apply schema.sql
 │   └── README.md                     ← Daily workflow docs
-├── tests/                            ← 178 unit + integration tests
+├── tests/                            ← 211 unit + integration tests
 ├── logs/                             ← Structured JSON logs (gitignored)
 └── docs/
     ├── strategy_specs/
-    │   └── S1_intraday_momentum.md   ← Full S1 spec — read before coding S1
+    │   ├── S1_intraday_momentum.md   ← Full S1 spec — read before coding S1
+    │   └── regime_detector_spec.md   ← Regime detector design rationale + thresholds
     ├── brainstorm/
     │   ├── session_001_architecture.md
     │   └── session_002_research_findings.md
@@ -244,6 +247,15 @@ Phase 1 Components:
     Startup reconciliation (D2), paper mode gate, kill switch gate (D1)
     Tests: 26 unit — all pass. mypy clean.
 
+  regime_detector/      ✅ COMPLETE — commit a26eb38..dd51d77
+    MarketRegime enum (BULL_TREND, BEAR_TREND, HIGH_VOLATILITY, CRASH)
+    classify_regime() pure function — strict priority (CRASH > HIGH_VOL > BEAR > BULL)
+    RegimeDetector class — kite.historical_data() REST, 60s refresh, D3 resilience
+    RiskGate Gate 7 — blocks counter-trend signals + CRASH volume gate
+    Integrated: StrategyEngine, main.py Phase 1 init, risk_watchdog 60s refresh
+    Tests: 25 unit (classification, signal gates, resilience, validation) + 4 Gate 7 tests
+    Docs: regime_detector/README.md + docs/strategy_specs/regime_detector_spec.md
+
   main.py               ✅ COMPLETE — commit c34dee1
     Single entry point. D9 session lifecycle (Phase 0–3).
     Phase 0: 6 pre-market checks (token, holiday, Telegram, time window)
@@ -253,7 +265,7 @@ Phase 1 Components:
     Phase 3: EOD shutdown at 15:30 IST
     utils/: time_utils, telegram, db_events
     config/nse_holidays.yaml: 2025-2026 NSE calendar
-    Tests: 36 new tests (178 total, 12 skipped DB_DSN). mypy clean.
+    Tests: 36 new tests (211 total w/ regime_detector, 12 skipped DB_DSN). mypy clean.
 
   strategies/s1_intraday/ ⚪ ELIMINATED — S1 logic absorbed into strategy_engine/signal_generator.py
                            (lines 119-176). No separate module needed. Not built, not needed.
@@ -276,6 +288,7 @@ Bug Fixes (Session 01):
 
 Docs & Specs:
   docs/strategy_specs/S1_intraday_momentum.md   ✅ Complete
+  docs/strategy_specs/regime_detector_spec.md    ✅ Complete
   docs/diagrams/reliability/ (D0–D8)             ✅ Complete
   docs/brainstorm/session_001_architecture.md    ✅ Complete
   docs/brainstorm/session_002_research_findings.md ✅ Complete
@@ -360,5 +373,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 9 (2026-03-06) — Paper Session 01 complete. VWAP bug + EOD CancelledError fixed. docker/ reorganisation. venv setup.*
-*Next milestone: Paper Session 02 — first real signal evaluation*
+*Last updated: Session 10 (2026-03-06) — Regime detector module built. 4-regime classifier + RiskGate Gate 7 + 29 tests.*
+*Next milestone: Paper Session 02 — first signal evaluation with VWAP fix + regime gating active*
