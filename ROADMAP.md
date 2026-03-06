@@ -19,8 +19,8 @@ Goal: Prove the system works. Paper trade 3 weeks. Deploy ₹50K live.
 - [x] Data Engine — tick feed, validation, TimescaleDB storage
 - [x] Strategy Engine — 15-min candles, EMA/RSI/VWAP, S1 signal generation
 - [x] Risk Manager — position sizing, P&L tracking, charge calculation
-- [ ] Execution Engine — order placement, fill monitoring, exit management
-- [ ] Integration — main.py wiring all engines together
+- [x] Execution Engine — order placement, fill monitoring, exit management
+- [x] Integration — main.py wiring all engines together
 - [ ] Paper trading — 3 weeks minimum, all D8 Layer 2 criteria must pass
 - [ ] Live deployment — ₹50K, S1 strategy only
 
@@ -210,7 +210,8 @@ When working on any V2.0 feature:
 | V1.0 Data Engine | Complete | March 2026 |
 | V1.0 Strategy Engine | Complete | March 2026 |
 | V1.0 Risk Manager | Complete | March 2026 |
-| V1.0 Execution Engine | In Progress | - |
+| V1.0 Execution Engine | Complete | March 2026 |
+| V1.0 main.py | Complete | March 2026 |
 | V1.0 Paper Trading | Pending | - |
 | V1.0 Live ₹50K | Pending | - |
 | V2.0 | Locked — not started | - |

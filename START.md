@@ -22,12 +22,11 @@ Data Engine  →  Strategy Engine  →  Risk Manager  →  Execution Engine
 (KiteConnect)   (S1/S2/S3/S4)       (Kill Switch)    (Zerodha orders)
 ```
 
-**Current Phase: Phase 1 — Active**
-- Build Data Engine (KiteConnect WebSocket + REST)
-- Build S1 Intraday Momentum strategy
-- Run in paper mode only
-- Backtest S1 on 1yr historical data
-- Deploy ₹50K live ONLY after all testing gates pass
+**Current Phase: INTEGRATION TESTING — All 5 modules built, ready for first run**
+- All engines wired in main.py — paper mode, first run next
+- S1 strategy logic lives in strategy_engine/signal_generator.py (absorbed)
+- strategies/s1_intraday/ placeholder ELIMINATED — never needed
+- Next: run `python main.py`, verify logs, confirm paper trades fire correctly
 
 **Capital:** ₹5L total. ₹50K for Phase 1 live. Paper trade until proven.
 **Exchange:** NSE Equities only. No F&O until Phase 3.
@@ -45,7 +44,7 @@ tradeOS/
 │   └── secrets.yaml.template         ← API key template (never commit secrets)
 ├── data_engine/                      ← KiteConnect WebSocket + historical data
 ├── strategies/
-│   ├── s1_intraday/                  ← PHASE 1 ACTIVE
+│   ├── s1_intraday/                  ← ELIMINATED — S1 logic in strategy_engine/
 │   ├── s2_swing/                     ← Phase 2
 │   ├── s3_positional/                ← Phase 3
 │   └── s4_event/                     ← Phase 3
@@ -246,9 +245,16 @@ Phase 1 Components:
     config/nse_holidays.yaml: 2025-2026 NSE calendar
     Tests: 36 new tests (178 total, 12 skipped DB_DSN). mypy clean.
 
-  strategies/s1_intraday/ 🔴 Empty — BUILD NEXT  ← NEXT
-  backtester/           🔴 Empty — BUILD FOURTH
-  paper_trader/         🔴 Empty — BUILD FIFTH
+  strategies/s1_intraday/ ⚪ ELIMINATED — S1 logic absorbed into strategy_engine/signal_generator.py
+                           (lines 119-176). No separate module needed. Not built, not needed.
+
+  backtester/           🔴 Pending — after paper trading validates live behaviour
+  paper_trader/         🔴 Pending — after paper trading validates live behaviour
+
+Current Phase: INTEGRATION TESTING ← NOW
+  All 5 modules built and wired. Next step: python main.py (paper mode).
+  Goal: confirm D9 Phase 0 passes, WebSocket connects, S1 signals fire,
+        paper orders placed, P&L tracked, EOD shutdown at 15:30 clean.
 
 Docs & Specs:
   docs/strategy_specs/S1_intraday_momentum.md   ✅ Complete
@@ -326,5 +332,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 7 — Execution Engine + main.py complete. Full system wired.*
-*Next milestone: strategies/s1_intraday/ implementation*
+*Last updated: Session 8 — All modules complete. strategies/s1_intraday/ eliminated (absorbed). Integration phase.*
+*Next milestone: Paper trading first run — python main.py (paper mode)*
