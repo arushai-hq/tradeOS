@@ -1,3 +1,5 @@
+name: tradeos
+
 services:
 
   timescaledb:
@@ -43,7 +45,7 @@ services:
 
 volumes:
   tradeos_db:
-    driver: local
+    external: true      # volume pre-exists; managed outside compose project lifecycle
 
 networks:
   default:

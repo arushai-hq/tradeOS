@@ -22,11 +22,12 @@ Data Engine  →  Strategy Engine  →  Risk Manager  →  Execution Engine
 (KiteConnect)   (S1/S2/S3/S4)       (Kill Switch)    (Zerodha orders)
 ```
 
-**Current Phase: INTEGRATION TESTING — All 5 modules built, ready for first run**
-- All engines wired in main.py — paper mode, first run next
-- S1 strategy logic lives in strategy_engine/signal_generator.py (absorbed)
-- strategies/s1_intraday/ placeholder ELIMINATED — never needed
-- Next: run `python main.py`, verify logs, confirm paper trades fire correctly
+**Current Phase: PAPER TRADING SESSION 02 — Session 01 complete, awaiting next trading day**
+- Session 01 ran 6hr (2026-03-06): 129k ticks, 340 candles, 0 signals (VWAP bug fixed)
+- Two bugs fixed post Session 01: `average_price` → `average_traded_price` + EOD CancelledError
+- venv is now required — run `source activate.sh` before any python command
+- docker-compose.yml moved to `docker/` — use `bash scripts/db_start.sh`
+- Next: Session 02 Monday — first real signal evaluation with VWAP fix active
 
 **Capital:** ₹5L total. ₹50K for Phase 1 live. Paper trade until proven.
 **Exchange:** NSE Equities only. No F&O until Phase 3.
@@ -38,21 +39,39 @@ Data Engine  →  Strategy Engine  →  Risk Manager  →  Execution Engine
 ```
 tradeOS/
 ├── START.md                          ← YOU ARE HERE
-├── README.md                         ← Project overview
+├── README.md                         ← Project overview + quick start
+├── main.py                           ← Entry point — D9 session lifecycle
+├── schema.sql                        ← TimescaleDB schema (5 tables)
+├── requirements.txt
 ├── config/
 │   ├── settings.yaml                 ← Capital, risk rules, watchlist
-│   └── secrets.yaml.template         ← API key template (never commit secrets)
-├── data_engine/                      ← KiteConnect WebSocket + historical data
+│   ├── secrets.yaml.template         ← API key template (never commit secrets)
+│   └── nse_holidays.yaml             ← NSE trading calendar 2025–2026
+├── data_engine/                      ← KiteConnect WebSocket + TickValidator + storage
+├── strategy_engine/                  ← CandleBuilder, IndicatorEngine, S1SignalGenerator
+├── risk_manager/                     ← PositionSizer, LossTracker, PnlTracker
+├── execution_engine/                 ← OrderStateMachine (8 states), paper orders
+├── utils/                            ← time_utils, telegram, db_events
 ├── strategies/
 │   ├── s1_intraday/                  ← ELIMINATED — S1 logic in strategy_engine/
 │   ├── s2_swing/                     ← Phase 2
 │   ├── s3_positional/                ← Phase 3
 │   └── s4_event/                     ← Phase 3
-├── risk_manager/                     ← Kill switch + position sizing
-├── execution_engine/                 ← Order placement via KiteConnect
-├── backtester/                       ← backtesting.py integration
-├── paper_trader/                     ← Paper mode simulator
-├── logs/                             ← Structured JSON logs
+├── backtester/                       ← backtesting.py integration (Phase 2)
+├── paper_trader/                     ← Paper mode simulator (Phase 2)
+├── docker/                           ← Docker infrastructure
+│   ├── docker-compose.yml            ← TimescaleDB service definition
+│   └── README.md                     ← DB commands, volume, port binding notes
+├── scripts/
+│   ├── setup.sh                      ← One-time venv setup (Mac + Rocky Linux)
+│   ├── refresh_token.py              ← Daily Zerodha OAuth token refresh (~90s)
+│   ├── verify_token.py               ← Quick token validity check
+│   ├── db_start.sh                   ← Start TimescaleDB container
+│   ├── db_stop.sh                    ← Stop container (data preserved)
+│   ├── db_migrate.sh                 ← Apply schema.sql
+│   └── README.md                     ← Daily workflow docs
+├── tests/                            ← 178 unit + integration tests
+├── logs/                             ← Structured JSON logs (gitignored)
 └── docs/
     ├── strategy_specs/
     │   └── S1_intraday_momentum.md   ← Full S1 spec — read before coding S1
@@ -61,16 +80,7 @@ tradeOS/
     │   └── session_002_research_findings.md
     └── diagrams/
         ├── reliability/              ← 8 reliability diagrams — READ BEFORE CODING
-        │   ├── README.md             ← Full discipline reference
-        │   ├── D0_master_overview.excalidraw
-        │   ├── D1_kill_switch_hierarchy.excalidraw
-        │   ├── D2_order_state_machine.excalidraw
-        │   ├── D3_websocket_resilience.excalidraw
-        │   ├── D4_observability_stack.excalidraw
-        │   ├── D5_data_validation.excalidraw
-        │   ├── D6_async_architecture.excalidraw
-        │   ├── D7_position_reconciliation.excalidraw
-        │   └── D8_testing_pyramid.excalidraw
+        │   └── README.md             ← Full discipline reference (D1–D8)
         ├── 01_system_overview.excalidraw
         ├── 02_build_roadmap.excalidraw
         └── 03_s1_strategy_logic.excalidraw
@@ -251,10 +261,18 @@ Phase 1 Components:
   backtester/           🔴 Pending — after paper trading validates live behaviour
   paper_trader/         🔴 Pending — after paper trading validates live behaviour
 
-Current Phase: INTEGRATION TESTING ← NOW
-  All 5 modules built and wired. Next step: python main.py (paper mode).
-  Goal: confirm D9 Phase 0 passes, WebSocket connects, S1 signals fire,
-        paper orders placed, P&L tracked, EOD shutdown at 15:30 clean.
+Current Phase: PAPER TRADING ← NOW
+  Session 01 (2026-03-06): 6hr uptime, 129k ticks, 340 candles, 0 signals.
+  Bugs fixed: average_price→average_traded_price (VWAP), CancelledError on EOD.
+  Session 02: Monday — first real signal evaluation with fixes active.
+
+Bug Fixes (Session 01):
+  BUG-1 FIXED: candle_builder.py used tick.get("average_price") — always None
+    in pykiteconnect v5. Field is average_traded_price. vwap=close for all
+    candles → S1 conditions never met → 0 signals. Fixed commit 820b2bc.
+  BUG-2 FIXED: asyncio.CancelledError not caught on EOD shutdown → traceback
+    + exit code 1. Added except CancelledError in main() gather + __main__
+    block → clean sys.exit(0) at 15:30 IST. Fixed commit a48bf6e.
 
 Docs & Specs:
   docs/strategy_specs/S1_intraday_momentum.md   ✅ Complete
@@ -304,14 +322,24 @@ Each must be handled when building the relevant module — do not skip.
 ## Quick Commands
 
 ```bash
-# Install dependencies
-pip install kiteconnect pandas pandas-ta backtesting pybreaker python-statemachine structlog pytest
+# One-time environment setup (creates .venv)
+bash scripts/setup.sh
+
+# Activate venv (required before any python command)
+source activate.sh
+
+# Start database (docker-compose.yml is in docker/)
+bash scripts/db_start.sh
+bash scripts/db_migrate.sh   # apply schema
+
+# Daily token refresh (browser + 2FA, ~90s)
+python scripts/refresh_token.py
+
+# Run TradeOS
+python main.py
 
 # Run tests
 pytest tests/ -v
-
-# Start paper trading (once built)
-python main.py --mode paper
 
 # Check logs
 tail -f logs/tradeos.log | python -m json.tool
@@ -332,5 +360,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 8 — All modules complete. strategies/s1_intraday/ eliminated (absorbed). Integration phase.*
-*Next milestone: Paper trading first run — python main.py (paper mode)*
+*Last updated: Session 9 (2026-03-06) — Paper Session 01 complete. VWAP bug + EOD CancelledError fixed. docker/ reorganisation. venv setup.*
+*Next milestone: Paper Session 02 — first real signal evaluation*

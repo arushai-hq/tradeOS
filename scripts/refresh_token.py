@@ -52,6 +52,12 @@ def send_telegram(secrets: dict, message: str) -> None:
 
 
 def main():
+    if not hasattr(sys, 'real_prefix') and \
+       not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("⚠️  WARNING: Not running in a virtual environment.")
+        print("   Run: source activate.sh")
+        print("   Continuing anyway...")
+
     print("=" * 55)
     print("  TradeOS — Zerodha Token Refresh")
     print(f"  Date: {ist_today()} IST")
