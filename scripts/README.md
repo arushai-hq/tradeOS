@@ -1,13 +1,18 @@
 # TradeOS Scripts
 
+## First-time setup (any machine)
+
+  bash scripts/setup.sh
+
+  This creates .venv/ in repo root with all dependencies.
+  Run once per machine. Re-run if requirements.txt changes.
+
 ## Daily workflow
 
-  Morning (06:00 AST / 08:30 IST):
-    python scripts/refresh_token.py    # 90 seconds
-
-  Boot:
-    tmux new -s tradeos
-    python main.py 2>&1 | tee logs/paper_session_XX.log
+  source activate.sh                          # activate venv
+  python scripts/refresh_token.py             # 90s token refresh
+  tmux new -s tradeos
+  python main.py 2>&1 | tee logs/paper_session_XX.log
 
   Quick token check only:
     python scripts/verify_token.py
