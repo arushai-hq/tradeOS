@@ -213,7 +213,8 @@ When working on any V2.0 feature:
 | V1.0 Execution Engine | Complete | March 2026 |
 | V1.0 main.py | Complete | March 2026 |
 | V1.0 First Boot | Complete | March 2026 — all engines, 0 errors |
-| V1.0 Paper Trading | Pending | - |
+| V1.0 Paper Session 01 | Complete | 2026-03-06 — 6hr uptime, 129k ticks, 340 candles, 2 bugs fixed, 0 signals (expected) |
+| V1.0 Paper Trading | In Progress | Session 02 Monday — first real signal evaluation |
 | V1.0 Live ₹50K | Pending | - |
 | V2.0 | Locked — not started | - |
 
