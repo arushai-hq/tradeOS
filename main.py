@@ -914,8 +914,9 @@ if __name__ == "__main__":
     # Configure structlog before any log calls
     _configure_structlog(dev_mode=True)
 
-    # Register SIGTERM handler for graceful shutdown
+    # Register SIGTERM and SIGINT handlers for graceful shutdown
     signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
 
     # Phase 0: Pre-market gate (synchronous — before event loop)
     _shared_state = _init_shared_state()
