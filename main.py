@@ -129,6 +129,9 @@ def _init_shared_state() -> dict:
         "zerodha_user_id": None,
         "pre_market_gate_passed": False,
         "telegram_active": False,
+        # Regime detector
+        "market_regime": None,
+        "regime_position_multiplier": 1.0,
     }
 
 
@@ -533,6 +536,7 @@ async def risk_watchdog(
     config: dict,
     secrets: dict,
     exec_engine: Optional[ExecutionEngine] = None,
+    regime_detector=None,
 ) -> None:
     """
     D6 Task 4 — Risk watchdog. Checks kill switch conditions every 1 second.
@@ -553,14 +557,23 @@ async def risk_watchdog(
     max_daily_loss = config.get("risk", {}).get("max_daily_loss_pct", 0.03)
     hard_exit_triggered = False
     eod_shutdown_triggered = False
+    regime_refresh_counter: int = 0
 
     while True:
         await asyncio.sleep(1)
+        regime_refresh_counter += 1
 
         if not shared_state.get("system_ready"):
             continue
 
         try:
+            # Regime refresh every 60s
+            if regime_detector is not None and regime_refresh_counter % 60 == 0:
+                try:
+                    await regime_detector.refresh()
+                except Exception as exc:
+                    log.error("regime_refresh_error", error=str(exc))
+
             now = now_ist()
             now_time = now.time()
             pnl = shared_state["daily_pnl_pct"]
@@ -685,6 +698,7 @@ async def run_trading_session(
     shared_state: dict,
     config: dict,
     secrets: dict,
+    regime_detector=None,
 ) -> None:
     """
     Phase 2: Run all 5 D6 tasks concurrently.
@@ -699,7 +713,7 @@ async def run_trading_session(
             data_engine.run(),           # D6 Task 1: ws_listener + tick storage
             strategy_engine.run(),       # D6 Task 2: signal_processor
             exec_engine.run(),           # D6 Tasks 3: order placer + order monitor
-            risk_watchdog(shared_state, config, secrets, exec_engine),  # D6 Task 4
+            risk_watchdog(shared_state, config, secrets, exec_engine, regime_detector),  # D6 Task 4
             heartbeat(shared_state, secrets),  # D6 Task 5
             return_exceptions=True,
         )
@@ -843,13 +857,20 @@ async def main(
 
     # Phase 1: Start engines in dependency order
     async with asyncpg.create_pool(db_dsn) as db_pool:
+        # Regime detector: initialize before engines start
+        from regime_detector import RegimeDetector
+        regime_detector = RegimeDetector(kite, config, shared_state, secrets)
+        initial_regime = await regime_detector.initialize()
+        log.info("regime_initialized", regime=initial_regime.value)
+
         async with DataEngine(
             kite, config, shared_state, tick_queue,
             strategy_queue=strategy_queue,
         ) as data_engine:
             async with RiskManager(config, shared_state, db_pool) as risk_manager:
                 async with StrategyEngine(
-                    kite, config, shared_state, strategy_queue, order_queue, db_pool
+                    kite, config, shared_state, strategy_queue, order_queue, db_pool,
+                    regime_detector=regime_detector,
                 ) as strategy_engine:
                     async with ExecutionEngine(
                         kite, config, shared_state, order_queue,
@@ -887,6 +908,7 @@ async def main(
                             shared_state,
                             config,
                             secrets,
+                            regime_detector=regime_detector,
                         )
 
                         # Phase 3: EOD shutdown
