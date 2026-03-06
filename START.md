@@ -214,12 +214,23 @@ Kite MCP server (Claude native): https://mcp.kite.trade/mcp
 ```
 Skill Phase: COMPLETE ✅
   All 9 discipline skills built (D1–D9) + 5 architecture fixes applied.
-  Audit passed (6/6 verification checks). Ready for Data Engine implementation.
+  Audit passed (6/6 verification checks).
 
 Phase 1 Components:
-  data_engine/          🔴 Empty — BUILD THIS FIRST  ← NEXT
-  risk_manager/         🔴 Empty — BUILD SECOND (D1 Kill Switch + D7 Reconcile)
-  strategies/s1_intraday/ 🔴 Empty — BUILD THIRD
+  data_engine/          ✅ COMPLETE — commit 5772779
+    WebSocket feed, TickValidator (5-gate), storage, schema.sql
+    Tests: 60 unit + 11 integration (skipped without DB_DSN) — all pass
+
+  strategy_engine/      ✅ COMPLETE — commit 5d811e5
+    CandleBuilder, IndicatorEngine, S1SignalGenerator, RiskGate, WarmupManager
+    Tests: 50 unit — all pass. mypy clean.
+
+  risk_manager/         ✅ COMPLETE — commit 52a2ffa
+    PositionSizer, ChargeCalculator, PnlTracker, LossTracker, RiskManager
+    Tests: 41 unit + 3 integration (skipped without DB_DSN) — all pass. mypy clean.
+    Total: 112 tests pass across all 3 modules (11 skipped — need DB_DSN).
+
+  strategies/s1_intraday/ 🔴 Empty — BUILD NEXT  ← NEXT
   backtester/           🔴 Empty — BUILD FOURTH
   paper_trader/         🔴 Empty — BUILD FIFTH
   execution_engine/     🔴 Empty — BUILD LAST (only after paper trade passes)
@@ -300,5 +311,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 5 — Skill Phase Complete (D1–D9 + audit)*
-*Next milestone: Data Engine implementation*
+*Last updated: Session 6 — Data Engine + Strategy Engine + Risk Manager complete*
+*Next milestone: strategies/s1_intraday/ implementation*
