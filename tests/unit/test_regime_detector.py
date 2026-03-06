@@ -106,3 +106,63 @@ class TestClassifyRegime:
             intraday_range_pct=0.8,
         )
         assert result == MarketRegime.HIGH_VOLATILITY
+
+
+# ---------------------------------------------------------------
+# Signal gate tests
+# ---------------------------------------------------------------
+
+class TestSignalGates:
+    """Test is_long_allowed, is_short_allowed, position_size_multiplier."""
+
+    def _make_detector(self, regime: MarketRegime) -> RegimeDetector:
+        """Create a RegimeDetector with a pre-set regime (no kite needed)."""
+        detector = RegimeDetector.__new__(RegimeDetector)
+        detector._regime = regime
+        detector._shared_state = {}
+        return detector
+
+    def test_long_allowed_in_bull(self):
+        d = self._make_detector(MarketRegime.BULL_TREND)
+        assert d.is_long_allowed() is True
+
+    def test_long_blocked_in_bear(self):
+        d = self._make_detector(MarketRegime.BEAR_TREND)
+        assert d.is_long_allowed() is False
+
+    def test_long_blocked_in_crash(self):
+        d = self._make_detector(MarketRegime.CRASH)
+        assert d.is_long_allowed() is False
+
+    def test_long_allowed_in_high_volatility(self):
+        d = self._make_detector(MarketRegime.HIGH_VOLATILITY)
+        assert d.is_long_allowed() is True
+
+    def test_short_blocked_in_bull(self):
+        d = self._make_detector(MarketRegime.BULL_TREND)
+        assert d.is_short_allowed() is False
+
+    def test_short_allowed_in_bear(self):
+        d = self._make_detector(MarketRegime.BEAR_TREND)
+        assert d.is_short_allowed() is True
+
+    def test_short_allowed_in_crash(self):
+        d = self._make_detector(MarketRegime.CRASH)
+        assert d.is_short_allowed() is True
+
+    def test_short_allowed_in_high_volatility(self):
+        d = self._make_detector(MarketRegime.HIGH_VOLATILITY)
+        assert d.is_short_allowed() is True
+
+    def test_position_multiplier_normal_regimes(self):
+        for regime in (MarketRegime.BULL_TREND, MarketRegime.BEAR_TREND):
+            d = self._make_detector(regime)
+            assert d.position_size_multiplier() == 1.0
+
+    def test_position_multiplier_high_volatility(self):
+        d = self._make_detector(MarketRegime.HIGH_VOLATILITY)
+        assert d.position_size_multiplier() == 0.5
+
+    def test_position_multiplier_crash(self):
+        d = self._make_detector(MarketRegime.CRASH)
+        assert d.position_size_multiplier() == 0.5
