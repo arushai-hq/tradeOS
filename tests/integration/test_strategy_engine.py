@@ -96,7 +96,7 @@ def _make_tick(
         "tradingsymbol": "RELIANCE",
         "last_price": price,
         "volume_traded": volume,
-        "average_price": avg or price * 0.998,
+        "average_traded_price": avg or price * 0.998,
         "exchange_timestamp": ts,
         "bid": price - 0.05,
         "ask": price + 0.05,

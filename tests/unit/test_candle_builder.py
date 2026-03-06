@@ -36,7 +36,7 @@ def _tick(
         "tradingsymbol": symbol,
         "last_price": price,
         "volume_traded": volume,
-        "average_price": avg,
+        "average_traded_price": avg,
         "exchange_timestamp": ts or _ts(9, 15),
     }
 
@@ -110,7 +110,7 @@ def test_tick_on_boundary_starts_new_candle():
 # ---------------------------------------------------------------------------
 
 def test_vwap_taken_from_tick_average_price():
-    """VWAP in the completed candle equals tick['average_price'] at candle close."""
+    """VWAP in the completed candle equals tick['average_traded_price'] at candle close."""
     builder = CandleBuilder(738561, "RELIANCE")
     builder.process_tick(_tick(price=2450.0, avg=2440.0, ts=_ts(9, 15)))
     builder.process_tick(_tick(price=2455.0, avg=2443.0, ts=_ts(9, 28)))
@@ -120,7 +120,7 @@ def test_vwap_taken_from_tick_average_price():
     candle = builder.process_tick(_tick(price=2460.0, avg=2450.0, ts=_ts(9, 30)))
 
     assert candle is not None
-    # VWAP should be the average_price of the LAST tick in the 09:15 candle (09:28)
+    # VWAP should be the average_traded_price of the LAST tick in the 09:15 candle (09:28)
     assert candle.vwap == Decimal("2443.0")
 
 

@@ -12,7 +12,7 @@ not the closing candle (09:15).
 
 Gap candles are NOT synthesised — logged as WARNING, skipped.
 Volume is computed as a delta (candle window only, not cumulative session volume).
-VWAP = tick["average_price"] at candle close (KiteConnect session VWAP).
+VWAP = tick["average_traded_price"] at candle close (KiteConnect session VWAP).
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class Candle:
     low: Decimal
     close: Decimal
     volume: int          # delta volume for this 15-min window
-    vwap: Decimal        # KiteConnect session VWAP (average_price) at candle close
+    vwap: Decimal        # KiteConnect session VWAP (average_traded_price) at candle close
     candle_time: datetime  # candle open time (IST, timezone-aware)
     session_date: date
     tick_count: int      # number of ticks included in this candle
@@ -118,7 +118,7 @@ class CandleBuilder:
 
         price = Decimal(str(price_raw))
         volume = int(tick.get("volume_traded", 0) or 0)
-        avg_raw = tick.get("average_price") or tick.get("last_price", price_raw)
+        avg_raw = tick.get("average_traded_price") or tick.get("last_price", price_raw)
         avg_price = Decimal(str(avg_raw))
 
         # First tick ever — start the first candle
