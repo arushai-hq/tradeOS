@@ -44,19 +44,22 @@ class DataFeed:
         tick_queue: asyncio.Queue,
         shared_state: dict,
         prev_close_cache: PrevCloseCache,
+        strategy_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         """
         Args:
             kite: Authenticated KiteConnect instance.
             instruments: Instrument dicts; each must have 'instrument_token'.
-            tick_queue: asyncio.Queue (maxsize=1000, D6 contract).
+            tick_queue: asyncio.Queue for DataEngine (storage).
             shared_state: D6 shared state dict. ws_listener owns ws_connected etc.
             prev_close_cache: Loaded cache (held for reference; not used inside feed).
+            strategy_queue: Optional second queue for StrategyEngine fan-out.
         """
         self._kite             = kite
         self._instruments      = instruments
         self._tokens: list[int] = [i["instrument_token"] for i in instruments]
         self._tick_queue        = tick_queue
+        self._strategy_queue    = strategy_queue
         self._shared_state      = shared_state
         self._prev_close_cache  = prev_close_cache
 
@@ -127,6 +130,8 @@ class DataFeed:
         )
         for tick in ticks:
             self._loop.call_soon_threadsafe(self._tick_queue.put_nowait, tick)
+            if self._strategy_queue is not None:
+                self._loop.call_soon_threadsafe(self._strategy_queue.put_nowait, tick)
 
     def _on_connect(self, ws: KiteTicker, response: dict) -> None:
         """

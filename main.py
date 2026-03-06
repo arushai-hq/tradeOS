@@ -831,16 +831,20 @@ async def main(
     # Create fresh queues for this session (overwrite the placeholder queues in
     # shared_state that were created by _init_shared_state)
     tick_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    strategy_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
     order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     shared_state["tick_queue"] = tick_queue
     shared_state["order_queue"] = order_queue
 
     # Phase 1: Start engines in dependency order
     async with asyncpg.create_pool(db_dsn) as db_pool:
-        async with DataEngine(kite, config, shared_state, tick_queue) as data_engine:
+        async with DataEngine(
+            kite, config, shared_state, tick_queue,
+            strategy_queue=strategy_queue,
+        ) as data_engine:
             async with RiskManager(config, shared_state, db_pool) as risk_manager:
                 async with StrategyEngine(
-                    kite, config, shared_state, tick_queue, order_queue, db_pool
+                    kite, config, shared_state, strategy_queue, order_queue, db_pool
                 ) as strategy_engine:
                     async with ExecutionEngine(
                         kite, config, shared_state, order_queue,

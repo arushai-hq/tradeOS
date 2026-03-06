@@ -51,6 +51,7 @@ class DataEngine:
         config: dict,
         shared_state: dict,
         tick_queue: Optional[asyncio.Queue] = None,
+        strategy_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         """
         Args:
@@ -58,6 +59,7 @@ class DataEngine:
             config: Loaded settings.yaml dict.
             shared_state: D6 shared state dict (initialised by caller).
             tick_queue: Override queue; defaults to shared_state["tick_queue"].
+            strategy_queue: Second queue for StrategyEngine fan-out (fixes dual-consumer bug).
         """
         self._kite         = kite
         self._config       = config
@@ -66,6 +68,7 @@ class DataEngine:
             tick_queue if tick_queue is not None
             else shared_state.get("tick_queue", asyncio.Queue(maxsize=1000))
         )
+        self._strategy_queue: Optional[asyncio.Queue] = strategy_queue
 
         self._instruments: list[dict]              = []
         self._prev_close_cache: Optional[PrevCloseCache] = None
@@ -115,6 +118,7 @@ class DataEngine:
             tick_queue=self._tick_queue,
             shared_state=self._shared_state,
             prev_close_cache=self._prev_close_cache,
+            strategy_queue=self._strategy_queue,
         )
         await self._feed.connect()
 
