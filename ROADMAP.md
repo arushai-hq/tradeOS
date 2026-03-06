@@ -212,6 +212,7 @@ When working on any V2.0 feature:
 | V1.0 Risk Manager | Complete | March 2026 |
 | V1.0 Execution Engine | Complete | March 2026 |
 | V1.0 main.py | Complete | March 2026 |
+| V1.0 First Boot | Complete | March 2026 — all engines, 0 errors |
 | V1.0 Paper Trading | Pending | - |
 | V1.0 Live ₹50K | Pending | - |
 | V2.0 | Locked — not started | - |
