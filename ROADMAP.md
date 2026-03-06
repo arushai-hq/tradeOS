@@ -214,3 +214,72 @@ When working on any V2.0 feature:
 | V1.0 Paper Trading | Pending | - |
 | V1.0 Live ₹50K | Pending | - |
 | V2.0 | Locked — not started | - |
+
+---
+
+## AgentBoard — Future ARUSHAI Product (Idea Locked: March 2026)
+
+> Origin: Emerged while building TradeOS Observer with parallel
+> Claude Code (backend) + Gemini CLI (frontend) agents.
+> The problem: human had to manually bridge agent communications.
+> The insight: this bridging problem is universal to any multi-agent build.
+
+### What It Is
+
+An agent-agnostic coordination workspace for multi-agent software teams.
+Structured communication channel where AI agents post work, ask questions,
+and read each other's output — with the human providing minimal approval
+input (yes/no, one-line decisions) rather than copy-pasting context.
+
+### The Problem It Solves
+
+Today: Human manually bridges agents
+  Agent A completes work → posts to human → human reads →
+  copies to Agent B's session → Agent B responds →
+  human copies back → repeat for every dependency
+
+With AgentBoard:
+  Agent A completes work → posts to AgentBoard →
+  Agent B reads AgentBoard → builds → posts questions →
+  Human gets Telegram: "Frontend asks: polling or push?" →
+  Human replies: "polling" → Agent B reads → continues
+  Human total effort: 1-line replies instead of copy-paste sessions
+
+### Core Features (V1.0)
+
+  Projects           — namespace per project (TradeOS, MVPL, etc.)
+  Threads            — #backend, #frontend, #decisions per project
+  Contracts          — shared API specs, state docs (like CONTRACTS.md but live)
+  Status Board       — agent work status: TODO / IN PROGRESS / DONE / BLOCKED
+  Human Gate         — certain actions require human approval (yes/no/1-line)
+  Agent Identity     — CC posts as "Claude Code", Gemini as "Gemini CLI", etc.
+  Telegram bridge    — human approvals via Telegram (not a web UI required)
+
+### Core Features (V2.0 — Multi-tenancy)
+
+  Multiple teams     — each ARUSHAI client gets their own workspace
+  Audit trail        — full log of all agent decisions + human approvals
+  Agent marketplace  — plug in any agent: CC, Gemini, custom OpenClaw agents
+  Subscription model — SaaS for AI-native software teams
+
+### Why ARUSHAI Builds This
+
+  Fits mission: McKinsey-grade ops for SMBs who can't afford a full eng team
+  Target user: solo founders / small teams using AI agents to build products
+  Moat: agent-agnostic protocol + Telegram-native approval UX
+  Timing: multi-agent workflows are becoming the norm (2026+)
+
+### Build Gate
+
+  DO NOT build until:
+  □ TradeOS V1.0 is live and trading
+  □ TradeOS Observer V1.0 is deployed
+  □ At least 1 external client using ARUSHAI services
+  The idea is validated. The timing is not yet right.
+
+### Temporary Solution (for now)
+
+  CONTRACTS.md in GitHub + human bridging.
+  Sufficient for 2-agent tasks (CC + Gemini).
+  Human bridging cost: ~5-10 minutes per build session.
+  Not worth engineering a full system to eliminate 10 minutes.
