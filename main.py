@@ -50,7 +50,7 @@ def _configure_structlog(dev_mode: bool = False) -> None:
 
     shared_processors = [
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
+        # add_logger_name requires stdlib logging.Logger (.name attr) — incompatible with PrintLoggerFactory
         structlog.processors.TimeStamper(fmt="iso", utc=False),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
