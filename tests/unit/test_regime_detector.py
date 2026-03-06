@@ -234,3 +234,52 @@ class TestResilience:
             assert result == MarketRegime.BEAR_TREND
             assert mock_tg.call_count == 1
             assert "regime change" in mock_tg.call_args[0][0].lower()
+
+
+# ---------------------------------------------------------------
+# Data validation tests (D5)
+# ---------------------------------------------------------------
+
+class TestDataValidation:
+    """Test that invalid data keeps last known regime."""
+
+    def _make_initialized_detector(self, regime: MarketRegime) -> RegimeDetector:
+        detector = RegimeDetector.__new__(RegimeDetector)
+        detector._kite = MagicMock()
+        detector._config = {}
+        detector._shared_state = {"market_regime": regime.value, "regime_position_multiplier": 1.0}
+        detector._secrets = {}
+        detector._regime = regime
+        detector._nifty_ema200 = 21500.0
+        detector._consecutive_failures = 0
+        detector._last_nifty_price = 22000.0
+        detector._last_vix = 12.0
+        detector._last_intraday_drop = 0.5
+        detector._last_intraday_range = 0.8
+        detector._last_trigger = "default_bull"
+        return detector
+
+    def test_invalid_nifty_price_keeps_last_regime(self):
+        """nifty_price=0 -> validation fails -> last regime preserved."""
+        detector = self._make_initialized_detector(MarketRegime.BULL_TREND)
+        detector._last_nifty_price = 0.0
+        detector._classify_and_update("test")
+        assert detector.current_regime() == MarketRegime.BULL_TREND
+
+    def test_insufficient_history_warns_but_continues(self):
+        """< 200 candles -> still classifies (uses available data)."""
+        result = classify_regime(
+            nifty_price=22000.0,
+            nifty_ema200=21500.0,
+            vix=12.0,
+            intraday_drop_pct=0.5,
+            intraday_range_pct=0.8,
+        )
+        assert result == MarketRegime.BULL_TREND
+
+    def test_invalid_vix_keeps_last_regime(self):
+        """VIX=150 -> validation fails -> last regime preserved."""
+        detector = self._make_initialized_detector(MarketRegime.BULL_TREND)
+        detector._last_vix = 150.0
+        detector._classify_and_update("test")
+        assert detector.current_regime() == MarketRegime.BULL_TREND
