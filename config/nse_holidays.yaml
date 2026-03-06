@@ -1,0 +1,41 @@
+# NSE Holidays — Trading Calendar
+# Source: NSE official holiday list
+# Update in December each year for the following year.
+# Date format: YYYY-MM-DD (ISO 8601)
+#
+# Reference: https://www.nseindia.com/regulations/holiday-master
+# Last updated: 2026
+
+"2026":
+  - "2026-01-26"   # Republic Day
+  - "2026-02-18"   # Maha Shivratri
+  - "2026-03-30"   # Ram Navami
+  - "2026-04-02"   # Ram Navami (tentative)
+  - "2026-04-03"   # Good Friday
+  - "2026-04-14"   # Dr. Ambedkar Jayanti
+  - "2026-04-17"   # Gudi Padwa
+  - "2026-05-01"   # Maharashtra Day
+  - "2026-07-29"   # Muharram (tentative)
+  - "2026-08-15"   # Independence Day
+  - "2026-08-27"   # Ganesh Chaturthi
+  - "2026-10-02"   # Gandhi Jayanti / Dussehra (tentative)
+  - "2026-10-20"   # Diwali Laxmi Pujan (tentative)
+  - "2026-10-21"   # Diwali Balipratipada (tentative)
+  - "2026-11-04"   # Guru Nanak Jayanti (tentative)
+  - "2026-12-25"   # Christmas
+
+"2025":
+  - "2025-01-26"   # Republic Day
+  - "2025-02-26"   # Maha Shivratri
+  - "2025-03-31"   # Id-Ul-Fitr (Ramzan Eid)
+  - "2025-04-10"   # Shree Ram Navami
+  - "2025-04-14"   # Dr. Baba Saheb Ambedkar Jayanti
+  - "2025-04-18"   # Good Friday
+  - "2025-05-01"   # Maharashtra Day
+  - "2025-08-15"   # Independence Day
+  - "2025-08-27"   # Ganesh Chaturthi
+  - "2025-10-02"   # Gandhi Jayanti / Dussehra
+  - "2025-10-21"   # Diwali Laxmi Pujan
+  - "2025-10-22"   # Diwali Balipratipada
+  - "2025-11-05"   # Guru Nanak Jayanti
+  - "2025-12-25"   # Christmas
