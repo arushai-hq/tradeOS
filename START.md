@@ -230,10 +230,25 @@ Phase 1 Components:
     Tests: 41 unit + 3 integration (skipped without DB_DSN) — all pass. mypy clean.
     Total: 112 tests pass across all 3 modules (11 skipped — need DB_DSN).
 
+  execution_engine/     ✅ COMPLETE — commit ce4434a
+    OrderStateMachine (8 states), OrderPlacer, OrderMonitor, ExitManager, ExecutionEngine
+    Startup reconciliation (D2), paper mode gate, kill switch gate (D1)
+    Tests: 26 unit — all pass. mypy clean.
+
+  main.py               ✅ COMPLETE — commit c34dee1
+    Single entry point. D9 session lifecycle (Phase 0–3).
+    Phase 0: 6 pre-market checks (token, holiday, Telegram, time window)
+    Phase 1: async startup — engines in dependency order
+    Phase 2: 5 D6 concurrent tasks (ws_listener, signal_processor, order_monitor,
+             risk_watchdog, heartbeat)
+    Phase 3: EOD shutdown at 15:30 IST
+    utils/: time_utils, telegram, db_events
+    config/nse_holidays.yaml: 2025-2026 NSE calendar
+    Tests: 36 new tests (178 total, 12 skipped DB_DSN). mypy clean.
+
   strategies/s1_intraday/ 🔴 Empty — BUILD NEXT  ← NEXT
   backtester/           🔴 Empty — BUILD FOURTH
   paper_trader/         🔴 Empty — BUILD FIFTH
-  execution_engine/     🔴 Empty — BUILD LAST (only after paper trade passes)
 
 Docs & Specs:
   docs/strategy_specs/S1_intraday_momentum.md   ✅ Complete
@@ -311,5 +326,5 @@ The Claude.ai web UI session has persistent memory. This file is the bridge to b
 ---
 
 *TradeOS — Arushai Systems Private Limited*
-*Last updated: Session 6 — Data Engine + Strategy Engine + Risk Manager complete*
+*Last updated: Session 7 — Execution Engine + main.py complete. Full system wired.*
 *Next milestone: strategies/s1_intraday/ implementation*
