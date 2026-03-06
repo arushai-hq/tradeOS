@@ -1,7 +1,7 @@
 """
 TradeOS — Risk Gate (pre-signal validation pipeline, D6 signal_processor gates)
 
-7 gates run in strict order. First failure stops evaluation and returns the reason.
+8 gates run in strict order. First failure stops evaluation and returns the reason.
 Returns (allowed: bool, reason: str).
 
 Gate sequence:
@@ -12,6 +12,7 @@ Gate sequence:
   Gate 4 — Max open positions   (D6 — max 3 concurrent positions)
   Gate 5 — Hard exit time       (15:00 IST — no new signals after this)
   Gate 6 — Duplicate signal     (already have a live position in same direction)
+  Gate 7 — Regime check         (regime detector — block counter-trend signals)
 
 Kill switch integration: accepts an optional kill_switch object (D1 KillSwitch).
 If not provided, falls back to shared_state["kill_switch_level"] as a read cache.
@@ -20,10 +21,12 @@ from __future__ import annotations
 
 import structlog
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Optional, Protocol, runtime_checkable
 
 import pytz
 
+from regime_detector.regime_detector import MarketRegime
 from strategy_engine.signal_generator import Signal
 
 
@@ -43,17 +46,24 @@ class RiskGate:
     """
     Pre-signal validation pipeline enforcing all D1/D6/D7 trading gates.
 
-    All 7 gates execute in strict order. First failure = signal dropped.
+    All 8 gates execute in strict order. First failure = signal dropped.
     Gate 0 asserts paper mode — it crashes hard on misconfiguration by design.
     """
 
-    def __init__(self, kill_switch: Optional[KillSwitchProtocol] = None) -> None:
+    def __init__(
+        self,
+        kill_switch: Optional[KillSwitchProtocol] = None,
+        regime_detector=None,
+    ) -> None:
         """
         Args:
             kill_switch: Optional KillSwitch instance (D1).
                          If None, falls back to shared_state["kill_switch_level"].
+            regime_detector: Optional RegimeDetector instance.
+                             If None, Gate 7 is skipped (backward compatible).
         """
         self._kill_switch = kill_switch
+        self._regime_detector = regime_detector
 
     def check(
         self,
@@ -62,7 +72,7 @@ class RiskGate:
         config: dict,
     ) -> tuple[bool, str]:
         """
-        Run the signal through all 7 gates in order.
+        Run the signal through all 8 gates in order.
 
         Args:
             signal: Candidate Signal from SignalGenerator.
@@ -145,5 +155,37 @@ class RiskGate:
                     symbol=signal.symbol, direction=signal.direction,
                 )
                 return False, "DUPLICATE_SIGNAL"
+
+        # Gate 7: regime — block counter-trend signals
+        if self._regime_detector is not None:
+            if signal.direction == "LONG" and not self._regime_detector.is_long_allowed():
+                regime = self._regime_detector.current_regime().value
+                reason = f"REGIME_BLOCKED_{regime.upper()}"
+                log.debug(
+                    "risk_gate_blocked", gate=7, reason=reason,
+                    symbol=signal.symbol, direction="LONG", regime=regime,
+                )
+                return False, reason
+
+            if signal.direction == "SHORT" and not self._regime_detector.is_short_allowed():
+                regime = self._regime_detector.current_regime().value
+                reason = f"REGIME_BLOCKED_{regime.upper()}"
+                log.debug(
+                    "risk_gate_blocked", gate=7, reason=reason,
+                    symbol=signal.symbol, direction="SHORT", regime=regime,
+                )
+                return False, reason
+
+            # CRASH + SHORT: extra volume confirmation (volume_ratio > 2.0)
+            if (self._regime_detector.current_regime() == MarketRegime.CRASH
+                    and signal.direction == "SHORT"
+                    and signal.volume_ratio <= Decimal("2.0")):
+                reason = "REGIME_CRASH_LOW_VOLUME_SHORT"
+                log.debug(
+                    "risk_gate_blocked", gate=7, reason=reason,
+                    symbol=signal.symbol,
+                    volume_ratio=float(signal.volume_ratio),
+                )
+                return False, reason
 
         return True, "OK"

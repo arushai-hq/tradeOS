@@ -1,7 +1,7 @@
 """
 Unit tests for strategy_engine/risk_gate.py
 
-6 mandatory D8 tests plus gate-sequence and individual gate tests.
+6 mandatory D8 tests plus gate-sequence, individual gate tests, and Gate 7 regime tests.
 """
 from __future__ import annotations
 
@@ -257,5 +257,83 @@ def test_all_gates_pass_returns_ok():
     """All gates pass → (True, 'OK')."""
     gate = RiskGate()
     allowed, reason = gate.check(_signal(), _state(), _config())
+    assert allowed
+    assert reason == "OK"
+
+
+# ---------------------------------------------------------------------------
+# Gate 7: regime check
+# ---------------------------------------------------------------------------
+
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30
+def test_regime_blocks_long_in_bear_trend():
+    """Gate 7: LONG signal blocked in BEAR_TREND regime."""
+    mock_regime = MagicMock()
+    mock_regime.is_long_allowed.return_value = False
+    mock_regime.current_regime.return_value = MagicMock(value="bear_trend")
+
+    gate = RiskGate(regime_detector=mock_regime)
+    allowed, reason = gate.check(_signal(direction="LONG"), _state(), _config())
+    assert not allowed
+    assert reason == "REGIME_BLOCKED_BEAR_TREND"
+
+
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30
+def test_regime_blocks_short_in_bull_trend():
+    """Gate 7: SHORT signal blocked in BULL_TREND regime."""
+    mock_regime = MagicMock()
+    mock_regime.is_short_allowed.return_value = False
+    mock_regime.current_regime.return_value = MagicMock(value="bull_trend")
+
+    gate = RiskGate(regime_detector=mock_regime)
+    allowed, reason = gate.check(_signal(direction="SHORT"), _state(), _config())
+    assert not allowed
+    assert reason == "REGIME_BLOCKED_BULL_TREND"
+
+
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30
+def test_regime_crash_blocks_short_with_low_volume():
+    """Gate 7: CRASH + SHORT + volume_ratio <= 2.0 → blocked."""
+    from regime_detector.regime_detector import MarketRegime
+
+    mock_regime = MagicMock()
+    mock_regime.is_short_allowed.return_value = True
+    mock_regime.current_regime.return_value = MarketRegime.CRASH
+
+    gate = RiskGate(regime_detector=mock_regime)
+    # Default volume_ratio in _signal() is 1.6, which is <= 2.0
+    allowed, reason = gate.check(_signal(direction="SHORT"), _state(), _config())
+    assert not allowed
+    assert reason == "REGIME_CRASH_LOW_VOLUME_SHORT"
+
+
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30
+def test_regime_crash_allows_short_with_high_volume():
+    """Gate 7: CRASH + SHORT + volume_ratio > 2.0 → allowed."""
+    from regime_detector.regime_detector import MarketRegime
+
+    mock_regime = MagicMock()
+    mock_regime.is_short_allowed.return_value = True
+    mock_regime.current_regime.return_value = MarketRegime.CRASH
+
+    gate = RiskGate(regime_detector=mock_regime)
+    # Create signal with volume_ratio > 2.0
+    sig = _signal(direction="SHORT")
+    sig = Signal(
+        symbol=sig.symbol,
+        instrument_token=sig.instrument_token,
+        direction="SHORT",
+        signal_time=sig.signal_time,
+        candle_time=sig.candle_time,
+        theoretical_entry=sig.theoretical_entry,
+        stop_loss=sig.stop_loss,
+        target=sig.target,
+        ema9=sig.ema9,
+        ema21=sig.ema21,
+        rsi=sig.rsi,
+        vwap=sig.vwap,
+        volume_ratio=Decimal("2.5"),  # > 2.0
+    )
+    allowed, reason = gate.check(sig, _state(), _config())
     assert allowed
     assert reason == "OK"
