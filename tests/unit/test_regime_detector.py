@@ -166,3 +166,71 @@ class TestSignalGates:
     def test_position_multiplier_crash(self):
         d = self._make_detector(MarketRegime.CRASH)
         assert d.position_size_multiplier() == 0.5
+
+
+# ---------------------------------------------------------------
+# Resilience tests (D3)
+# ---------------------------------------------------------------
+
+class TestResilience:
+    """Test failure handling and Telegram alerting."""
+
+    def _make_initialized_detector(self, regime: MarketRegime) -> RegimeDetector:
+        """Create a detector with pre-set state, bypassing __init__."""
+        detector = RegimeDetector.__new__(RegimeDetector)
+        detector._kite = MagicMock()
+        detector._config = {}
+        detector._shared_state = {"market_regime": regime.value, "regime_position_multiplier": 1.0}
+        detector._secrets = {}
+        detector._regime = regime
+        detector._nifty_ema200 = 21500.0
+        detector._consecutive_failures = 0
+        detector._last_nifty_price = 22000.0
+        detector._last_vix = 12.0
+        detector._last_intraday_drop = 0.5
+        detector._last_intraday_range = 0.8
+        detector._last_trigger = "default_bull"
+        return detector
+
+    @pytest.mark.asyncio
+    async def test_regime_unchanged_on_api_failure(self):
+        """API failure keeps last known regime."""
+        detector = self._make_initialized_detector(MarketRegime.BULL_TREND)
+        detector._refresh_intraday_data = AsyncMock(
+            side_effect=Exception("API timeout")
+        )
+        result = await detector.refresh()
+        assert result == MarketRegime.BULL_TREND
+        assert detector._consecutive_failures == 1
+
+    @pytest.mark.asyncio
+    async def test_telegram_alert_after_3_failures(self):
+        """3 consecutive refresh failures triggers Telegram alert."""
+        detector = self._make_initialized_detector(MarketRegime.BULL_TREND)
+        detector._refresh_intraday_data = AsyncMock(
+            side_effect=Exception("API timeout")
+        )
+        with patch("utils.telegram.send_telegram", new_callable=AsyncMock) as mock_tg:
+            for _ in range(3):
+                await detector.refresh()
+            assert mock_tg.call_count == 1
+            assert "degraded" in mock_tg.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_regime_change_triggers_telegram(self):
+        """Regime change from BULL -> BEAR triggers Telegram alert."""
+        detector = self._make_initialized_detector(MarketRegime.BULL_TREND)
+
+        async def fake_refresh():
+            detector._last_nifty_price = 20000.0
+            detector._last_vix = 18.0
+            detector._last_intraday_drop = 0.5
+            detector._last_intraday_range = 0.8
+
+        detector._refresh_intraday_data = AsyncMock(side_effect=fake_refresh)
+
+        with patch("utils.telegram.send_telegram", new_callable=AsyncMock) as mock_tg:
+            result = await detector.refresh()
+            assert result == MarketRegime.BEAR_TREND
+            assert mock_tg.call_count == 1
+            assert "regime change" in mock_tg.call_args[0][0].lower()
