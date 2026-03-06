@@ -1,0 +1,50 @@
+services:
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: tradeos-db
+    restart: always
+    environment:
+      POSTGRES_USER: tradeos
+      POSTGRES_PASSWORD: tradeos
+      POSTGRES_DB: tradeos
+    ports:
+      - "127.0.0.1:5432:5432"    # localhost only — not exposed to internet
+    volumes:
+      - tradeos_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradeos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Observer backend — uncomment when ready (V2.0)
+  # observer_api:
+  #   build: ./observer/backend
+  #   container_name: tradeos-observer-api
+  #   restart: always
+  #   ports:
+  #     - "127.0.0.1:8001:8001"
+  #   environment:
+  #     DB_DSN: postgresql://tradeos:tradeos@timescaledb:5432/tradeos
+  #   depends_on:
+  #     timescaledb:
+  #       condition: service_healthy
+
+  # Observer frontend — uncomment when ready (V2.0)
+  # observer_web:
+  #   build: ./observer/frontend
+  #   container_name: tradeos-observer-web
+  #   restart: always
+  #   ports:
+  #     - "127.0.0.1:3000:3000"
+  #   depends_on:
+  #     - observer_api
+
+volumes:
+  tradeos_db:
+    driver: local
+
+networks:
+  default:
+    name: tradeos_network

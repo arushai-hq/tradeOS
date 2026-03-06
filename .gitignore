@@ -32,3 +32,6 @@ Thumbs.db
 .claude/*-workspace/
 .claude/settings.local.json
 .claire/
+
+# Docker local overrides
+docker-compose.override.yml
