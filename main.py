@@ -898,7 +898,7 @@ async def main(
         ) as data_engine:
             async with RiskManager(config, shared_state, db_pool) as risk_manager:
                 async with StrategyEngine(
-                    kite, config, shared_state, strategy_queue, order_queue, db_pool,
+                    kite, config, shared_state, tick_queue_strategy, order_queue, db_pool,
                     regime_detector=regime_detector,
                 ) as strategy_engine:
                     async with ExecutionEngine(
