@@ -265,7 +265,14 @@ class RegimeDetector:
             else:
                 raise ValueError("Nifty day_open is zero")
         else:
-            raise ValueError("No Nifty intraday data returned")
+            # Market not open yet — Zerodha returns empty list before 09:15 IST.
+            # Intraday fields default to 0.0; classification continues via VIX + EMA only.
+            self._last_intraday_drop = 0.0
+            self._last_intraday_range = 0.0
+            log.warning(
+                "nifty_intraday_unavailable",
+                note="market not open yet — using 0.0 for intraday fields",
+            )
 
         # VIX
         vix_data = await self._fetch_historical(
@@ -284,14 +291,6 @@ class RegimeDetector:
     def _classify_and_update(self, trigger_source: str) -> None:
         """Run classify_regime() with validation, update cache + shared_state."""
         # Validate inputs
-        if self._last_nifty_price <= 0:
-            log.error(
-                "regime_invalid_nifty_price",
-                price=self._last_nifty_price,
-                keeping_regime=self._regime.value,
-            )
-            return
-
         if not (0 < self._last_vix < 100):
             log.error(
                 "regime_invalid_vix",
@@ -300,8 +299,17 @@ class RegimeDetector:
             )
             return
 
+        # Pre-market: nifty_price may be 0 (no intraday data yet).
+        # Use EMA as price so BEAR check (price < EMA) evaluates to False,
+        # and classification falls back to VIX-only (BULL/HIGH_VOL/CRASH).
+        effective_price = (
+            self._last_nifty_price
+            if self._last_nifty_price > 0
+            else self._nifty_ema200
+        )
+
         self._regime = classify_regime(
-            nifty_price=self._last_nifty_price,
+            nifty_price=effective_price,
             nifty_ema200=self._nifty_ema200,
             vix=self._last_vix,
             intraday_drop_pct=self._last_intraday_drop,

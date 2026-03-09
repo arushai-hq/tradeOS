@@ -283,3 +283,45 @@ class TestDataValidation:
         detector._last_vix = 150.0
         detector._classify_and_update("test")
         assert detector.current_regime() == MarketRegime.BULL_TREND
+
+    @pytest.mark.asyncio
+    async def test_initialize_before_market_open(self):
+        """Empty intraday (pre-market) -> no raise, valid regime returned."""
+        import structlog.testing
+
+        # Build daily candles: 60 simple close values for EMA
+        daily_candles = [
+            {"open": 22000.0, "high": 22100.0, "low": 21900.0, "close": 22000.0}
+            for _ in range(60)
+        ]
+        vix_candles = [
+            {"open": 14.0, "high": 15.0, "low": 13.5, "close": 14.0}
+        ]
+
+        def fake_historical(token, _from_dt, _to_dt, interval, _continuous):
+            if interval == "minute":
+                return []          # pre-market: no intraday data
+            if token == 264969:    # INDIA_VIX_TOKEN
+                return vix_candles
+            return daily_candles   # daily Nifty
+
+        mock_kite = MagicMock()
+        mock_kite.historical_data.side_effect = fake_historical
+
+        detector = RegimeDetector(
+            kite=mock_kite,
+            config={},
+            shared_state={},
+            secrets={},
+        )
+
+        with structlog.testing.capture_logs() as cap_logs:
+            result = await detector.initialize()
+
+        assert isinstance(result, MarketRegime), "initialize() must return a MarketRegime"
+        assert result is not None
+
+        events = [entry.get("event") for entry in cap_logs]
+        assert "nifty_intraday_unavailable" in events, (
+            f"Expected 'nifty_intraday_unavailable' in log events, got: {events}"
+        )
