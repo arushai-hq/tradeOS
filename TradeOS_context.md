@@ -58,6 +58,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 4. **Cosmetic DB bugs tolerated** — `tradingsymbol`, `bid`, `ask` fields null in tick storage. Zero impact on signal generation or risk logic.
 5. **AI/LLM dynamic watchlist parked** — Revisit after S1 validated on fixed watchlist.
 6. **Accept zero-signal sessions as valid outcome** — S1 sitting out unfavorable regimes is correct behavior. Do not loosen gates to force trades. Revisit only if zero-signal persists across 3+ sessions with mixed regimes.
+7. **Nemawashi Principle** — *"Preparing the roots before transplanting the tree."* All features, fixes, and system changes follow a 70-80% planning / 20-30% implementation split. Deep-dive analysis, edge case mapping, cost modeling, and brainstorming MUST be completed before any CC prompt is generated. No rushing to implementation. This applies to every session, every feature, every decision.
 
 ---
 
@@ -126,6 +127,16 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ---
 
-## 10. Last Updated
+## 10. Session Rules
 
-**2026-03-09** — Telegram alerts and session report CLI built. Session 03 re-analysis flagged potential zero-signal behavior in bear regimes post-B3 fix. Tests: 299 passing, 0 failures. Commits: `9ca7502`, `f65f8af`, `ca7ddc9`, `f0a1cf1`, `be16168`, `dc26faa`, `2b83849`, `cdd066b`, `4559b7a`.
+These rules apply to every TradeOS session regardless of context window or session reset.
+
+1. **Nemawashi First** — No CC prompt is generated until planning is complete. Every feature goes through: problem definition → research → brainstorm → edge case mapping → cost/risk analysis → decision lock → THEN implementation. Ratio: 70-80% planning, 20-30% implementation.
+2. **Living Document Protocol** — Every conclusion, decision, or significant discussion must be captured in `TradeOS_context.md` via a CC delta prompt before moving to the next topic.
+3. **Context Handoff** — If a session approaches context limits, generate a handoff document and update `TradeOS_context.md` with the exact resume point before the session ends.
+
+---
+
+## 11. Last Updated
+
+**2026-03-09** — Added Nemawashi principle as permanent operating rule (Key Decision 7). Session Rules section established (Section 10). Tests: 299 passing, 0 failures.
