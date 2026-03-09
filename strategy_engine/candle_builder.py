@@ -142,6 +142,18 @@ class CandleBuilder:
             expected_next += timedelta(minutes=CANDLE_MINUTES)
 
         completed = self._finalise_candle()
+        log.debug(
+            "candle_built",
+            symbol=self._symbol,
+            candle_time=completed.candle_time.isoformat(),
+            open=float(completed.open),
+            high=float(completed.high),
+            low=float(completed.low),
+            close=float(completed.close),
+            volume=completed.volume,
+            vwap=float(completed.vwap),
+            tick_count=completed.tick_count,
+        )
         self._start_new_candle(candle_open_time, price, volume, avg_price)
         return completed
 

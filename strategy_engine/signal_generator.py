@@ -157,6 +157,23 @@ class SignalGenerator:
                 rsi=float(indicators.rsi),
                 volume_ratio=float(indicators.volume_ratio),
             )
+            log.debug(
+                "signal_evaluated",
+                symbol=symbol,
+                direction="LONG",
+                candle_time=candle.candle_time.isoformat(),
+                ema9=float(indicators.ema9),
+                ema21=float(indicators.ema21),
+                rsi=float(indicators.rsi),
+                vwap=float(vwap),
+                price=float(close),
+                volume_ratio=float(indicators.volume_ratio),
+                ema_cross=True,
+                price_above_vwap=True,
+                rsi_in_range=True,
+                volume_ok=True,
+                result="signal_generated",
+            )
             return signal
 
         # --- SHORT signal evaluation ---
@@ -201,6 +218,42 @@ class SignalGenerator:
                 rsi=float(indicators.rsi),
                 volume_ratio=float(indicators.volume_ratio),
             )
+            log.debug(
+                "signal_evaluated",
+                symbol=symbol,
+                direction="SHORT",
+                candle_time=candle.candle_time.isoformat(),
+                ema9=float(indicators.ema9),
+                ema21=float(indicators.ema21),
+                rsi=float(indicators.rsi),
+                vwap=float(vwap),
+                price=float(close),
+                volume_ratio=float(indicators.volume_ratio),
+                ema_cross=True,
+                price_above_vwap=True,
+                rsi_in_range=True,
+                volume_ok=True,
+                result="signal_generated",
+            )
             return signal
 
+        log.debug(
+            "signal_evaluated",
+            symbol=symbol,
+            candle_time=candle.candle_time.isoformat(),
+            ema9=float(indicators.ema9),
+            ema21=float(indicators.ema21),
+            rsi=float(indicators.rsi),
+            vwap=float(vwap),
+            price=float(close),
+            volume_ratio=float(indicators.volume_ratio),
+            ema_cross=indicators.ema9 > indicators.ema21,
+            price_above_vwap=close > vwap,
+            rsi_in_range=(
+                (LONG_RSI_MIN <= indicators.rsi <= LONG_RSI_MAX)
+                or (SHORT_RSI_MIN <= indicators.rsi <= SHORT_RSI_MAX)
+            ),
+            volume_ok=indicators.volume_ratio >= MIN_VOLUME_RATIO,
+            result="no_signal",
+        )
         return None
