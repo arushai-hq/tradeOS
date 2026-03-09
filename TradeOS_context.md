@@ -25,6 +25,8 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | `risk_manager/` | Kill switch (D1), position sizer, PnL tracker, loss tracker |
 | `execution_engine/` | Order state machine (8 states), paper order placer |
 | `main.py` | D9 session lifecycle: pre-market gate → startup → 5 concurrent tasks → EOD |
+| `utils/telegram_notifier.py` | Rich Telegram alerts — 6 event types + heartbeat summary. Config-driven via `config/telegram_alerts.yaml` (hot-reload, 60s TTL) |
+| `tools/session_report.py` | Standalone CLI session report — parses structlog, outputs signal/trade/P&L/regime/health tables. Supports `--export csv/xlsx/all` |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
 **Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
@@ -36,8 +38,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **262 passing, 0 failures, 12 skipped** — commit `dc26faa` |
+| Tests | **299 passing, 0 failures, 12 skipped** — commit `4559b7a` |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
+| New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
+| Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -53,6 +57,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 3. **Dashboard deferred** — Build after 3–4 sessions with real P&L data. No premature UI.
 4. **Cosmetic DB bugs tolerated** — `tradingsymbol`, `bid`, `ask` fields null in tick storage. Zero impact on signal generation or risk logic.
 5. **AI/LLM dynamic watchlist parked** — Revisit after S1 validated on fixed watchlist.
+6. **Accept zero-signal sessions as valid outcome** — S1 sitting out unfavorable regimes is correct behavior. Do not loosen gates to force trades. Revisit only if zero-signal persists across 3+ sessions with mixed regimes.
 
 ---
 
@@ -117,9 +122,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Bug Fixes B1–B3+B5 | Fixed hard exit (B1), signal halt gate (B2), RSI filter inversion (B3), lifecycle logging (B5). Tests: 222→249. | 4 of 6 bugs resolved. Ready for Session 04. |
 | 2026-03-09 | Bug Fixes B4+B6 | Fixed PnL tracker (B4: real-time unrealized P&L in heartbeat), queue overflow (B6: safe enqueue with overflow suppression). All 6 Session 03 bugs resolved. Tests: 249→260. | Session 04 ready. |
 | 2026-03-09 | Test Fix | Fixed 2 time-dependent test failures caused by B1/B2 hard_exit gate. Tests: 260→262, 0 failures. | Clean test suite for Session 04. |
+| 2026-03-09 | Tooling | Rich Telegram alerts (`cdd066b`) + session report CLI (`4559b7a`). Tests: 262→299. Session 03 re-analysis revealed all accepted trades were oversold SHORTs. | Visibility tooling complete. |
 
 ---
 
 ## 10. Last Updated
 
-**2026-03-09** — All Session 03 bugs resolved (B1–B6). Test suite clean: 262 passing, 0 failures. Session 04 tomorrow 9AM IST. Commits: `9ca7502`, `f65f8af`, `ca7ddc9`, `f0a1cf1`, `be16168`, `dc26faa`.
+**2026-03-09** — Telegram alerts and session report CLI built. Session 03 re-analysis flagged potential zero-signal behavior in bear regimes post-B3 fix. Tests: 299 passing, 0 failures. Commits: `9ca7502`, `f65f8af`, `ca7ddc9`, `f0a1cf1`, `be16168`, `dc26faa`, `2b83849`, `cdd066b`, `4559b7a`.
