@@ -36,7 +36,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **222 passing**, 2 pre-existing failures (unrelated), 12 skipped (DB_DSN) — commit `9ca7502` |
+| Tests | **249 passing** (2 pre-existing failures, 12 skipped) — commit `ca7ddc9` |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -77,9 +77,9 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 |-----|--------|----------|
 | ✅ B1 `hard_exit_triggered` at 15:00 does not close open positions — fixed: `emergency_exit_all` via `risk_watchdog` (commit `9ca7502`) | CRITICAL — resolved | Fixed |
 | ✅ B2 No time gate preventing signal generation after hard_exit — fixed: `accepting_signals` halt gate in `strategy_engine._process_tick` (commit `9ca7502`) | CRITICAL — resolved | Fixed |
-| B3 SHORT signals generated on oversold RSI (~30) — RSI filter likely inverted for SHORT direction | HIGH — incorrect SHORT entries | High |
+| ✅ B3 SHORT signals generated on oversold RSI (~30) — fixed: f65f8af — SHORT RSI filter was checking 30≤rsi≤45 instead of rsi≥45. Oversold shorts now rejected. | HIGH — resolved | Fixed |
 | B4 `daily_pnl_pct` stuck at 0.0 despite open positions — PnL tracker not computing unrealized P&L | HIGH — no live P&L visibility | High |
-| B5 Paper mode missing lifecycle logging — no `order_filled`, `position_closed`, `stop_hit`, `target_hit` events | HIGH — debrief blind without fill events | High |
+| ✅ B5 Paper mode missing lifecycle logging — fixed: ca7ddc9 — 7 lifecycle events added: signal_accepted, signal_rejected, order_placed, order_filled, stop_hit, target_hit, position_closed | HIGH — resolved | Fixed |
 | B6 `Queue.put_nowait` overflow exceptions at ~15:44 — tick queue full after market close | MEDIUM — post-close only, zero trading impact | Medium |
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
@@ -97,10 +97,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 ## 8. Immediate Next Actions
 
 1. ~~Fix B1+B2~~ — **Done** commit `9ca7502`. Hard exit force-closes positions and halts signal generation.
-2. Fix B3 (RSI filter inversion for shorts) — **TOP PRIORITY**, before next session
-3. Add B5 lifecycle logging — before next session (needed for future debriefs)
-4. Fix B4 (PnL tracker) and B6 (queue overflow) — can be Session 04 or 05
-5. Run Session 04 paper trading with fixes applied
+2. ~~Fix B3~~ — **Done** commit `f65f8af`. SHORT RSI filter corrected (rsi≥45, not 30≤rsi≤45).
+3. ~~Add B5 lifecycle logging~~ — **Done** commit `ca7ddc9`. 7 lifecycle events covering full trade pipeline.
+4. **Run Session 04** — **TOP PRIORITY**. B1–B3+B5 fixes applied. Full debrief capability now available.
+5. Fix B4 (PnL tracker) and B6 (queue overflow) — can land during or after Session 04
 6. Review trailing stop data gate on **2026-03-16**
 
 ---
@@ -114,9 +114,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Session 03 | 4h 44m, 9 signals (5L/4S), bear_trend → high_vol at 15:05 | Debrief pending |
 | 2026-03-09 | — | New Claude session created (context limit). Living document established. | `TradeOS_context.md` created |
 | 2026-03-09 | Session 03 Debrief | 9 signals, 3 positions, 6 bugs found (B1–B6). First session with live trades. | Debrief complete, fix list generated |
+| 2026-03-09 | Bug Fixes B1–B3+B5 | Fixed hard exit (B1), signal halt gate (B2), RSI filter inversion (B3), lifecycle logging (B5). Tests: 222→249. | 4 of 6 bugs resolved. Ready for Session 04. |
 
 ---
 
 ## 10. Last Updated
 
-**2026-03-09** — B1+B2 fixed (commit `9ca7502`). Hard exit now force-closes positions and halts signal generation. Tests: 222 passing.
+**2026-03-09** — B3 fixed (commit `f65f8af`), B5 fixed (commit `ca7ddc9`). 4 of 6 Session 03 bugs resolved. Lifecycle logging now covers full trade pipeline. Ready for Session 04.
