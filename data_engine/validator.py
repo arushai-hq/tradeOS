@@ -29,9 +29,9 @@ IST = ZoneInfo("Asia/Kolkata")
 BAD_TICK_HOURLY_THRESHOLD = 50
 
 # Gate 4 — staleness threshold.
-# 10 s accommodates VPS→Zerodha→VPS round-trip latency (~5 s observed)
+# 15 s accommodates VPS→Zerodha→VPS round-trip latency (~10-11 s observed)
 # while still rejecting truly stale ticks (e.g. post-reconnect backlog).
-STALE_TICK_THRESHOLD_SECONDS = 10
+STALE_TICK_THRESHOLD_SECONDS = 15
 
 
 class TickValidator:
