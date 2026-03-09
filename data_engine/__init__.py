@@ -118,7 +118,6 @@ class DataEngine:
             tick_queue=self._tick_queue,
             shared_state=self._shared_state,
             prev_close_cache=self._prev_close_cache,
-            strategy_queue=self._strategy_queue,
         )
         await self._feed.connect()
 
@@ -156,7 +155,12 @@ class DataEngine:
 
     async def run(self) -> None:
         """
-        Consume validated ticks from tick_queue and write to TimescaleDB.
+        Consume raw ticks from tick_queue_storage, validate, write to DB,
+        then fan out validated ticks to tick_queue_strategy.
+
+        Fan-out happens here (not in _on_ticks) so that:
+          - StrategyEngine always receives only validated ticks.
+          - await put() provides back-pressure instead of silent put_nowait drops.
 
         Main processing loop. Runs until cancelled. CancelledError is never
         suppressed (D6 rule).
@@ -171,6 +175,9 @@ class DataEngine:
                 validated = self._validator.validate(tick)
                 if validated is not None:
                     await self._storage.write_tick(validated)
+                    # Fan-out validated tick to StrategyEngine queue
+                    if self._strategy_queue is not None:
+                        await self._strategy_queue.put(validated)
                 self._tick_queue.task_done()
             except asyncio.CancelledError:
                 raise   # D6 rule: never suppress CancelledError

@@ -44,22 +44,21 @@ class DataFeed:
         tick_queue: asyncio.Queue,
         shared_state: dict,
         prev_close_cache: PrevCloseCache,
-        strategy_queue: Optional[asyncio.Queue] = None,
     ) -> None:
         """
         Args:
             kite: Authenticated KiteConnect instance.
             instruments: Instrument dicts; each must have 'instrument_token'.
-            tick_queue: asyncio.Queue for DataEngine (storage).
+            tick_queue: asyncio.Queue for DataEngine (raw tick storage queue).
+                        Fan-out to StrategyEngine happens in DataEngine.run()
+                        AFTER validation — not here.
             shared_state: D6 shared state dict. ws_listener owns ws_connected etc.
             prev_close_cache: Loaded cache (held for reference; not used inside feed).
-            strategy_queue: Optional second queue for StrategyEngine fan-out.
         """
         self._kite             = kite
         self._instruments      = instruments
         self._tokens: list[int] = [i["instrument_token"] for i in instruments]
         self._tick_queue        = tick_queue
-        self._strategy_queue    = strategy_queue
         self._shared_state      = shared_state
         self._prev_close_cache  = prev_close_cache
 
@@ -117,8 +116,11 @@ class DataFeed:
         """
         Called from KiteTicker thread when tick data arrives.
 
-        Forwards each tick to the asyncio tick_queue via call_soon_threadsafe.
-        Also updates shared_state["last_tick_timestamp"] for D3 heartbeat checks.
+        Forwards each tick to tick_queue_storage via call_soon_threadsafe.
+        Fan-out to tick_queue_strategy happens in DataEngine.run() AFTER
+        validation — ensures StrategyEngine only receives validated ticks
+        and avoids silent QueueFull drops from put_nowait.
+
         Returns immediately — never blocks.
         """
         assert self._loop is not None   # set by connect() before KiteTicker starts
@@ -130,8 +132,6 @@ class DataFeed:
         )
         for tick in ticks:
             self._loop.call_soon_threadsafe(self._tick_queue.put_nowait, tick)
-            if self._strategy_queue is not None:
-                self._loop.call_soon_threadsafe(self._strategy_queue.put_nowait, tick)
 
     def _on_connect(self, ws: KiteTicker, response: dict) -> None:
         """
