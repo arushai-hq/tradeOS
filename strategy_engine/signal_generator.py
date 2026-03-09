@@ -15,7 +15,7 @@ S1 CONDITIONS — ALL must be true simultaneously:
   SHORT:
     1. ema9 < ema21                    (trend: bearish)
     2. candle.close < vwap             (price below session VWAP)
-    3. 30 <= rsi <= 45                 (momentum: not oversold)
+    3. rsi >= 45                       (momentum: above oversold zone — not exhausted)
     4. volume_ratio >= 1.5             (conviction: above-avg volume)
 
   STOP LOSS:
@@ -176,11 +176,26 @@ class SignalGenerator:
             )
             return signal
 
+        # --- SHORT RSI rejection log — bearish setup met but RSI already oversold ---
+        if (
+            indicators.ema9 < indicators.ema21
+            and close < vwap
+            and indicators.rsi < SHORT_RSI_MAX
+            and indicators.volume_ratio >= MIN_VOLUME_RATIO
+        ):
+            log.debug(
+                "rsi_filter_rejected",
+                symbol=symbol,
+                direction="SHORT",
+                rsi=float(indicators.rsi),
+                threshold=float(SHORT_RSI_MAX),
+            )
+
         # --- SHORT signal evaluation ---
         if (
             indicators.ema9 < indicators.ema21
             and close < vwap
-            and SHORT_RSI_MIN <= indicators.rsi <= SHORT_RSI_MAX
+            and indicators.rsi >= SHORT_RSI_MAX   # B3 fix: was SHORT_RSI_MIN <= rsi <= SHORT_RSI_MAX
             and indicators.volume_ratio >= MIN_VOLUME_RATIO
         ):
             key = (symbol, "SHORT")
@@ -251,7 +266,7 @@ class SignalGenerator:
             price_above_vwap=close > vwap,
             rsi_in_range=(
                 (LONG_RSI_MIN <= indicators.rsi <= LONG_RSI_MAX)
-                or (SHORT_RSI_MIN <= indicators.rsi <= SHORT_RSI_MAX)
+                or (indicators.rsi >= SHORT_RSI_MAX)  # B3 fix: was SHORT_RSI_MIN <= rsi <= SHORT_RSI_MAX
             ),
             volume_ok=indicators.volume_ratio >= MIN_VOLUME_RATIO,
             result="no_signal",
