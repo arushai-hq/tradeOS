@@ -16,14 +16,14 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-import pytz
 import structlog
 
 from data_engine.prev_close_cache import PrevCloseCache
 
 log = structlog.get_logger()
-IST = pytz.timezone("Asia/Kolkata")
+IST = ZoneInfo("Asia/Kolkata")
 
 # D5 rule: alert threshold for bad tick monitoring
 BAD_TICK_HOURLY_THRESHOLD = 50
@@ -172,6 +172,12 @@ class TickValidator:
         datetime.now(). Strategy must not act on prices that no longer reflect
         the live market.
 
+        All exchange_timestamp values are normalised to IST before comparison.
+        Naive timestamps are assumed to be IST wall-clock (KiteConnect default).
+        Timezone-aware timestamps (e.g. UTC from some VPS/KiteConnect builds)
+        are converted via .astimezone() — preventing false 'stale' rejections
+        caused by the VPS system timezone differing from IST.
+
         Missing exchange_timestamp → pass (cannot determine age).
         """
         exchange_ts = tick.get("exchange_timestamp")
@@ -180,9 +186,11 @@ class TickValidator:
 
         now_ist = datetime.now(IST)
 
-        # Make timezone-aware if naive (KiteConnect may return naive datetimes)
-        if hasattr(exchange_ts, "tzinfo") and exchange_ts.tzinfo is None:
-            exchange_ts = IST.localize(exchange_ts)
+        # Normalise to IST: naive → assume IST wall-clock; aware → convert.
+        if exchange_ts.tzinfo is None:
+            exchange_ts = exchange_ts.replace(tzinfo=IST)
+        else:
+            exchange_ts = exchange_ts.astimezone(IST)
 
         age_seconds = (now_ist - exchange_ts).total_seconds()
         if age_seconds > 5.0:

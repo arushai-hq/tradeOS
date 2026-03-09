@@ -137,6 +137,29 @@ def test_gate4_uses_exchange_timestamp_not_local():
     )
 
 
+@freeze_time(FROZEN_NOW)
+def test_gate4_timezone_aware_utc_timestamp():
+    """
+    Gate 4 must accept a fresh UTC-aware exchange_timestamp.
+
+    KiteConnect may return timezone-aware UTC timestamps on some VPS
+    configurations. Without .astimezone(IST), comparing a UTC-aware stamp
+    with datetime.now(IST) produces an ~5.5h age (19800 s) — always stale.
+    The fix normalises aware timestamps via .astimezone(IST) first.
+    """
+    from datetime import timezone
+
+    validator = TickValidator(_cache())
+    # 3 seconds ago in UTC — same moment as 3s ago in IST, must be fresh
+    fresh_utc = datetime.now(timezone.utc) - timedelta(seconds=3)
+    tick = _tick(exchange_timestamp=fresh_utc)
+    result = validator.validate(tick)
+    assert result is not None, (
+        "Gate 4 must accept a 3s-old UTC-aware timestamp as fresh "
+        "after normalising to IST via .astimezone()"
+    )
+
+
 # ------------------------------------------------------------------
 # Gate 5 — Duplicate (silent)
 # ------------------------------------------------------------------
