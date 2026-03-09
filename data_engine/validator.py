@@ -28,6 +28,11 @@ IST = ZoneInfo("Asia/Kolkata")
 # D5 rule: alert threshold for bad tick monitoring
 BAD_TICK_HOURLY_THRESHOLD = 50
 
+# Gate 4 — staleness threshold.
+# 10 s accommodates VPS→Zerodha→VPS round-trip latency (~5 s observed)
+# while still rejecting truly stale ticks (e.g. post-reconnect backlog).
+STALE_TICK_THRESHOLD_SECONDS = 10
+
 
 class TickValidator:
     """
@@ -193,7 +198,7 @@ class TickValidator:
             exchange_ts = exchange_ts.astimezone(IST)
 
         age_seconds = (now_ist - exchange_ts).total_seconds()
-        if age_seconds > 5.0:
+        if age_seconds > STALE_TICK_THRESHOLD_SECONDS:
             token = tick.get("instrument_token", "unknown")
             log.debug(
                 "tick_rejected",

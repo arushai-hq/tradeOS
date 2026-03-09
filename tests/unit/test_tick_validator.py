@@ -110,12 +110,27 @@ def test_gate3_rejects_none_volume():
 # ------------------------------------------------------------------
 
 @freeze_time(FROZEN_NOW)
-def test_gate4_rejects_tick_older_than_5s():
-    """exchange_timestamp > 5 seconds ago must be discarded."""
+def test_gate4_rejects_tick_older_than_10s():
+    """exchange_timestamp > 10 seconds ago must be discarded."""
     validator = TickValidator(_cache())
-    stale_ts = datetime.now(IST) - timedelta(seconds=6)
+    stale_ts = datetime.now(IST) - timedelta(seconds=11)
     tick = _tick(exchange_timestamp=stale_ts)
     assert validator.validate(tick) is None
+
+
+@freeze_time(FROZEN_NOW)
+def test_gate4_accepts_tick_within_10s():
+    """
+    exchange_timestamp 8 seconds ago must pass Gate 4.
+
+    Threshold is 10 s to accommodate VPS→Zerodha round-trip latency.
+    An 8-second-old tick is real market data and must not be discarded.
+    """
+    validator = TickValidator(_cache())
+    recent_ts = datetime.now(IST) - timedelta(seconds=8)
+    tick = _tick(exchange_timestamp=recent_ts)
+    result = validator.validate(tick)
+    assert result is not None, "8s-old tick must pass Gate 4 (threshold is 10 s)"
 
 
 @freeze_time(FROZEN_NOW)
@@ -125,15 +140,15 @@ def test_gate4_uses_exchange_timestamp_not_local():
 
     If an implementation accidentally used datetime.now() as the tick timestamp
     (injecting local time rather than reading exchange_timestamp), this test
-    would fail because we explicitly set a 10-second-old exchange_timestamp.
+    would fail because we explicitly set an 11-second-old exchange_timestamp.
     """
     validator = TickValidator(_cache())
-    stale_ts = datetime.now(IST) - timedelta(seconds=10)
+    stale_ts = datetime.now(IST) - timedelta(seconds=11)
     tick = _tick(exchange_timestamp=stale_ts)
     result = validator.validate(tick)
     assert result is None, (
         "Gate 4 must use tick['exchange_timestamp'] — "
-        "a 10s-old timestamp must be rejected"
+        "an 11s-old timestamp must be rejected"
     )
 
 
@@ -222,7 +237,7 @@ def test_validator_never_raises_exception(bad_input):
     """
     validator = TickValidator(_cache())
     try:
-        result = validator.validate(bad_input)
+        validator.validate(bad_input)
         # Good — no exception. Result should be None for bad input.
     except Exception as exc:
         pytest.fail(
