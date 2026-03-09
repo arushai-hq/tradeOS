@@ -21,6 +21,8 @@ from datetime import datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun import freeze_time
+
 import pytest
 import pytz
 
@@ -149,6 +151,7 @@ async def test_signal_to_fill_paper_mode():
 # Test 2: Target exit triggered on candle close
 # ---------------------------------------------------------------------------
 
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30 — within market hours
 @pytest.mark.asyncio
 async def test_target_exit_triggered_on_candle_close():
     """

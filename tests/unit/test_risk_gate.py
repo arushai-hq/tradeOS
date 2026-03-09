@@ -73,6 +73,7 @@ def _config(max_positions: int = 3) -> dict:
 #  which enforces the 1.5% max loss per trade. Stop-loss is mandatory.)
 # ---------------------------------------------------------------------------
 
+@freeze_time("2026-03-05 04:00:00")  # IST 09:30 — within market hours
 def test_stop_loss_is_set_on_every_signal():
     """
     Every signal must have a stop_loss (1.5% max risk enforcement).
