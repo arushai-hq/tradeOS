@@ -36,7 +36,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **260 passing** (2 pre-existing failures, 12 skipped) — commit `be16168` |
+| Tests | **262 passing, 0 failures, 12 skipped** — commit `dc26faa` |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
@@ -97,10 +97,11 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 8. Immediate Next Actions
 
-1. **Run Session 04 paper trading** — all B1–B6 fixes applied.
-2. **Session 04 debrief grep:** `grep -E "signal_accepted|signal_rejected|order_placed|order_filled|stop_hit|target_hit|position_closed" logs/paper_session_04.log`
-3. **Verify in Session 04 logs:** (a) zero signals after 15:00, (b) positions force-closed at hard_exit, (c) `daily_pnl_pct` non-zero with open positions, (d) zero `Queue.put_nowait` exceptions, (e) no SHORT signals on oversold RSI
-4. Review trailing stop data gate on **2026-03-16**
+1. **Pull latest on VPS before Session 04** — `git pull origin main`
+2. **Run Session 04 paper trading** — all B1–B6 fixes applied.
+3. **Session 04 debrief grep:** `grep -E "signal_accepted|signal_rejected|order_placed|order_filled|stop_hit|target_hit|position_closed" logs/paper_session_04.log`
+4. **Verify in Session 04 logs:** (a) zero signals after 15:00, (b) positions force-closed at hard_exit, (c) `daily_pnl_pct` non-zero with open positions, (d) zero `Queue.put_nowait` exceptions, (e) no SHORT signals on oversold RSI
+5. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -115,9 +116,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Session 03 Debrief | 9 signals, 3 positions, 6 bugs found (B1–B6). First session with live trades. | Debrief complete, fix list generated |
 | 2026-03-09 | Bug Fixes B1–B3+B5 | Fixed hard exit (B1), signal halt gate (B2), RSI filter inversion (B3), lifecycle logging (B5). Tests: 222→249. | 4 of 6 bugs resolved. Ready for Session 04. |
 | 2026-03-09 | Bug Fixes B4+B6 | Fixed PnL tracker (B4: real-time unrealized P&L in heartbeat), queue overflow (B6: safe enqueue with overflow suppression). All 6 Session 03 bugs resolved. Tests: 249→260. | Session 04 ready. |
+| 2026-03-09 | Test Fix | Fixed 2 time-dependent test failures caused by B1/B2 hard_exit gate. Tests: 260→262, 0 failures. | Clean test suite for Session 04. |
 
 ---
 
 ## 10. Last Updated
 
-**2026-03-09** — All 6 Session 03 bugs resolved (B1–B6). Tests: 260 passing. Commits: `9ca7502`, `f65f8af`, `ca7ddc9`, `f0a1cf1`, `be16168`. System is Session 04 ready.
+**2026-03-09** — All Session 03 bugs resolved (B1–B6). Test suite clean: 262 passing, 0 failures. Session 04 tomorrow 9AM IST. Commits: `9ca7502`, `f65f8af`, `ca7ddc9`, `f0a1cf1`, `be16168`, `dc26faa`.
