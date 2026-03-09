@@ -41,7 +41,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
-| Paper Session 03 | Complete — 9 signals generated; debrief pending (log greps outstanding) |
+| Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
 
 ---
 
@@ -75,9 +75,14 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Bug | Impact | Priority |
 |-----|--------|----------|
+| B1 `hard_exit_triggered` at 15:00 does not close open positions — 3 positions orphaned until 15:30 shutdown | CRITICAL — open positions unmanaged for 30 min | Critical |
+| B2 No time gate preventing signal generation after hard_exit — 3 signals generated at/after 15:00 | CRITICAL — signals should be suppressed post hard_exit | Critical |
+| B3 SHORT signals generated on oversold RSI (~30) — RSI filter likely inverted for SHORT direction | HIGH — incorrect SHORT entries | High |
+| B4 `daily_pnl_pct` stuck at 0.0 despite open positions — PnL tracker not computing unrealized P&L | HIGH — no live P&L visibility | High |
+| B5 Paper mode missing lifecycle logging — no `order_filled`, `position_closed`, `stop_hit`, `target_hit` events | HIGH — debrief blind without fill events | High |
+| B6 `Queue.put_nowait` overflow exceptions at ~15:44 — tick queue full after market close | MEDIUM — post-close only, zero trading impact | Medium |
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
-| Post-EOD `QueueFull` exception (~15:43 in Session 03) | Post-close; zero trading impact | Low |
 
 ---
 
@@ -91,10 +96,12 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 8. Immediate Next Actions
 
-1. Complete Session 03 debrief — run `grep "s1_signal_generated"` + `grep "system_heartbeat" | tail -3` on `logs/paper_session_03.log`
-2. Build fix list from debrief findings
-3. Execute fixes, prep Session 04 (start before 09:15 IST — Session 03 missed 90 min due to late start)
-4. Review trailing stop data gate on **2026-03-16** — check if ≥ 5 trades past 2R
+1. Fix B1 (`hard_exit` position closure) and B2 (post-exit signal gate) — CRITICAL, before next session
+2. Fix B3 (RSI filter inversion for shorts) — before next session
+3. Add B5 lifecycle logging — before next session (needed for future debriefs)
+4. Fix B4 (PnL tracker) and B6 (queue overflow) — can be Session 04 or 05
+5. Run Session 04 paper trading with fixes applied
+6. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -106,9 +113,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-07 | Session 02 | Signal pipeline validated post VWAP fix | Regime gating confirmed active |
 | 2026-03-09 | Session 03 | 4h 44m, 9 signals (5L/4S), bear_trend → high_vol at 15:05 | Debrief pending |
 | 2026-03-09 | — | New Claude session created (context limit). Living document established. | `TradeOS_context.md` created |
+| 2026-03-09 | Session 03 Debrief | 9 signals, 3 positions, 6 bugs found (B1–B6). First session with live trades. | Debrief complete, fix list generated |
 
 ---
 
 ## 10. Last Updated
 
-**2026-03-09** — Initial seed: living document created from Session 03 context. All 10 sections populated.
+**2026-03-09** — Session 03 debrief complete. 6 bugs catalogued (B1–B6). Fix priority: B1→B2→B3→B5→B4→B6.
