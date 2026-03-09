@@ -77,6 +77,7 @@ class DataEngine:
         self._feed: Optional[DataFeed]             = None
         self._flush_task: Optional[asyncio.Task]   = None
         self._bad_tick_task: Optional[asyncio.Task] = None
+        self._token_to_symbol: dict[int, str]      = {}
 
     async def __aenter__(self) -> "DataEngine":
         """Bootstrap all Data Engine components in dependency order."""
@@ -90,6 +91,10 @@ class DataEngine:
 
         # Step 1: resolve instruments
         self._instruments = await self._resolve_instruments()
+        self._token_to_symbol = {
+            i["instrument_token"]: i.get("tradingsymbol", "")
+            for i in self._instruments
+        }
         log.info("data_engine_instruments_resolved", count=len(self._instruments))
 
         # Step 2: load prev_close_cache
@@ -178,6 +183,11 @@ class DataEngine:
                     # Fan-out validated tick to StrategyEngine queue
                     if self._strategy_queue is not None:
                         await self._strategy_queue.put(validated)
+                    # Update last_tick_prices so heartbeat can compute unrealized P&L (B4)
+                    token = validated.get("instrument_token")
+                    symbol = self._token_to_symbol.get(token, "")
+                    if symbol:
+                        self._shared_state["last_tick_prices"][symbol] = validated.get("last_price")
                 self._tick_queue.task_done()
             except asyncio.CancelledError:
                 raise   # D6 rule: never suppress CancelledError

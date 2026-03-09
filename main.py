@@ -118,6 +118,10 @@ def _init_shared_state() -> dict:
         # D7 — reconciler
         "recon_in_progress": False,
         "locked_instruments": set(),
+        # B4: last known price per symbol, written by DataEngine on every validated tick
+        "last_tick_prices": {},
+        # B4: total trading capital (₹), set in main() after config load
+        "capital": 0.0,
         # D6 — queues (also in shared_state for heartbeat queue-depth reporting)
         # tick_queue_storage → data_engine (validation + DB write)
         # tick_queue_strategy → strategy_engine (candle builder + signal gen)
@@ -536,6 +540,33 @@ async def trigger_kill_switch(
 # SECTION 6 — Phase 2: risk_watchdog, heartbeat, run_trading_session
 # ===========================================================================
 
+def _compute_unrealized_pnl(open_positions: dict, tick_prices: dict) -> float:
+    """
+    Compute total unrealized P&L (₹) from open positions and current tick prices.
+
+    Args:
+        open_positions: shared_state["open_positions"] — keyed by symbol.
+                        Each position dict must have "direction", "qty", "entry_price".
+        tick_prices:    shared_state["last_tick_prices"] — keyed by symbol.
+
+    Returns:
+        Total unrealized P&L in ₹. 0.0 if no tick prices available.
+    """
+    unrealized = 0.0
+    for symbol, pos in open_positions.items():
+        current_price = tick_prices.get(symbol)
+        if current_price is None:
+            continue
+        entry_price = float(pos.get("entry_price", 0.0))
+        qty = int(pos.get("qty", 0))
+        direction = pos.get("direction", "LONG")
+        if direction == "LONG":
+            unrealized += (float(current_price) - entry_price) * qty
+        else:  # SHORT
+            unrealized += (entry_price - float(current_price)) * qty
+    return unrealized
+
+
 async def risk_watchdog(
     shared_state: dict,
     config: dict,
@@ -682,6 +713,23 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
         await asyncio.sleep(30)
         telegram_cycle += 1
         shared_state["tasks_alive"]["heartbeat"] = now_ist()
+
+        # B4: Update daily_pnl_pct with realized + unrealized P&L every 30s
+        _open_pos = shared_state.get("open_positions", {})
+        _tick_prices = shared_state.get("last_tick_prices", {})
+        _realized_rs = shared_state.get("daily_pnl_rs", 0.0)
+        _unrealized_rs = _compute_unrealized_pnl(_open_pos, _tick_prices)
+        _total_rs = _realized_rs + _unrealized_rs
+        _capital_rs = shared_state.get("capital", 0.0)
+        if _capital_rs > 0:
+            shared_state["daily_pnl_pct"] = _total_rs / _capital_rs
+        log.info(
+            "pnl_update",
+            realized_pnl=round(_realized_rs, 2),
+            unrealized_pnl=round(_unrealized_rs, 2),
+            daily_pnl_pct=round(shared_state.get("daily_pnl_pct", 0.0), 6),
+            open_position_count=len(_open_pos),
+        )
 
         # Check for silent WS disconnect
         last_tick = shared_state.get("last_tick_timestamp")
@@ -870,6 +918,7 @@ async def main(
 
     mode = config.get("system", {}).get("mode", "paper")
     capital = config.get("capital", {}).get("total", 500000)
+    shared_state["capital"] = float(capital)  # B4: expose capital for heartbeat unrealized P&L
 
     log.info(
         "startup_phase1_begin",
