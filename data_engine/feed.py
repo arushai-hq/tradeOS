@@ -69,6 +69,9 @@ class DataFeed:
         self._api_key      = kite.api_key
         self._access_token = kite.access_token
 
+        # B6: warn once when queue overflows (post-EOD tick drops are expected)
+        self._overflow_warned: bool = False
+
     async def connect(self) -> None:
         """
         Initialize KiteTicker, register callbacks, and start in a background thread.
@@ -131,7 +134,28 @@ class DataFeed:
             now_ist,
         )
         for tick in ticks:
-            self._loop.call_soon_threadsafe(self._tick_queue.put_nowait, tick)
+            self._loop.call_soon_threadsafe(self._safe_enqueue, tick)
+
+    def _safe_enqueue(self, tick: dict) -> None:
+        """
+        Enqueue a tick into tick_queue_storage. Drop silently if full.
+
+        Called from the asyncio event loop (via call_soon_threadsafe).
+        After EOD task cancellation, the consumer is gone and the queue fills
+        up. put_nowait would raise QueueFull as an unhandled event-loop
+        exception. This wrapper catches it and logs a single warning per
+        session so post-EOD tick drops are expected and silent.
+        """
+        try:
+            self._tick_queue.put_nowait(tick)
+        except asyncio.QueueFull:
+            if not self._overflow_warned:
+                self._overflow_warned = True
+                log.warning(
+                    "tick_queue_overflow_dropping",
+                    note="Queue full — consumer may be stopped. "
+                         "Post-EOD tick drops are expected. Further drops suppressed.",
+                )
 
     def _on_connect(self, ws: KiteTicker, response: dict) -> None:
         """
@@ -140,6 +164,7 @@ class DataFeed:
         Subscribes all instruments in MODE_FULL and unblocks DataFeed.connect().
         """
         assert self._loop is not None   # set by connect() before KiteTicker starts
+        self._overflow_warned = False  # reset on each (re)connect
         log.info(
             "kiteticker_connected",
             instruments=len(self._tokens),
