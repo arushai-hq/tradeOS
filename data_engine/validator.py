@@ -29,9 +29,12 @@ IST = ZoneInfo("Asia/Kolkata")
 BAD_TICK_HOURLY_THRESHOLD = 50
 
 # Gate 4 — staleness threshold.
-# 15 s accommodates VPS→Zerodha→VPS round-trip latency (~10-11 s observed)
-# while still rejecting truly stale ticks (e.g. post-reconnect backlog).
-STALE_TICK_THRESHOLD_SECONDS = 15
+# Zerodha exchange_timestamp = last trade time on exchange,
+# not delivery time. Illiquid stocks can have 10-15s gaps
+# between trades in slow markets. 30s safely rejects
+# pre-market stale ticks (300s+) while accepting all
+# legitimate live market ticks. Network latency: ~2ms (not a factor).
+STALE_TICK_THRESHOLD_SECONDS = 30
 
 
 class TickValidator:

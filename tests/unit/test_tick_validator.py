@@ -110,27 +110,28 @@ def test_gate3_rejects_none_volume():
 # ------------------------------------------------------------------
 
 @freeze_time(FROZEN_NOW)
-def test_gate4_rejects_tick_older_than_15s():
-    """exchange_timestamp > 15 seconds ago must be discarded."""
+def test_gate4_rejects_tick_older_than_30s():
+    """exchange_timestamp > 30 seconds ago must be discarded."""
     validator = TickValidator(_cache())
-    stale_ts = datetime.now(IST) - timedelta(seconds=16)
+    stale_ts = datetime.now(IST) - timedelta(seconds=31)
     tick = _tick(exchange_timestamp=stale_ts)
     assert validator.validate(tick) is None
 
 
 @freeze_time(FROZEN_NOW)
-def test_gate4_accepts_tick_within_15s():
+def test_gate4_accepts_tick_within_30s():
     """
-    exchange_timestamp 12 seconds ago must pass Gate 4.
+    exchange_timestamp 25 seconds ago must pass Gate 4.
 
-    Threshold is 15 s to accommodate VPS→Zerodha round-trip latency
-    (~10-11 s observed). A 12-second-old tick is live market data.
+    Zerodha exchange_timestamp reflects last trade time on exchange, not
+    delivery time. Illiquid stocks can have 10-15s between trades in slow
+    markets — 25s is a legitimate live tick. Threshold is 30s.
     """
     validator = TickValidator(_cache())
-    recent_ts = datetime.now(IST) - timedelta(seconds=12)
+    recent_ts = datetime.now(IST) - timedelta(seconds=25)
     tick = _tick(exchange_timestamp=recent_ts)
     result = validator.validate(tick)
-    assert result is not None, "12s-old tick must pass Gate 4 (threshold is 15 s)"
+    assert result is not None, "25s-old tick must pass Gate 4 (threshold is 30 s)"
 
 
 @freeze_time(FROZEN_NOW)
@@ -140,15 +141,15 @@ def test_gate4_uses_exchange_timestamp_not_local():
 
     If an implementation accidentally used datetime.now() as the tick timestamp
     (injecting local time rather than reading exchange_timestamp), this test
-    would fail because we explicitly set a 16-second-old exchange_timestamp.
+    would fail because we explicitly set a 31-second-old exchange_timestamp.
     """
     validator = TickValidator(_cache())
-    stale_ts = datetime.now(IST) - timedelta(seconds=16)
+    stale_ts = datetime.now(IST) - timedelta(seconds=31)
     tick = _tick(exchange_timestamp=stale_ts)
     result = validator.validate(tick)
     assert result is None, (
         "Gate 4 must use tick['exchange_timestamp'] — "
-        "a 16s-old timestamp must be rejected"
+        "a 31s-old timestamp must be rejected"
     )
 
 
