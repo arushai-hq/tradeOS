@@ -83,6 +83,7 @@ class OrderMonitor:
         risk_manager: "RiskManager",
         exit_manager: "ExitManager",
         config: dict,
+        notifier=None,
     ) -> None:
         self._kite = kite
         self._osm = osm
@@ -91,6 +92,7 @@ class OrderMonitor:
         self._exit_manager = exit_manager
         self._mode: str = config.get("system", {}).get("mode", "paper")
         self._is_paper: bool = self._mode == "paper"
+        self._notifier = notifier
 
         # Set of order_ids already sent to accounting callbacks
         self._processed_order_ids: set[str] = set()
@@ -232,6 +234,15 @@ class OrderMonitor:
             position_id=order.order_id,
             mode=self._mode,
         )
+        if getattr(self, "_notifier", None) is not None:
+            self._notifier.notify_position_opened(
+                symbol=order.symbol,
+                direction=order.direction,
+                fill_price=float(fill_price),
+                qty=order.qty,
+                stop_loss=float(order.stop_loss or fill_price),
+                target=float(order.target or fill_price),
+            )
         log.info(
             "entry_filled",
             order_id=order.order_id,
@@ -322,6 +333,17 @@ class OrderMonitor:
             pnl_pct=pnl_pct,
             hold_duration_minutes=hold_duration_minutes,
         )
+        if getattr(self, "_notifier", None) is not None:
+            self._notifier.notify_position_closed(
+                symbol=order.symbol,
+                direction=direction,
+                entry_price=entry_price_float,
+                exit_price=fill_price_float,
+                exit_reason=exit_reason,
+                pnl_points=round(pnl_points, 2),
+                pnl_pct=pnl_pct,
+                hold_duration_minutes=hold_duration_minutes,
+            )
 
         positions.pop(order.symbol, None)
 

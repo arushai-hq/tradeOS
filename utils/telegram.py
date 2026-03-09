@@ -29,6 +29,7 @@ async def send_telegram(
     msg: str,
     shared_state: dict,
     secrets: dict,
+    parse_mode: str = "",
 ) -> None:
     """
     Send a Telegram message.
@@ -40,6 +41,7 @@ async def send_telegram(
         msg:          Message text to send.
         shared_state: D6 shared state dict.
         secrets:      Loaded secrets.yaml dict (for bot_token + chat_id).
+        parse_mode:   Optional Telegram parse mode (e.g. "HTML"). Empty = no mode set.
     """
     if not shared_state.get("telegram_active", True):
         log.warning(
@@ -58,10 +60,13 @@ async def send_telegram(
         return
 
     try:
+        payload: dict = {"chat_id": chat_id, "text": msg}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         await asyncio.to_thread(
             requests.post,
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": msg},
+            json=payload,
             timeout=5,
         )
     except Exception as exc:

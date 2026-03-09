@@ -80,6 +80,7 @@ class ExecutionEngine:
         risk_manager,
         db_pool: asyncpg.Pool,
         kill_switch=None,
+        notifier=None,
     ) -> None:
         self._kite = kite
         self._config = config
@@ -88,6 +89,7 @@ class ExecutionEngine:
         self._risk_manager = risk_manager
         self._db_pool = db_pool
         self._kill_switch = kill_switch
+        self._notifier = notifier
 
         self._session_date: date = datetime.now(IST).date()
         self._system_ready: bool = False
@@ -148,6 +150,7 @@ class ExecutionEngine:
             risk_manager=self._risk_manager,
             exit_manager=self._exit_manager,
             config=self._config,
+            notifier=self._notifier,
         )
 
         log.info(

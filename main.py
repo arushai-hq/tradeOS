@@ -38,6 +38,7 @@ from risk_manager import RiskManager
 from strategy_engine import StrategyEngine
 from utils.db_events import write_system_event
 from utils.telegram import send_daily_summary, send_telegram
+from utils.telegram_notifier import TelegramNotifier
 from utils.time_utils import now_ist, today_ist
 
 log = structlog.get_logger()
@@ -97,6 +98,7 @@ def _init_shared_state() -> dict:
         # D6 — signal_processor
         "last_signal": None,
         "signals_generated_today": 0,
+        "signals_rejected_today": 0,
         # D2/D6 — order_monitor
         "open_orders": {},
         "open_positions": {},
@@ -573,6 +575,7 @@ async def risk_watchdog(
     secrets: dict,
     exec_engine: Optional[ExecutionEngine] = None,
     regime_detector=None,
+    notifier=None,
 ) -> None:
     """
     D6 Task 4 — Risk watchdog. Checks kill switch conditions every 1 second.
@@ -652,6 +655,12 @@ async def risk_watchdog(
                 if exec_engine is not None and open_count > 0:
                     exit_manager = getattr(exec_engine, "_exit_manager", None)
                     if exit_manager is not None:
+                        # Snapshot positions BEFORE closing so notification has entry data
+                        if notifier is not None:
+                            _pos_snap = dict(shared_state.get("open_positions", {}))
+                            _tick_snap = dict(shared_state.get("last_tick_prices", {}))
+                            _session_pnl = shared_state.get("daily_pnl_rs", 0.0)
+                            notifier.notify_hard_exit(_pos_snap, _tick_snap, _session_pnl)
                         try:
                             await exit_manager.emergency_exit_all("hard_exit_1500")
                             log.info(
@@ -700,13 +709,15 @@ async def risk_watchdog(
             raise  # Re-raise — resilient_task wrapper sees this
 
 
-async def heartbeat(shared_state: dict, secrets: dict) -> None:
+async def heartbeat(shared_state: dict, secrets: dict, notifier=None) -> None:
     """
     D6 Task 5 — Heartbeat. Emits alive log every 30s.
 
     Checks all other tasks still running via tasks_alive dict.
     Detects silent WS disconnect (no ticks for 30s during market hours).
     Triggers reconnect via reconnect_requested flag (D3 protocol).
+    When notifier is provided, sends a rich Telegram summary at the
+    configured heartbeat_interval_min cadence (default: every 30 min).
     """
     telegram_cycle: int = 0
     while True:
@@ -759,21 +770,25 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
             },
         )
 
-        # Telegram heartbeat: once every 60 minutes (120 × 30s cycles)
-        if telegram_cycle % 120 == 0:
-            regime = shared_state.get("market_regime") or "unknown"
-            positions = len(shared_state.get("open_positions", {}))
-            pnl_rs = shared_state.get("daily_pnl_rs", 0.0)
-            ts = now_ist().strftime("%H:%M IST")
-            await send_telegram(
-                f"💓 TradeOS alive\n"
-                f"Regime: {regime}\n"
-                f"Positions: {positions}\n"
-                f"Session PnL: ₹{pnl_rs:.0f}\n"
-                f"Time: {ts}",
-                shared_state,
-                secrets,
-            )
+        # Telegram heartbeat — cadence driven by notifier config (default 30 min)
+        interval_cycles = notifier.heartbeat_interval_cycles() if notifier is not None else 60
+        if telegram_cycle % interval_cycles == 0:
+            if notifier is not None:
+                notifier.notify_heartbeat()
+            else:
+                regime = shared_state.get("market_regime") or "unknown"
+                positions = len(shared_state.get("open_positions", {}))
+                pnl_rs = shared_state.get("daily_pnl_rs", 0.0)
+                ts = now_ist().strftime("%H:%M IST")
+                await send_telegram(
+                    f"💓 TradeOS alive\n"
+                    f"Regime: {regime}\n"
+                    f"Positions: {positions}\n"
+                    f"Session PnL: ₹{pnl_rs:.0f}\n"
+                    f"Time: {ts}",
+                    shared_state,
+                    secrets,
+                )
 
 
 async def run_trading_session(
@@ -785,6 +800,7 @@ async def run_trading_session(
     config: dict,
     secrets: dict,
     regime_detector=None,
+    notifier=None,
 ) -> None:
     """
     Phase 2: Run all 5 D6 tasks concurrently.
@@ -799,8 +815,8 @@ async def run_trading_session(
             data_engine.run(),           # D6 Task 1: ws_listener + tick storage
             strategy_engine.run(),       # D6 Task 2: signal_processor
             exec_engine.run(),           # D6 Tasks 3: order placer + order monitor
-            risk_watchdog(shared_state, config, secrets, exec_engine, regime_detector),  # D6 Task 4
-            heartbeat(shared_state, secrets),  # D6 Task 5
+            risk_watchdog(shared_state, config, secrets, exec_engine, regime_detector, notifier),  # D6 Task 4
+            heartbeat(shared_state, secrets, notifier),  # D6 Task 5
             return_exceptions=True,
         )
     except asyncio.CancelledError:
@@ -959,13 +975,18 @@ async def main(
             strategy_queue=tick_queue_strategy,
         ) as data_engine:
             async with RiskManager(config, shared_state, db_pool) as risk_manager:
+                notifier = TelegramNotifier(
+                    "config/telegram_alerts.yaml", shared_state, secrets
+                )
                 async with StrategyEngine(
                     kite, config, shared_state, tick_queue_strategy, order_queue, db_pool,
                     regime_detector=regime_detector,
+                    notifier=notifier,
                 ) as strategy_engine:
                     async with ExecutionEngine(
                         kite, config, shared_state, order_queue,
                         risk_manager, db_pool,
+                        notifier=notifier,
                     ) as exec_engine:
 
                         # All engines are up and WebSocket is connected
@@ -1000,6 +1021,7 @@ async def main(
                             config,
                             secrets,
                             regime_detector=regime_detector,
+                            notifier=notifier,
                         )
 
                         # Phase 3: EOD shutdown

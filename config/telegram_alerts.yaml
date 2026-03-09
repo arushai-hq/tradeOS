@@ -1,0 +1,15 @@
+# TradeOS — Telegram Alert Configuration
+# Hot-reloadable: changes take effect within 60 seconds. No restart required.
+#
+# Set any value to false to silence that category.
+# heartbeat_interval_min controls how often the position summary is sent.
+
+telegram_alerts:
+  signal_generated: true      # signal_accepted + signal_rejected events
+  position_opened: true       # entry order confirmed (order_filled)
+  stop_hit: true              # stop-loss triggered and position closed
+  target_hit: true            # target hit and position closed
+  hard_exit: true             # 15:00 IST hard exit — batch position summary
+  regime_change: true         # market regime change (handled by regime_detector)
+  heartbeat_summary: true     # periodic system status with position table
+  heartbeat_interval_min: 30  # summary frequency in minutes — 30 or 60

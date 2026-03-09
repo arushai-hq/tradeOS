@@ -87,6 +87,7 @@ class StrategyEngine:
         db_pool: asyncpg.Pool,
         kill_switch: Optional[KillSwitchProtocol] = None,
         regime_detector=None,
+        notifier=None,
     ) -> None:
         """
         Args:
@@ -100,6 +101,7 @@ class StrategyEngine:
                          Falls back to shared_state["kill_switch_level"] if None.
             regime_detector: Optional RegimeDetector instance.
                              If None, Gate 7 in RiskGate is skipped.
+            notifier: Optional TelegramNotifier for rich signal notifications.
         """
         self._kite = kite
         self._config = config
@@ -109,6 +111,7 @@ class StrategyEngine:
         self._db_pool = db_pool
         self._kill_switch = kill_switch
         self._regime_detector = regime_detector
+        self._notifier = notifier
 
         self._instruments: list[dict] = []
         self._candle_builders: dict[int, CandleBuilder] = {}
@@ -288,6 +291,17 @@ class StrategyEngine:
                 regime=_regime,
                 gates_passed="all",
             )
+            if getattr(self, "_notifier", None) is not None:
+                self._notifier.notify_signal_accepted(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    entry=float(signal.theoretical_entry),
+                    stop=float(signal.stop_loss),
+                    target=float(signal.target),
+                    rsi=float(signal.rsi),
+                    vol_ratio=float(signal.volume_ratio),
+                    regime=_regime,
+                )
             log.info(
                 "signal_queued",
                 symbol=signal.symbol,
@@ -308,6 +322,18 @@ class StrategyEngine:
                 rsi=float(signal.rsi),
                 volume_ratio=float(signal.volume_ratio),
             )
+            self._shared_state["signals_rejected_today"] = (
+                self._shared_state.get("signals_rejected_today", 0) + 1
+            )
+            if getattr(self, "_notifier", None) is not None:
+                self._notifier.notify_signal_rejected(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    gate_name=_gate_name,
+                    gate_number=_gate_number,
+                    reason=reason,
+                    rsi=float(signal.rsi),
+                )
             log.info(
                 "signal_blocked",
                 symbol=signal.symbol,
