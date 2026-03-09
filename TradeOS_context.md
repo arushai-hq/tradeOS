@@ -36,7 +36,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **255 passing** (2 pre-existing failures, 12 skipped) — commit `f0a1cf1` |
+| Tests | **260 passing** (2 pre-existing failures, 12 skipped) — commit `be16168` |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -80,7 +80,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | ✅ B3 SHORT signals generated on oversold RSI (~30) — fixed: f65f8af — SHORT RSI filter was checking 30≤rsi≤45 instead of rsi≥45. Oversold shorts now rejected. | HIGH — resolved | Fixed |
 | ✅ B4 `daily_pnl_pct` stuck at 0.0 — fixed: f0a1cf1 — heartbeat now computes realized + unrealized P&L every 30s; DataEngine writes last_tick_prices from validated ticks | HIGH — resolved | Fixed |
 | ✅ B5 Paper mode missing lifecycle logging — fixed: ca7ddc9 — 7 lifecycle events added: signal_accepted, signal_rejected, order_placed, order_filled, stop_hit, target_hit, position_closed | HIGH — resolved | Fixed |
-| B6 `Queue.put_nowait` overflow exceptions at ~15:44 — tick queue full after market close | MEDIUM — post-close only, zero trading impact | Medium |
+| ✅ B6 `Queue.put_nowait` overflow exceptions at ~15:44 — fixed: be16168 — `_safe_enqueue()` catches `QueueFull`, warns once, drops tick silently | MEDIUM — resolved | Fixed |
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
 
@@ -99,9 +99,8 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 1. ~~Fix B1+B2~~ — **Done** commit `9ca7502`. Hard exit force-closes positions and halts signal generation.
 2. ~~Fix B3~~ — **Done** commit `f65f8af`. SHORT RSI filter corrected (rsi≥45, not 30≤rsi≤45).
 3. ~~Add B5 lifecycle logging~~ — **Done** commit `ca7ddc9`. 7 lifecycle events covering full trade pipeline.
-4. **Run Session 04** — **TOP PRIORITY**. B1–B4+B5 fixes applied. Full debrief capability now available.
-5. Fix B6 (queue overflow) — can land during or after Session 04
-6. Review trailing stop data gate on **2026-03-16**
+4. **Run Session 04** — **TOP PRIORITY**. All 6 bugs fixed (B1–B6). Full debrief capability. Clean EOD shutdown.
+5. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -116,9 +115,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Session 03 Debrief | 9 signals, 3 positions, 6 bugs found (B1–B6). First session with live trades. | Debrief complete, fix list generated |
 | 2026-03-09 | Bug Fixes B1–B3+B5 | Fixed hard exit (B1), signal halt gate (B2), RSI filter inversion (B3), lifecycle logging (B5). Tests: 222→249. | 4 of 6 bugs resolved. Ready for Session 04. |
 | 2026-03-09 | Bug Fix B4 | Fixed daily_pnl_pct stuck at 0.0: DataEngine writes last_tick_prices, heartbeat computes realized + unrealized P&L every 30s. Tests: 249→255. | 5 of 6 bugs resolved. |
+| 2026-03-09 | Bug Fix B6 | Fixed tick queue overflow: _safe_enqueue catches QueueFull post-EOD, warns once, drops silently. Tests: 255→260. | 6 of 6 bugs resolved. ALL CLEAR for Session 04. |
 
 ---
 
 ## 10. Last Updated
 
-**2026-03-09** — B4 fixed (commit `f0a1cf1`). 5 of 6 Session 03 bugs resolved. Heartbeat now shows real-time P&L with unrealized component. Ready for Session 04.
+**2026-03-09** — B6 fixed (commit `be16168`). All 6 Session 03 bugs resolved. Zero unhandled exceptions post-EOD. 260 tests passing. ALL CLEAR for Session 04.
