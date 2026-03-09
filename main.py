@@ -659,8 +659,10 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
     Detects silent WS disconnect (no ticks for 30s during market hours).
     Triggers reconnect via reconnect_requested flag (D3 protocol).
     """
+    telegram_cycle: int = 0
     while True:
         await asyncio.sleep(30)
+        telegram_cycle += 1
         shared_state["tasks_alive"]["heartbeat"] = now_ist()
 
         # Check for silent WS disconnect
@@ -688,6 +690,22 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
                 "order_q": order_q.qsize() if order_q is not None else 0,
             },
         )
+
+        # Telegram heartbeat: once every 60 minutes (120 × 30s cycles)
+        if telegram_cycle % 120 == 0:
+            regime = shared_state.get("market_regime") or "unknown"
+            positions = len(shared_state.get("open_positions", {}))
+            pnl_rs = shared_state.get("daily_pnl_rs", 0.0)
+            ts = now_ist().strftime("%H:%M IST")
+            await send_telegram(
+                f"💓 TradeOS alive\n"
+                f"Regime: {regime}\n"
+                f"Positions: {positions}\n"
+                f"Session PnL: ₹{pnl_rs:.0f}\n"
+                f"Time: {ts}",
+                shared_state,
+                secrets,
+            )
 
 
 async def run_trading_session(

@@ -68,6 +68,7 @@ tradeOS/
 │   ├── setup.sh                      ← One-time venv setup (Mac + Rocky Linux)
 │   ├── refresh_token.py              ← Daily Zerodha OAuth token refresh (~90s)
 │   ├── verify_token.py               ← Quick token validity check
+│   ├── test_telegram.py              ← Standalone Telegram connection test
 │   ├── db_start.sh                   ← Start TimescaleDB container
 │   ├── db_stop.sh                    ← Stop container (data preserved)
 │   ├── db_migrate.sh                 ← Apply schema.sql
