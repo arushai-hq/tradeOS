@@ -119,6 +119,11 @@ def _init_shared_state() -> dict:
         "recon_in_progress": False,
         "locked_instruments": set(),
         # D6 — queues (also in shared_state for heartbeat queue-depth reporting)
+        # tick_queue_storage → data_engine (validation + DB write)
+        # tick_queue_strategy → strategy_engine (candle builder + signal gen)
+        # tick_queue → alias for tick_queue_strategy (backward compat for drain/monitoring)
+        "tick_queue_storage": asyncio.Queue(maxsize=1000),
+        "tick_queue_strategy": asyncio.Queue(maxsize=1000),
         "tick_queue": asyncio.Queue(maxsize=1000),
         "order_queue": asyncio.Queue(maxsize=100),
         # D9 — session-guardian (not in D6 contract — lifecycle keys)
@@ -676,7 +681,8 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
                 )
                 shared_state["reconnect_requested"] = True
 
-        tick_q = shared_state.get("tick_queue")
+        storage_q = shared_state.get("tick_queue_storage")
+        strategy_q = shared_state.get("tick_queue_strategy")
         order_q = shared_state.get("order_queue")
         log.info(
             "system_heartbeat",
@@ -686,7 +692,8 @@ async def heartbeat(shared_state: dict, secrets: dict) -> None:
             daily_pnl_pct=shared_state.get("daily_pnl_pct"),
             open_positions=len(shared_state.get("open_positions", {})),
             queue_depths={
-                "tick_q": tick_q.qsize() if tick_q is not None else 0,
+                "storage_q": storage_q.qsize() if storage_q is not None else 0,
+                "strategy_q": strategy_q.qsize() if strategy_q is not None else 0,
                 "order_q": order_q.qsize() if order_q is not None else 0,
             },
         )
@@ -866,11 +873,15 @@ async def main(
     )
 
     # Create fresh queues for this session (overwrite the placeholder queues in
-    # shared_state that were created by _init_shared_state)
-    tick_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-    strategy_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    # shared_state that were created by _init_shared_state).
+    # Two separate tick queues — each consumer gets its own queue to prevent
+    # data_engine from racing with strategy_engine for the same ticks.
+    tick_queue_storage: asyncio.Queue = asyncio.Queue(maxsize=1000)   # data_engine
+    tick_queue_strategy: asyncio.Queue = asyncio.Queue(maxsize=1000)  # strategy_engine
     order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-    shared_state["tick_queue"] = tick_queue
+    shared_state["tick_queue_storage"] = tick_queue_storage
+    shared_state["tick_queue_strategy"] = tick_queue_strategy
+    shared_state["tick_queue"] = tick_queue_strategy   # backward compat (drain + monitoring)
     shared_state["order_queue"] = order_queue
 
     # Phase 1: Start engines in dependency order
@@ -882,8 +893,8 @@ async def main(
         log.info("regime_initialized", regime=initial_regime.value)
 
         async with DataEngine(
-            kite, config, shared_state, tick_queue,
-            strategy_queue=strategy_queue,
+            kite, config, shared_state, tick_queue_storage,
+            strategy_queue=tick_queue_strategy,
         ) as data_engine:
             async with RiskManager(config, shared_state, db_pool) as risk_manager:
                 async with StrategyEngine(
