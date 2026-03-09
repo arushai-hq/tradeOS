@@ -214,6 +214,15 @@ class StrategyEngine:
         if indicators is None:
             return  # still warming up
 
+        # B2 fix: halt gate — no new signals after hard_exit at 15:00
+        if not self._shared_state.get("accepting_signals", True):
+            log.debug(
+                "signal_skipped_hard_exit_active",
+                symbol=candle.symbol,
+                candle_time=candle.candle_time.isoformat(),
+            )
+            return
+
         # Step 4: evaluate S1 entry conditions
         assert self._signal_generator is not None
         signal = self._signal_generator.evaluate(candle, indicators)

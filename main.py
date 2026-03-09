@@ -617,6 +617,19 @@ async def risk_watchdog(
                 )
                 # Do NOT trigger kill_switch — this is scheduled, not anomalous
 
+                # B1 fix: immediately force-close all open positions
+                if exec_engine is not None and open_count > 0:
+                    exit_manager = getattr(exec_engine, "_exit_manager", None)
+                    if exit_manager is not None:
+                        try:
+                            await exit_manager.emergency_exit_all("hard_exit_1500")
+                            log.info(
+                                "hard_exit_positions_closed",
+                                positions_closed=open_count,
+                            )
+                        except Exception as exc:
+                            log.error("hard_exit_close_failed", error=str(exc))
+
             # L2: daily loss >= 3%
             if pnl <= -max_daily_loss and shared_state["kill_switch_level"] < 2:
                 await trigger_kill_switch(
