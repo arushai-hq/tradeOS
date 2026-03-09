@@ -224,6 +224,15 @@ class OrderMonitor:
         fill_price = order.fill_price or order.price
 
         log.info(
+            "order_filled",
+            symbol=order.symbol,
+            direction=order.direction,
+            fill_price=float(fill_price),
+            quantity=order.qty,
+            position_id=order.order_id,
+            mode=self._mode,
+        )
+        log.info(
             "entry_filled",
             order_id=order.order_id,
             symbol=order.symbol,
@@ -282,8 +291,38 @@ class OrderMonitor:
             exit_order_id=order.order_id,
         )
 
-        # Remove from shared_state open_positions
+        # Compute P&L and hold duration before removing position from shared state
         positions: dict = self._shared_state.get("open_positions", {})
+        pos_info: dict = positions.get(order.symbol, {})
+        entry_price_float: float = pos_info.get("avg_price", 0.0)
+        pos_side: str = pos_info.get("side", "BUY")
+        direction: str = "LONG" if pos_side == "BUY" else "SHORT"
+        fill_price_float: float = float(fill_price)
+        pnl_points = (
+            fill_price_float - entry_price_float
+            if direction == "LONG"
+            else entry_price_float - fill_price_float
+        )
+        pnl_pct = round(pnl_points / entry_price_float * 100, 4) if entry_price_float else 0.0
+        hold_duration_minutes = 0.0
+        entry_time = pos_info.get("entry_time")
+        if entry_time is not None:
+            delta = datetime.now(IST) - entry_time
+            hold_duration_minutes = round(delta.total_seconds() / 60, 1)
+
+        log.info(
+            "position_closed",
+            symbol=order.symbol,
+            position_id=order.order_id,
+            direction=direction,
+            entry_price=entry_price_float,
+            exit_price=fill_price_float,
+            exit_reason=exit_reason,
+            pnl_points=round(pnl_points, 2),
+            pnl_pct=pnl_pct,
+            hold_duration_minutes=hold_duration_minutes,
+        )
+
         positions.pop(order.symbol, None)
 
     async def _on_rejected(self, order: Order) -> None:

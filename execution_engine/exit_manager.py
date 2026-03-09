@@ -146,6 +146,8 @@ class ExitManager:
         stop_loss: Decimal = position["stop_loss"]
         target: Decimal = position["target"]
         qty: int = position["qty"]
+        entry_price: Decimal = position.get("entry_price", Decimal("0"))
+        position_id: str = str(position.get("signal_id", 0))
 
         now_time: time = datetime.now(IST).time()
 
@@ -162,42 +164,66 @@ class ExitManager:
 
         # Priority 2: TARGET HIT
         if direction == "LONG" and current_price >= target:
+            _pnl_pts, _pnl_pct, _hold = self._compute_exit_pnl(symbol, entry_price, target, direction)
             log.info(
                 "target_hit",
                 symbol=symbol,
-                current_price=float(current_price),
-                target=float(target),
+                position_id=position_id,
+                entry_price=float(entry_price),
+                target_price=float(target),
+                exit_price=float(target),
+                pnl_points=_pnl_pts,
+                pnl_pct=_pnl_pct,
+                hold_duration_minutes=_hold,
             )
             await self._place_exit_and_remove(symbol, "TARGET", qty, target)
             return
 
         if direction == "SHORT" and current_price <= target:
+            _pnl_pts, _pnl_pct, _hold = self._compute_exit_pnl(symbol, entry_price, target, direction)
             log.info(
                 "target_hit",
                 symbol=symbol,
-                current_price=float(current_price),
-                target=float(target),
+                position_id=position_id,
+                entry_price=float(entry_price),
+                target_price=float(target),
+                exit_price=float(target),
+                pnl_points=_pnl_pts,
+                pnl_pct=_pnl_pct,
+                hold_duration_minutes=_hold,
             )
             await self._place_exit_and_remove(symbol, "TARGET", qty, target)
             return
 
         # Priority 3: STOP HIT
         if direction == "LONG" and current_price <= stop_loss:
+            _pnl_pts, _pnl_pct, _hold = self._compute_exit_pnl(symbol, entry_price, stop_loss, direction)
             log.info(
                 "stop_hit",
                 symbol=symbol,
-                current_price=float(current_price),
-                stop_loss=float(stop_loss),
+                position_id=position_id,
+                entry_price=float(entry_price),
+                stop_price=float(stop_loss),
+                exit_price=float(stop_loss),
+                pnl_points=_pnl_pts,
+                pnl_pct=_pnl_pct,
+                hold_duration_minutes=_hold,
             )
             await self._place_exit_and_remove(symbol, "STOP", qty, stop_loss)
             return
 
         if direction == "SHORT" and current_price >= stop_loss:
+            _pnl_pts, _pnl_pct, _hold = self._compute_exit_pnl(symbol, entry_price, stop_loss, direction)
             log.info(
                 "stop_hit",
                 symbol=symbol,
-                current_price=float(current_price),
-                stop_loss=float(stop_loss),
+                position_id=position_id,
+                entry_price=float(entry_price),
+                stop_price=float(stop_loss),
+                exit_price=float(stop_loss),
+                pnl_points=_pnl_pts,
+                pnl_pct=_pnl_pct,
+                hold_duration_minutes=_hold,
             )
             await self._place_exit_and_remove(symbol, "STOP", qty, stop_loss)
             return
@@ -240,6 +266,31 @@ class ExitManager:
     def get_open_positions(self) -> dict:
         """Return a copy of the open positions registry."""
         return copy.deepcopy(self._positions)
+
+    def _compute_exit_pnl(
+        self,
+        symbol: str,
+        entry_price: Decimal,
+        exit_price: Decimal,
+        direction: str,
+    ) -> tuple[float, float, float]:
+        """
+        Compute (pnl_points, pnl_pct, hold_duration_minutes) for exit log events.
+
+        pnl_points is positive for profitable exits, negative for losses.
+        hold_duration derived from shared_state["open_positions"][symbol]["entry_time"].
+        """
+        ep = float(entry_price)
+        xp = float(exit_price)
+        pnl_points = (xp - ep) if direction == "LONG" else (ep - xp)
+        pnl_pct = round(pnl_points / ep * 100, 4) if ep else 0.0
+        hold_duration = 0.0
+        pos_info = self._shared_state.get("open_positions", {}).get(symbol, {})
+        entry_time = pos_info.get("entry_time")
+        if entry_time is not None:
+            delta = datetime.now(IST) - entry_time
+            hold_duration = round(delta.total_seconds() / 60, 1)
+        return round(pnl_points, 2), pnl_pct, hold_duration
 
     # ------------------------------------------------------------------
     # Internal helpers

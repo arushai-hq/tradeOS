@@ -189,6 +189,15 @@ class OrderPlacer:
         )
 
         log.info(
+            "order_placed",
+            symbol=signal.symbol,
+            direction=signal.direction,
+            order_type="MARKET",
+            price=float(signal.theoretical_entry),
+            quantity=qty,
+            mode="paper",
+        )
+        log.info(
             "paper_entry_simulated",
             symbol=signal.symbol,
             direction=signal.direction,
@@ -322,6 +331,15 @@ class OrderPlacer:
         )
         self._osm.transition(order_id, OrderState.SUBMITTED)
 
+        log.info(
+            "order_placed",
+            symbol=signal.symbol,
+            direction=signal.direction,
+            order_type="MARKET",
+            price=float(signal.theoretical_entry),
+            quantity=qty,
+            mode="live",
+        )
         log.info(
             "live_entry_placed",
             symbol=signal.symbol,

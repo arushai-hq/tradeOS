@@ -45,6 +45,28 @@ from strategy_engine.warmup import WarmupLoader
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")
 
+# ---------------------------------------------------------------------------
+# Gate metadata for signal_rejected log events
+# ---------------------------------------------------------------------------
+_GATE_INFO: dict[str, tuple[int, str]] = {
+    "KILL_SWITCH":            (1, "kill_switch"),
+    "RECON_IN_PROGRESS":      (2, "recon_in_progress"),
+    "INSTRUMENT_LOCKED":      (3, "instrument_locked"),
+    "MAX_POSITIONS_REACHED":  (4, "max_positions"),
+    "HARD_EXIT_TIME_REACHED": (5, "hard_exit_time"),
+    "DUPLICATE_SIGNAL":       (6, "duplicate_signal"),
+    "REGIME_BLOCKED":         (7, "regime_check"),
+    "REGIME_CRASH":           (7, "regime_check"),
+}
+
+
+def _parse_gate_info(reason: str) -> tuple[int, str]:
+    """Map a rejection reason string to (gate_number, gate_name)."""
+    for prefix, info in _GATE_INFO.items():
+        if reason.startswith(prefix):
+            return info
+    return 0, "unknown"
+
 
 class StrategyEngine:
     """
@@ -250,6 +272,22 @@ class StrategyEngine:
                 "direction": signal.direction,
                 "signal_time": signal.signal_time.isoformat(),
             }
+            _regime = (
+                self._regime_detector.current_regime().value
+                if self._regime_detector is not None else "unknown"
+            )
+            log.info(
+                "signal_accepted",
+                symbol=signal.symbol,
+                direction=signal.direction,
+                entry=float(signal.theoretical_entry),
+                stop=float(signal.stop_loss),
+                target=float(signal.target),
+                rsi=float(signal.rsi),
+                volume_ratio=float(signal.volume_ratio),
+                regime=_regime,
+                gates_passed="all",
+            )
             log.info(
                 "signal_queued",
                 symbol=signal.symbol,
@@ -259,6 +297,17 @@ class StrategyEngine:
                 target=float(signal.target),
             )
         else:
+            _gate_number, _gate_name = _parse_gate_info(reason)
+            log.info(
+                "signal_rejected",
+                symbol=signal.symbol,
+                direction=signal.direction,
+                gate_name=_gate_name,
+                gate_number=_gate_number,
+                rejection_reason=reason,
+                rsi=float(signal.rsi),
+                volume_ratio=float(signal.volume_ratio),
+            )
             log.info(
                 "signal_blocked",
                 symbol=signal.symbol,
