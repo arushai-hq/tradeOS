@@ -144,9 +144,11 @@ class RegimeDetector:
                     note="Using available data for EMA calculation",
                 )
         else:
-            log.error(
-                "regime_no_nifty_history",
-                note="Cannot compute EMA — defaulting to BULL_TREND",
+            # Daily data empty or insufficient — pre-market or data unavailable.
+            # EMA stays 0.0; _classify_and_update uses VIX-only classification.
+            log.warning(
+                "nifty_ema_data_unavailable",
+                note="market not open yet or insufficient history — EMA set to 0.0",
             )
 
         # Fetch VIX + intraday and classify
@@ -286,7 +288,13 @@ class RegimeDetector:
             else:
                 raise ValueError(f"VIX out of range: {vix_val}")
         else:
-            raise ValueError("No VIX data returned")
+            # Market not open yet — Zerodha returns empty VIX list before 09:15 IST.
+            # Use neutral default; classification continues via EMA + intraday only.
+            self._last_vix = 15.0
+            log.warning(
+                "vix_data_unavailable",
+                note="market not open yet — using neutral default 15.0",
+            )
 
     def _classify_and_update(self, trigger_source: str) -> None:
         """Run classify_regime() with validation, update cache + shared_state."""

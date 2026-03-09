@@ -325,3 +325,59 @@ class TestDataValidation:
         assert "nifty_intraday_unavailable" in events, (
             f"Expected 'nifty_intraday_unavailable' in log events, got: {events}"
         )
+
+    @pytest.mark.asyncio
+    async def test_vix_unavailable_pre_market(self):
+        """Empty VIX data (pre-market) -> no raise, valid regime returned."""
+        import structlog.testing
+
+        daily_candles = [
+            {"open": 22000.0, "high": 22100.0, "low": 21900.0, "close": 22000.0}
+            for _ in range(60)
+        ]
+
+        def fake_historical(token, _from_dt, _to_dt, interval, _continuous):
+            if token == 264969:  # INDIA_VIX_TOKEN — empty pre-market
+                return []
+            if interval == "minute":
+                return []
+            return daily_candles
+
+        mock_kite = MagicMock()
+        mock_kite.historical_data.side_effect = fake_historical
+
+        detector = RegimeDetector(
+            kite=mock_kite, config={}, shared_state={}, secrets={},
+        )
+
+        with structlog.testing.capture_logs() as cap_logs:
+            result = await detector.initialize()
+
+        assert isinstance(result, MarketRegime)
+        events = [entry.get("event") for entry in cap_logs]
+        assert "vix_data_unavailable" in events, (
+            f"Expected 'vix_data_unavailable' in log events, got: {events}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_all_data_unavailable_pre_market(self):
+        """All three fetches empty (pre-market) -> BULL_TREND, three warnings."""
+        import structlog.testing
+
+        mock_kite = MagicMock()
+        mock_kite.historical_data.return_value = []  # all fetches return empty
+
+        detector = RegimeDetector(
+            kite=mock_kite, config={}, shared_state={}, secrets={},
+        )
+
+        with structlog.testing.capture_logs() as cap_logs:
+            result = await detector.initialize()
+
+        assert result == MarketRegime.BULL_TREND, (
+            f"Expected BULL_TREND with all-empty data, got {result}"
+        )
+        events = [entry.get("event") for entry in cap_logs]
+        assert "nifty_ema_data_unavailable" in events, f"Missing nifty_ema_data_unavailable in {events}"
+        assert "nifty_intraday_unavailable" in events, f"Missing nifty_intraday_unavailable in {events}"
+        assert "vix_data_unavailable" in events, f"Missing vix_data_unavailable in {events}"
