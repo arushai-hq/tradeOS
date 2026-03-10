@@ -124,12 +124,12 @@ def test_hard_exit_time_1500_ist_triggers():
     assert reason == "HARD_EXIT_TIME_REACHED"
 
 
-@freeze_time("2026-03-05 09:29:59")  # IST 14:59:59 — 1 second before exit
-def test_signals_allowed_before_hard_exit_time():
-    """One second before 15:00 IST, signals should still be allowed."""
+@freeze_time("2026-03-05 08:29:00")  # IST 13:59:00 — before no-entry window
+def test_signals_allowed_before_no_entry_window():
+    """Before 14:30 IST (no-entry window), signals should still be allowed."""
     gate = RiskGate()
     allowed, reason = gate.check(_signal(), _state(), _config())
-    assert allowed, f"Expected signal to pass before 15:00, got: {reason}"
+    assert allowed, f"Expected signal to pass before 14:30, got: {reason}"
 
 
 # ---------------------------------------------------------------------------
@@ -338,3 +338,77 @@ def test_regime_crash_allows_short_with_high_volume():
     allowed, reason = gate.check(sig, _state(), _config())
     assert allowed
     assert reason == "OK"
+
+
+# ---------------------------------------------------------------------------
+# Gate 5b: no-entry window (default 14:30 IST)
+# ---------------------------------------------------------------------------
+
+@freeze_time("2026-03-05 08:59:00")  # IST 14:29:00 — 1 minute before cutoff
+def test_no_entry_window_signal_at_1429_passes():
+    """Signal at 14:29 IST — before no-entry window — should pass Gate 5."""
+    gate = RiskGate()
+    allowed, reason = gate.check(_signal(), _state(), _config())
+    assert allowed, f"Expected signal to pass at 14:29, got: {reason}"
+
+
+@freeze_time("2026-03-05 09:00:00")  # IST 14:30:00 — exactly at cutoff
+def test_no_entry_window_signal_at_1430_rejected():
+    """Signal at 14:30 IST — at no-entry cutoff — should be rejected."""
+    gate = RiskGate()
+    allowed, reason = gate.check(_signal(), _state(), _config())
+    assert not allowed
+    assert reason == "NO_ENTRY_WINDOW"
+
+
+@freeze_time("2026-03-05 09:15:00")  # IST 14:45:00 — well inside window
+def test_no_entry_window_signal_at_1445_rejected():
+    """Signal at 14:45 IST — inside no-entry window — should be rejected."""
+    gate = RiskGate()
+    allowed, reason = gate.check(_signal(), _state(), _config())
+    assert not allowed
+    assert reason == "NO_ENTRY_WINDOW"
+
+
+@freeze_time("2026-03-05 09:10:00")  # IST 14:40:00 — after no-entry cutoff
+def test_no_entry_window_existing_positions_unaffected():
+    """
+    After 14:30 IST, existing positions remain in shared_state — unmodified.
+    Gate 5 only blocks NEW signals; it does not touch open_positions.
+    """
+    gate = RiskGate()
+    existing_positions = {
+        "INFY": {"qty": 10, "side": "BUY", "entry": 1500.0},
+        "TCS": {"qty": 5, "side": "SELL", "entry": 3400.0},
+    }
+    state = _state(open_positions=existing_positions)
+
+    # New signal is blocked
+    allowed, reason = gate.check(_signal(symbol="RELIANCE"), state, _config())
+    assert not allowed
+    assert reason == "NO_ENTRY_WINDOW"
+
+    # But existing positions remain intact — gate didn't modify them
+    assert len(state["open_positions"]) == 2
+    assert "INFY" in state["open_positions"]
+    assert "TCS" in state["open_positions"]
+
+
+@freeze_time("2026-03-05 09:14:00")  # IST 14:44:00 — 1 minute before custom cutoff
+def test_no_entry_window_configurable_cutoff():
+    """Custom no_entry_after='14:45' — signal at 14:44 passes, 14:45 rejected."""
+    gate = RiskGate()
+    custom_config = {
+        **_config(),
+        "trading_hours": {"no_entry_after": "14:45"},
+    }
+
+    # 14:44 — before custom cutoff — should pass
+    allowed, reason = gate.check(_signal(), _state(), custom_config)
+    assert allowed, f"Expected signal to pass at 14:44 with cutoff 14:45, got: {reason}"
+
+    # 14:45 — at custom cutoff — should be rejected
+    with freeze_time("2026-03-05 09:15:00"):  # IST 14:45:00
+        allowed, reason = gate.check(_signal(), _state(), custom_config)
+    assert not allowed
+    assert reason == "NO_ENTRY_WINDOW"

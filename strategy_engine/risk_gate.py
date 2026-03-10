@@ -10,7 +10,8 @@ Gate sequence:
   Gate 2 — Recon in progress    (D7 — no signals during reconciliation)
   Gate 3 — Instrument locked    (D7 — instrument under reconciliation lock)
   Gate 4 — Max open positions   (D6 — max 3 concurrent positions)
-  Gate 5 — Hard exit time       (15:00 IST — no new signals after this)
+  Gate 5 — No-entry window      (configurable, default 14:30 IST — no new entries)
+         — Hard exit time       (15:00 IST — no new signals after this)
   Gate 6 — Duplicate signal     (already have a live position in same direction)
   Gate 7 — Regime check         (regime detector — block counter-trend signals)
 
@@ -131,14 +132,29 @@ class RiskGate:
             )
             return False, "MAX_POSITIONS_REACHED"
 
-        # Gate 5: hard exit time — no new signals at or after 15:00 IST
+        # Gate 5: time-based entry restrictions
         now_ist = datetime.now(IST)
+
+        # 5a: hard exit — 15:00 IST (belt-and-suspenders; B2 flag also blocks)
         if now_ist.time() >= HARD_EXIT_TIME:
             log.debug(
                 "risk_gate_blocked", gate=5, reason="HARD_EXIT_TIME_REACHED",
                 symbol=signal.symbol,
             )
             return False, "HARD_EXIT_TIME_REACHED"
+
+        # 5b: no-entry window — default 14:30 IST (configurable)
+        no_entry_str = config.get("trading_hours", {}).get("no_entry_after", "14:30")
+        h, m = map(int, no_entry_str.split(":"))
+        no_entry_time = time(h, m)
+        if now_ist.time() >= no_entry_time:
+            log.debug(
+                "risk_gate_blocked", gate=5, reason="NO_ENTRY_WINDOW",
+                symbol=signal.symbol, direction=signal.direction,
+                current_time=now_ist.time().isoformat(),
+                cutoff=no_entry_str,
+            )
+            return False, "NO_ENTRY_WINDOW"
 
         # Gate 6: duplicate signal — same direction already in open positions
         open_positions = shared_state.get("open_positions", {})

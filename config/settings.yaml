@@ -34,6 +34,7 @@ trading_hours:
   market_open: "09:15"
   market_close: "15:30"
   intraday_exit: "15:00"
+  no_entry_after: "14:30"   # No new entries after this time (IST). Existing positions unaffected.
 
 watchlist:
   - RELIANCE
