@@ -17,6 +17,8 @@ This file is append-only. Current state lives in TradeOS_context.md (repo root).
 | ✅ B4 `daily_pnl_pct` stuck at 0.0 — fixed: f0a1cf1 — shared_state `last_tick_prices` populated from validated ticks; heartbeat computes realized+unrealized P&L every 30s | HIGH — resolved | Fixed |
 | ✅ B5 Paper mode missing lifecycle logging — fixed: ca7ddc9 — 7 lifecycle events added: signal_accepted, signal_rejected, order_placed, order_filled, stop_hit, target_hit, position_closed | HIGH — resolved | Fixed |
 | ✅ B6 `Queue.put_nowait` overflow exceptions at ~15:44 — fixed: be16168 — `_safe_enqueue()` wraps `put_nowait` with `QueueFull` catch; overflow warning logged once, further drops suppressed | MEDIUM — resolved | Fixed |
+| ✅ B7 Unrealized P&L formula broken for SHORT positions — fixed: `cc9c018`. Field name mismatch (`entry_price`→`avg_price`, `direction`→`side`, qty sign). Added no-tick guard. Phantom -₹199,679 loss → false kill switch in Session 04. | CRITICAL — resolved | Fixed |
+| ✅ B8 Exit fill handler creates ghost LONG positions — fixed: `7ed6b7a`. `_on_exit_fill` snapshots position data before `on_close` deletes it. Removed duplicate `position_closed` log from OrderMonitor (PnlTracker is authoritative source). | CRITICAL — resolved | Fixed |
 
 ---
 
