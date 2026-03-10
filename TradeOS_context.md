@@ -50,6 +50,8 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
 | Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
+| Paper Session 04 | Complete — debrief complete. 2 trades taken (LT SHORT, AXISBANK SHORT), both killed after 30 seconds by false kill switch. Gross P&L: ₹0. Net P&L: -₹239 (charges only). Kill switch Level 2 for entire day due to phantom -₹199,679 unrealized P&L. 2 critical bugs found (B7, B8). |
+| Position sizing validation | Slot-based sizing working correctly — LT qty=51, AXISBANK qty=155 match slot capital calculations. |
 
 ---
 
@@ -88,6 +90,11 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Bug | Impact | Priority |
 |-----|--------|----------|
+| B7 Unrealized P&L formula broken for SHORT positions. B4 fix computes `(current_price - entry_price)` for all directions OR `tick_price=0` when no tick received yet. Showed -₹199,679 phantom loss → false `kill_switch` at `daily_loss_3pct` → both positions killed at 30s hold time. Real loss was ₹0 gross. | CRITICAL | Open |
+| B8 Exit fill handler creates ghost LONG positions. When `emergency_exit_all` closes a SHORT by placing a BUY, the fill handler treats the BUY fill as a new LONG entry (`entry_price=0.0, qty=0`). Creates phantom `position_closed` events with `pnl_points` equal to full stock price. | CRITICAL | Open |
+| B9 Session report parser shows duplicate signals/trades due to ghost positions from B8. Will self-resolve when B8 is fixed. | MEDIUM | Open |
+| B10 94 pre-market warnings (`nifty_intraday_unavailable`, `vix_data_unavailable`, `prev_close_load_failed`) before 09:15. No trading impact — noise. | LOW | Open |
+| B11 Regime detector double-initializes at startup with different VIX values (15.0 and 0.0). Cosmetic. | LOW | Open |
 | ✅ B1 `hard_exit_triggered` at 15:00 does not close open positions — fixed: `emergency_exit_all` via `risk_watchdog` (commit `9ca7502`) | CRITICAL — resolved | Fixed |
 | ✅ B2 No time gate preventing signal generation after hard_exit — fixed: `accepting_signals` halt gate in `strategy_engine._process_tick` (commit `9ca7502`) | CRITICAL — resolved | Fixed |
 | ✅ B3 SHORT signals generated on oversold RSI (~30) — fixed: f65f8af — SHORT RSI filter was checking 30≤rsi≤45 instead of rsi≥45. Oversold shorts now rejected. | HIGH — resolved | Fixed |
@@ -109,11 +116,12 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 8. Immediate Next Actions
 
-1. **Pull latest on VPS before Session 04** — `git pull origin main`
-2. **Run Session 04 paper trading** — all B1–B6 fixes applied.
-3. **Session 04 debrief grep:** `grep -E "signal_accepted|signal_rejected|order_placed|order_filled|stop_hit|target_hit|position_closed" logs/paper_session_04.log`
-4. **Verify in Session 04 logs:** (a) zero signals after 15:00, (b) positions force-closed at hard_exit, (c) `daily_pnl_pct` non-zero with open positions, (d) zero `Queue.put_nowait` exceptions, (e) no SHORT signals on oversold RSI
-5. Review trailing stop data gate on **2026-03-16**
+1. **Fix B7** (unrealized P&L for SHORTs + no-tick-yet guard) — CRITICAL, before next session
+2. **Fix B8** (exit fill handler ghost positions) — CRITICAL, before next session
+3. **Run Session 05** with B7+B8 fixes
+4. B9/B10/B11 can wait — low impact
+5. Continue Nemawashi deep dive on capital management after Session 05
+6. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -132,6 +140,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Tooling | Rich Telegram alerts (`cdd066b`) + session report CLI (`4559b7a`). Tests: 262→299. Session 03 re-analysis revealed all accepted trades were oversold SHORTs. | Visibility tooling complete. |
 | 2026-03-10 | Config Fix | S1 allocation 30%→70%, max positions 3→4, allocation sum validation added (`692e9f8`). Tests: 299→303. | Session 04 ready with Scenario D config. |
 | 2026-03-10 | Position Sizing | Slot-based 3-layer sizing (`361876e`), no-entry window 14:30 IST (`c60648f`), min slot capital + pending order cancel (`c862313`). Tests: 303→318. | Nemawashi complete. |
+| 2026-03-10 | Session 04 Debrief | 2 trades (LT SHORT, AXISBANK SHORT). Kill switch false-triggered at 30s — phantom unrealized P&L -₹199,679 from B7. Ghost positions from B8. Net P&L: -₹239 (charges). Slot-based sizing worked correctly. | 2 critical bugs (B7, B8), 3 minor (B9-B11). |
 
 ---
 
@@ -149,4 +158,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-10** — Slot-based position sizing Nemawashi complete. 3-layer sizing, no-entry window, min slot capital validation, pending order cancellation. Tests: 318 passing, 0 failures, 12 skipped.
+**2026-03-10** — Session 04 debrief. B7 (SHORT P&L inversion → false kill switch) and B8 (ghost positions from exit fills) found. Both critical — must fix before Session 05.
