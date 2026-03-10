@@ -228,6 +228,29 @@ def run_config_check() -> tuple[dict, dict]:
         log.critical("config_incomplete", missing_keys=missing)
         sys.exit(1)
 
+    # Validate strategy allocation sums to 1.00
+    allocations = config.get("capital", {}).get("allocation", {})
+    if allocations:
+        alloc_total = sum(float(v) for v in allocations.values())
+        if abs(alloc_total - 1.0) > 0.001:
+            log.critical(
+                "allocation_invalid",
+                total=round(alloc_total, 4),
+                expected=1.0,
+                allocations=allocations,
+            )
+            print(
+                f"FATAL: Strategy allocations sum to {alloc_total:.4f}, "
+                f"must equal 1.00. Fix config/settings.yaml",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        log.info(
+            "allocation_validated",
+            **{k: v for k, v in allocations.items()},
+            total=round(alloc_total, 4),
+        )
+
     return config, secrets
 
 

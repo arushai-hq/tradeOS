@@ -12,11 +12,12 @@ database:
 
 capital:
   total: 500000        # ₹5L
+  # RULE: All allocations MUST sum to 1.00 (100%). Validated at startup.
   allocation:
     s1_intraday: 0.70
-    s2_swing: 0.30
-    s3_positional: 0.30
-    s4_event: 0.10
+    s2_swing: 0.15
+    s3_positional: 0.10
+    s4_event: 0.05
 
 risk:
   max_loss_per_trade_pct: 0.015
