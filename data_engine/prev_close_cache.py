@@ -18,6 +18,8 @@ from typing import Optional
 import pytz
 import structlog
 
+from utils.time_utils import is_market_hours
+
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -99,7 +101,9 @@ class PrevCloseCache:
                     )
                     self._cache[token] = None
             except Exception as exc:
-                log.warning(
+                # B10: DEBUG before market hours, WARNING during market hours
+                _log = log.warning if is_market_hours() else log.debug
+                _log(
                     "prev_close_load_failed",
                     symbol=symbol,
                     token=token,

@@ -21,6 +21,8 @@ import pytz
 import structlog
 import ta.trend
 
+from utils.time_utils import is_market_hours
+
 import pandas as pd
 
 log = structlog.get_logger()
@@ -104,6 +106,7 @@ class RegimeDetector:
         self._regime: MarketRegime = MarketRegime.BULL_TREND
         self._nifty_ema200: float = 0.0
         self._consecutive_failures: int = 0
+        self._initialized: bool = False
 
         # Cached data for logging
         self._last_nifty_price: float = 0.0
@@ -117,9 +120,15 @@ class RegimeDetector:
         Phase 1 startup: fetch 200-day Nifty data, compute EMA, fetch VIX,
         fetch intraday data, classify regime.
 
+        B11 guard: if already initialized, skip and return cached regime.
+
         Returns:
             Initial MarketRegime classification.
         """
+        if self._initialized:
+            log.debug("regime_already_initialized", regime=self._regime.value)
+            return self._regime
+
         # Fetch 200 daily candles for EMA
         today = datetime.now(IST).date()
         from_date = today - timedelta(days=365)  # ~200 trading days in a year
@@ -154,6 +163,8 @@ class RegimeDetector:
         # Fetch VIX + intraday and classify
         await self._refresh_intraday_data()
         self._classify_and_update("initialize")
+
+        self._initialized = True
 
         log.info(
             "regime_initialized",
@@ -271,7 +282,9 @@ class RegimeDetector:
             # Intraday fields default to 0.0; classification continues via VIX + EMA only.
             self._last_intraday_drop = 0.0
             self._last_intraday_range = 0.0
-            log.warning(
+            # B10: DEBUG before market hours, WARNING during market hours
+            _log = log.warning if is_market_hours() else log.debug
+            _log(
                 "nifty_intraday_unavailable",
                 note="market not open yet — using 0.0 for intraday fields",
             )
@@ -291,7 +304,9 @@ class RegimeDetector:
             # Market not open yet — Zerodha returns empty VIX list before 09:15 IST.
             # Use neutral default; classification continues via EMA + intraday only.
             self._last_vix = 15.0
-            log.warning(
+            # B10: DEBUG before market hours, WARNING during market hours
+            _log = log.warning if is_market_hours() else log.debug
+            _log(
                 "vix_data_unavailable",
                 note="market not open yet — using neutral default 15.0",
             )

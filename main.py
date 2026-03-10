@@ -39,7 +39,7 @@ from strategy_engine import StrategyEngine
 from utils.db_events import write_system_event
 from utils.telegram import send_daily_summary, send_telegram
 from utils.telegram_notifier import TelegramNotifier
-from utils.time_utils import now_ist, today_ist
+from utils.time_utils import is_market_hours, now_ist, today_ist
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")
@@ -835,7 +835,9 @@ async def heartbeat(shared_state: dict, secrets: dict, notifier=None) -> None:
         if last_tick is not None and shared_state.get("ws_connected"):
             silence_seconds = (now_ist() - last_tick).total_seconds()
             if silence_seconds > 30:
-                log.warning(
+                # B10: DEBUG before market hours, WARNING during market hours
+                _log = log.warning if is_market_hours() else log.debug
+                _log(
                     "heartbeat_no_ticks_30s",
                     silence_seconds=round(silence_seconds),
                 )
@@ -1055,8 +1057,8 @@ async def main(
         # Regime detector: initialize before engines start
         from regime_detector import RegimeDetector
         regime_detector = RegimeDetector(kite, config, shared_state, secrets)
-        initial_regime = await regime_detector.initialize()
-        log.info("regime_initialized", regime=initial_regime.value)
+        await regime_detector.initialize()
+        # B11: regime_initialized already logged by RegimeDetector.initialize() with full context
 
         async with DataEngine(
             kite, config, shared_state, tick_queue_storage,

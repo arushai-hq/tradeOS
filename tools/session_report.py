@@ -181,7 +181,15 @@ class SessionParser:
     """
     Parse a TradeOS structlog file into SessionData.
     Handles both pre-B5 and post-B5 event naming conventions.
+
+    B9 hardening:
+      - Deduplicates signals and trades within a 5s window (same symbol+direction).
+      - Filters ghost entries with entry_price=0.0 or qty=0.
+      - Flags suspect position_closed events where qty=0 in the log event.
     """
+
+    # Dedup window: events within this many seconds for the same (symbol, direction) are duplicates
+    DEDUP_WINDOW_SECONDS: float = 5.0
 
     def __init__(self) -> None:
         # Pending signals awaiting resolution (ACCEPTED/BLOCKED/DEDUP)
@@ -193,6 +201,38 @@ class SessionParser:
         # Most recent gate info from risk_gate_blocked — picked up by signal_blocked
         # Key: symbol
         self._last_gate: dict[str, dict] = {}
+
+    def _is_duplicate_signal(self, data: SessionData, symbol: str, direction: str, ts: str) -> bool:
+        """B9: Check if a signal for this (symbol, direction) was already added within the dedup window."""
+        try:
+            new_time = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return False
+        for sig in reversed(data.signals):
+            if sig.symbol == symbol and sig.direction == direction:
+                try:
+                    existing_time = datetime.fromisoformat(sig.ts)
+                    if abs((new_time - existing_time).total_seconds()) <= self.DEDUP_WINDOW_SECONDS:
+                        return True
+                except (ValueError, TypeError):
+                    continue
+        return False
+
+    def _is_duplicate_trade(self, data: SessionData, symbol: str, ts: str) -> bool:
+        """B9: Check if a trade for this symbol was already opened within the dedup window."""
+        try:
+            new_time = datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return False
+        for trade in reversed(data.trades):
+            if trade.symbol == symbol and trade.opened_at:
+                try:
+                    existing_time = datetime.fromisoformat(trade.opened_at)
+                    if abs((new_time - existing_time).total_seconds()) <= self.DEDUP_WINDOW_SECONDS:
+                        return True
+                except (ValueError, TypeError):
+                    continue
+        return False
 
     def parse(self, filepath: str) -> SessionData:
         data = SessionData()
@@ -231,6 +271,8 @@ class SessionParser:
         elif ev == "s1_signal_generated":
             symbol = str(flds.get("symbol", ""))
             direction = str(flds.get("direction", ""))
+            if self._is_duplicate_signal(data, symbol, direction, ts):
+                return  # B9: skip duplicate signal within 5s window
             rec = SignalRecord(
                 ts=ts,
                 symbol=symbol,
@@ -299,6 +341,8 @@ class SessionParser:
         elif ev == "signal_accepted":
             symbol = str(flds.get("symbol", ""))
             direction = str(flds.get("direction", ""))
+            if self._is_duplicate_signal(data, symbol, direction, ts):
+                return  # B9: skip duplicate signal within 5s window
             rec = SignalRecord(
                 ts=ts,
                 symbol=symbol,
@@ -315,6 +359,8 @@ class SessionParser:
         elif ev == "signal_rejected":
             symbol = str(flds.get("symbol", ""))
             direction = str(flds.get("direction", ""))
+            if self._is_duplicate_signal(data, symbol, direction, ts):
+                return  # B9: skip duplicate signal within 5s window
             rec = SignalRecord(
                 ts=ts,
                 symbol=symbol,
@@ -333,11 +379,19 @@ class SessionParser:
         # ---- Trades: pre-B5 ----
         elif ev == "position_registered":
             symbol = str(flds.get("symbol", ""))
+            entry_price = float(flds.get("entry_price", 0))
+            qty = int(flds.get("qty", 0))
+            # B9: filter ghost entries
+            if entry_price <= 0 or qty <= 0:
+                return
+            # B9: deduplicate within 5s window
+            if self._is_duplicate_trade(data, symbol, ts):
+                return
             trade = TradeRecord(
                 symbol=symbol,
                 direction=str(flds.get("direction", "")),
-                entry_price=float(flds.get("entry_price", 0)),
-                qty=int(flds.get("qty", 0)),
+                entry_price=entry_price,
+                qty=qty,
                 stop_loss=float(flds.get("stop_loss", 0)),
                 target=float(flds.get("target", 0)),
                 opened_at=ts,
@@ -348,11 +402,19 @@ class SessionParser:
         # ---- Trades: post-B5 ----
         elif ev == "order_filled":
             symbol = str(flds.get("symbol", ""))
+            entry_price = float(flds.get("fill_price", 0))
+            qty = int(flds.get("qty", 0))
+            # B9: filter ghost entries
+            if entry_price <= 0 or qty <= 0:
+                return
+            # B9: deduplicate within 5s window
+            if self._is_duplicate_trade(data, symbol, ts):
+                return
             trade = TradeRecord(
                 symbol=symbol,
                 direction=str(flds.get("direction", "")),
-                entry_price=float(flds.get("fill_price", 0)),
-                qty=int(flds.get("qty", 0)),
+                entry_price=entry_price,
+                qty=qty,
                 stop_loss=0.0,
                 target=0.0,
                 opened_at=ts,
@@ -362,12 +424,23 @@ class SessionParser:
 
         elif ev == "position_closed":
             symbol = str(flds.get("symbol", ""))
+            # B9: flag suspect position_closed (ghost entries had qty=0)
+            event_qty = flds.get("qty")
+            if event_qty is not None and int(event_qty) == 0:
+                return  # Ghost position_closed — skip
             if symbol in self._open_trades:
                 trade = self._open_trades[symbol]
-                trade.exit_price = float(flds.get("exit_price", 0))
+                exit_price = float(flds.get("exit_price", 0))
+                pnl_rs = float(flds.get("pnl_rs", flds.get("gross_pnl", flds.get("net_pnl", 0)))) if any(
+                    k in flds for k in ("pnl_rs", "gross_pnl", "net_pnl")
+                ) else None
+                # B9: suspect check — pnl_points ≈ full stock price means entry_price was 0
+                if pnl_rs is not None and exit_price > 0 and abs(abs(pnl_rs) - exit_price) < 1.0:
+                    return  # Suspect ghost P&L — exclude
+                trade.exit_price = exit_price
                 trade.exit_time = ts
                 trade.exit_reason = str(flds.get("exit_reason", ""))
-                trade.pnl_rs = float(flds.get("pnl_rs", 0)) if "pnl_rs" in flds else None
+                trade.pnl_rs = pnl_rs
                 del self._open_trades[symbol]
 
         # ---- Regime ----
