@@ -5,16 +5,16 @@ Verifies that the 7 lifecycle log events fire with correct fields:
   signal_accepted  — gate pass → order_queue
   signal_rejected  — gate fail with correct gate_name + gate_number
   order_filled     — entry fill in OrderMonitor
-  position_closed  — exit fill with P&L fields in OrderMonitor
+  exit_filled      — exit fill in OrderMonitor (position_closed logged by PnlTracker)
 
 Tests:
   (a) test_signal_accepted_logged_on_gate_pass
   (b) test_signal_rejected_logged_on_gate_fail_max_positions
   (c) test_signal_rejected_gate_number_matches_reason
   (d) test_order_filled_logged_on_entry_fill
-  (e) test_position_closed_fires_on_exit_fill
-  (f) test_position_closed_pnl_long
-  (g) test_position_closed_pnl_short
+  (e) test_exit_fill_calls_on_close_no_ghost
+  (f) test_exit_fill_long_calls_on_close
+  (g) test_exit_fill_short_calls_on_close
 """
 from __future__ import annotations
 
@@ -269,21 +269,17 @@ async def test_order_filled_logged_on_entry_fill():
 
 
 # ---------------------------------------------------------------------------
-# (e) position_closed fires on exit fill
+# (e) exit fill calls on_close, no ghost position_closed from OrderMonitor
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_position_closed_fires_on_exit_fill():
+async def test_exit_fill_calls_on_close_no_ghost():
     """
-    (e) position_closed must fire in OrderMonitor._on_exit_fill.
-    Fields verified: symbol, position_id, direction, entry_price,
-                     exit_price, exit_reason, pnl_points, pnl_pct,
-                     hold_duration_minutes.
+    (e) B8 fix: _on_exit_fill must call risk_manager.on_close() and log
+    exit_filled. It must NOT log its own position_closed (PnlTracker does that).
     """
     from execution_engine.order_monitor import OrderMonitor
     from execution_engine.state_machine import Order, OrderState
-
-    entry_time = datetime.now(IST) - timedelta(minutes=45)
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -293,11 +289,12 @@ async def test_position_closed_fires_on_exit_fill():
                 "qty": 5,
                 "avg_price": 2450.0,
                 "side": "BUY",
-                "entry_time": entry_time,
+                "entry_time": datetime.now(IST) - timedelta(minutes=45),
             }
         }
     }
     monitor._risk_manager = AsyncMock()
+    monitor._notifier = None
 
     order = MagicMock(spec=Order)
     order.order_id = "PAPER-EXIT-XYZ"
@@ -309,34 +306,30 @@ async def test_position_closed_fires_on_exit_fill():
     with structlog.testing.capture_logs() as cap_logs:
         await monitor._on_exit_fill(order)
 
-    closed = [e for e in cap_logs if e.get("event") == "position_closed"]
-    assert len(closed) == 1, f"Expected position_closed, got: {[e['event'] for e in cap_logs]}"
+    # exit_filled must be logged
+    exit_filled = [e for e in cap_logs if e.get("event") == "exit_filled"]
+    assert len(exit_filled) == 1
+    assert exit_filled[0]["symbol"] == "RELIANCE"
 
-    evt = closed[0]
-    assert evt["symbol"] == "RELIANCE"
-    assert evt["position_id"] == "PAPER-EXIT-XYZ"
-    assert evt["direction"] == "LONG"
-    assert evt["entry_price"] == 2450.0
-    assert evt["exit_price"] == 2420.0
-    assert evt["exit_reason"] == "STOP_HIT"
-    assert evt["pnl_points"] == -30.0
-    assert evt["hold_duration_minutes"] > 0
+    # on_close must be called
+    monitor._risk_manager.on_close.assert_called_once()
+
+    # NO position_closed from OrderMonitor (PnlTracker handles it)
+    ghost = [e for e in cap_logs if e.get("event") == "position_closed"]
+    assert len(ghost) == 0, f"Ghost position_closed logged: {ghost}"
 
 
 # ---------------------------------------------------------------------------
-# (f) position_closed P&L — LONG profitable exit
+# (f) exit fill — LONG position calls on_close correctly
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_position_closed_pnl_long():
+async def test_exit_fill_long_calls_on_close():
     """
-    (f) LONG position closed at profit: pnl_points = exit - entry = +60,
-    pnl_pct = 60/2450 * 100 ≈ +2.449%.
+    (f) LONG position exit: on_close called with correct symbol and exit_price.
     """
     from execution_engine.order_monitor import OrderMonitor
     from execution_engine.state_machine import Order
-
-    entry_time = datetime.now(IST) - timedelta(minutes=30)
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -346,11 +339,12 @@ async def test_position_closed_pnl_long():
                 "qty": 3,
                 "avg_price": 2450.0,
                 "side": "BUY",
-                "entry_time": entry_time,
+                "entry_time": datetime.now(IST) - timedelta(minutes=30),
             }
         }
     }
     monitor._risk_manager = AsyncMock()
+    monitor._notifier = None
 
     order = MagicMock(spec=Order)
     order.order_id = "PAPER-EXIT-TCS"
@@ -359,31 +353,27 @@ async def test_position_closed_pnl_long():
     order.price = Decimal("2510.0")
     order.exit_type = "TARGET"
 
-    with structlog.testing.capture_logs() as cap_logs:
-        await monitor._on_exit_fill(order)
+    await monitor._on_exit_fill(order)
 
-    closed = [e for e in cap_logs if e.get("event") == "position_closed"]
-    assert len(closed) == 1
-    evt = closed[0]
-    assert evt["pnl_points"] == 60.0
-    assert evt["pnl_pct"] > 0
-    assert evt["exit_reason"] == "TARGET_HIT"
+    monitor._risk_manager.on_close.assert_called_once_with(
+        symbol="TCS",
+        exit_price=Decimal("2510.0"),
+        exit_reason="TARGET_HIT",
+        exit_order_id="PAPER-EXIT-TCS",
+    )
 
 
 # ---------------------------------------------------------------------------
-# (g) position_closed P&L — SHORT profitable exit
+# (g) exit fill — SHORT position calls on_close correctly
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_position_closed_pnl_short():
+async def test_exit_fill_short_calls_on_close():
     """
-    (g) SHORT position closed at profit: pnl_points = entry - exit = +50,
-    pnl_pct positive for profitable short.
+    (g) SHORT position exit: on_close called, no ghost position_closed.
     """
     from execution_engine.order_monitor import OrderMonitor
     from execution_engine.state_machine import Order
-
-    entry_time = datetime.now(IST) - timedelta(minutes=60)
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -393,11 +383,12 @@ async def test_position_closed_pnl_short():
                 "qty": 4,
                 "avg_price": 1500.0,
                 "side": "SELL",   # SHORT
-                "entry_time": entry_time,
+                "entry_time": datetime.now(IST) - timedelta(minutes=60),
             }
         }
     }
     monitor._risk_manager = AsyncMock()
+    monitor._notifier = None
 
     order = MagicMock(spec=Order)
     order.order_id = "PAPER-EXIT-INFY"
@@ -409,9 +400,14 @@ async def test_position_closed_pnl_short():
     with structlog.testing.capture_logs() as cap_logs:
         await monitor._on_exit_fill(order)
 
-    closed = [e for e in cap_logs if e.get("event") == "position_closed"]
-    assert len(closed) == 1
-    evt = closed[0]
-    assert evt["direction"] == "SHORT"
-    assert evt["pnl_points"] == 50.0   # entry(1500) - exit(1450) = +50
-    assert evt["pnl_pct"] > 0
+    # on_close called with correct params
+    monitor._risk_manager.on_close.assert_called_once_with(
+        symbol="INFY",
+        exit_price=Decimal("1450.0"),
+        exit_reason="TARGET_HIT",
+        exit_order_id="PAPER-EXIT-INFY",
+    )
+
+    # Zero ghost position_closed from OrderMonitor
+    ghost = [e for e in cap_logs if e.get("event") == "position_closed"]
+    assert len(ghost) == 0

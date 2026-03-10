@@ -282,7 +282,13 @@ class OrderMonitor:
         )
 
     async def _on_exit_fill(self, order: Order) -> None:
-        """Handle EXIT fill: notify RiskManager.on_close()."""
+        """Handle EXIT fill: notify RiskManager.on_close().
+
+        B8 fix: snapshot position data BEFORE on_close() deletes it from
+        shared_state.  PnlTracker.on_close() already logs 'position_closed'
+        with the authoritative P&L breakdown, so this method only logs
+        'exit_filled' and forwards to the Telegram notifier.
+        """
         fill_price = order.fill_price or order.price
         exit_type = order.exit_type or "MANUAL"
         exit_reason = _EXIT_REASON_MAP.get(exit_type, "MANUAL")
@@ -295,6 +301,10 @@ class OrderMonitor:
             fill_price=float(fill_price),
         )
 
+        # Snapshot position data BEFORE on_close() removes it from shared_state
+        positions: dict = self._shared_state.get("open_positions", {})
+        pos_info: dict = dict(positions.get(order.symbol, {}))
+
         await self._risk_manager.on_close(
             symbol=order.symbol,
             exit_price=fill_price,
@@ -302,38 +312,28 @@ class OrderMonitor:
             exit_order_id=order.order_id,
         )
 
-        # Compute P&L and hold duration before removing position from shared state
-        positions: dict = self._shared_state.get("open_positions", {})
-        pos_info: dict = positions.get(order.symbol, {})
-        entry_price_float: float = pos_info.get("avg_price", 0.0)
-        pos_side: str = pos_info.get("side", "BUY")
-        direction: str = "LONG" if pos_side == "BUY" else "SHORT"
-        fill_price_float: float = float(fill_price)
-        pnl_points = (
-            fill_price_float - entry_price_float
-            if direction == "LONG"
-            else entry_price_float - fill_price_float
-        )
-        pnl_pct = round(pnl_points / entry_price_float * 100, 4) if entry_price_float else 0.0
-        hold_duration_minutes = 0.0
-        entry_time = pos_info.get("entry_time")
-        if entry_time is not None:
-            delta = datetime.now(IST) - entry_time
-            hold_duration_minutes = round(delta.total_seconds() / 60, 1)
+        # Notify Telegram using snapshotted data (not deleted shared_state)
+        if pos_info and getattr(self, "_notifier", None) is not None:
+            entry_price_float: float = float(
+                pos_info.get("avg_price", pos_info.get("entry_price", 0.0))
+            )
+            direction = pos_info.get("direction")
+            if direction is None:
+                side = pos_info.get("side", "BUY")
+                direction = "LONG" if side == "BUY" else "SHORT"
+            fill_price_float: float = float(fill_price)
+            pnl_points = (
+                fill_price_float - entry_price_float
+                if direction == "LONG"
+                else entry_price_float - fill_price_float
+            )
+            pnl_pct = round(pnl_points / entry_price_float * 100, 4) if entry_price_float else 0.0
+            hold_duration_minutes = 0.0
+            entry_time = pos_info.get("entry_time")
+            if entry_time is not None:
+                delta = datetime.now(IST) - entry_time
+                hold_duration_minutes = round(delta.total_seconds() / 60, 1)
 
-        log.info(
-            "position_closed",
-            symbol=order.symbol,
-            position_id=order.order_id,
-            direction=direction,
-            entry_price=entry_price_float,
-            exit_price=fill_price_float,
-            exit_reason=exit_reason,
-            pnl_points=round(pnl_points, 2),
-            pnl_pct=pnl_pct,
-            hold_duration_minutes=hold_duration_minutes,
-        )
-        if getattr(self, "_notifier", None) is not None:
             self._notifier.notify_position_closed(
                 symbol=order.symbol,
                 direction=direction,
@@ -344,8 +344,6 @@ class OrderMonitor:
                 pnl_pct=pnl_pct,
                 hold_duration_minutes=hold_duration_minutes,
             )
-
-        positions.pop(order.symbol, None)
 
     async def _on_rejected(self, order: Order) -> None:
         """Handle order REJECTION. consecutive_losses already incremented by OSM."""
