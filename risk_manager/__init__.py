@@ -35,6 +35,7 @@ from typing import Optional
 import asyncpg
 import pytz
 
+from risk_manager.charge_calculator import ChargeCalculator
 from risk_manager.loss_tracker import LossTracker
 from risk_manager.pnl_tracker import PnlTracker, TradeResult
 from risk_manager.position_sizer import PositionSizer
@@ -77,11 +78,23 @@ class RiskManager:
         self._capital: Decimal = Decimal(str(config["capital"]["total"]))
         self._risk_pct: Decimal = Decimal(str(config["risk"]["max_loss_per_trade_pct"]))
 
+        # Slot-based capital: (total × s1_allocation) ÷ max_positions
+        allocation = config["capital"]["allocation"]
+        s1_alloc = Decimal(str(allocation.get("s1_intraday", "0.70")))
+        max_positions = int(config["risk"]["max_open_positions"])
+        self._slot_capital: Decimal = (self._capital * s1_alloc) / Decimal(str(max_positions))
+
+        # Viability floors from config (with defaults)
+        pos_sizing = config.get("position_sizing", {})
+        self._min_risk_floor: Decimal = Decimal(str(pos_sizing.get("min_risk_floor", 1000)))
+        self._min_position_value: Decimal = Decimal(str(pos_sizing.get("min_position_value", 15000)))
+
         self._session_date: Optional[date] = None
         self._trades_closed: int = 0
 
         # Components initialised in __aenter__
         self._sizer: Optional[PositionSizer] = None
+        self._charge_calc: Optional[ChargeCalculator] = None
         self._pnl_tracker: Optional[PnlTracker] = None
         self._loss_tracker: Optional[LossTracker] = None
         self._pnl_warning_sent: bool = False
@@ -101,6 +114,17 @@ class RiskManager:
 
         # Step 1: stateless position sizer
         self._sizer = PositionSizer()
+
+        # Step 2: charge calculator for estimation logging
+        self._charge_calc = ChargeCalculator()
+
+        log.info(
+            "slot_capital_computed",
+            total=float(self._capital),
+            slot_capital=float(self._slot_capital),
+            min_risk_floor=float(self._min_risk_floor),
+            min_position_value=float(self._min_position_value),
+        )
 
         # Step 3: P&L tracker (holds its own ChargeCalculator)
         self._pnl_tracker = PnlTracker(self._capital, self._shared_state)
@@ -135,18 +159,41 @@ class RiskManager:
 
     def size_position(self, signal: object) -> int | None:
         """
-        Calculate position size for a signal.
+        Calculate position size for a signal using slot-based sizing.
 
         Args:
-            signal: Signal object with theoretical_entry and stop_loss attributes.
+            signal: Signal object with theoretical_entry, stop_loss, target,
+                    direction, and symbol attributes.
 
         Returns:
             Integer quantity, or None if signal should be rejected.
         """
         assert self._sizer is not None, "RiskManager not initialised"
+        assert self._charge_calc is not None, "RiskManager not initialised"
         entry: Decimal = getattr(signal, "theoretical_entry")
         stop: Decimal = getattr(signal, "stop_loss")
-        return self._sizer.calculate(entry, stop, self._capital, self._risk_pct)
+        qty = self._sizer.calculate(
+            entry, stop, self._slot_capital, self._risk_pct,
+            self._min_risk_floor, self._min_position_value,
+        )
+
+        if qty is not None:
+            # Charge estimation — log estimated round-trip charges (do not reject)
+            target: Decimal = getattr(signal, "target")
+            direction: str = getattr(signal, "direction")
+            charges = self._charge_calc.calculate(qty, entry, target, direction)
+            log.info(
+                "position_sized",
+                symbol=getattr(signal, "symbol", "?"),
+                direction=direction,
+                qty=qty,
+                entry=float(entry),
+                slot_capital=float(self._slot_capital),
+                capital_needed=float(Decimal(str(qty)) * entry),
+                estimated_charges=float(charges.total),
+            )
+
+        return qty
 
     async def on_fill(
         self,

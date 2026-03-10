@@ -1,15 +1,21 @@
 """
-TradeOS — Position Sizer (Risk Manager)
+TradeOS — Slot-Based Position Sizer (Risk Manager)
 
-Calculates share quantity for each signal based on 1.5% capital-at-risk rule.
+3-layer calculation:
+  Layer 1 (Risk sizing):   shares = floor(risk_amount / stop_distance)
+  Layer 2 (Capital cap):   if shares × entry > slot_capital → scale down
+  Layer 3 (Viability):     reject if actual_risk < min_risk_floor
+                           reject if position_value < min_position_value
 
 FORMULA:
-    risk_amount    = capital * risk_per_trade_pct
-    risk_per_share = abs(entry_price - stop_loss)
-    raw_qty        = floor(risk_amount / risk_per_share)
+    slot_capital   = (total_capital × strategy_allocation) ÷ max_positions
+    risk_amount    = slot_capital × max_loss_per_trade_pct
+    stop_distance  = abs(entry_price - stop_loss)
+    shares         = floor(risk_amount / stop_distance)
 
-    Reject if raw_qty < 1 (stop too wide for available capital).
-    Cap to floor(capital * 0.40 / entry_price) — single position ≤ 40% capital.
+    Scale-down:    if shares × entry > slot_capital → shares = floor(slot_capital / entry)
+    Viability:     reject if shares × stop_distance < ₹1,000 (min_risk_floor)
+                   reject if shares × entry < ₹15,000 (min_position_value)
 
 All arithmetic uses Decimal; never float.
 """
@@ -20,15 +26,15 @@ from decimal import ROUND_DOWN, Decimal
 
 log = structlog.get_logger()
 
-# 40% single-position capital limit
-MAX_POSITION_FRACTION: Decimal = Decimal("0.40")
+DEFAULT_MIN_RISK_FLOOR: Decimal = Decimal("1000")
+DEFAULT_MIN_POSITION_VALUE: Decimal = Decimal("15000")
 
 
 class PositionSizer:
     """
-    Calculates share quantity per signal using percentage-of-capital risk.
+    Slot-based position sizer using 3-layer calculation.
 
-    Pure calculator — accepts capital and risk_pct as parameters so tests
+    Pure calculator — accepts slot_capital and risk_pct as parameters so tests
     can inject arbitrary values without depending on config structure.
     """
 
@@ -36,61 +42,95 @@ class PositionSizer:
         self,
         entry_price: Decimal,
         stop_loss: Decimal,
-        capital: Decimal,
+        slot_capital: Decimal,
         risk_pct: Decimal,
+        min_risk_floor: Decimal = DEFAULT_MIN_RISK_FLOOR,
+        min_position_value: Decimal = DEFAULT_MIN_POSITION_VALUE,
     ) -> int | None:
         """
-        Calculate share quantity for a signal.
+        Calculate share quantity for a signal using 3-layer slot-based sizing.
 
         Args:
-            entry_price: Theoretical entry price (Decimal).
-            stop_loss:   Stop loss price (Decimal).
-            capital:     Total trading capital in ₹ (Decimal).
-            risk_pct:    Fraction of capital to risk per trade, e.g. Decimal("0.015").
+            entry_price:        Theoretical entry price (Decimal).
+            stop_loss:          Stop loss price (Decimal).
+            slot_capital:       Pre-reserved capital per slot in ₹ (Decimal).
+                                Computed as: (total × s1_allocation) ÷ max_positions.
+            risk_pct:           Fraction of slot_capital to risk, e.g. Decimal("0.015").
+            min_risk_floor:     Minimum actual risk per trade in ₹ (default ₹1,000).
+            min_position_value: Minimum position value in ₹ (default ₹15,000).
 
         Returns:
-            Integer quantity, or None if the signal should be rejected
-            (stop too wide → raw_qty < 1, or capital constraint → final_qty < 1).
+            Integer quantity, or None if the signal should be rejected.
         """
-        risk_amount: Decimal = capital * risk_pct
-        risk_per_share: Decimal = abs(entry_price - stop_loss)
+        # --- Layer 1: Risk-based sizing ---
+        risk_amount: Decimal = slot_capital * risk_pct
+        stop_distance: Decimal = abs(entry_price - stop_loss)
 
-        if risk_per_share == Decimal("0"):
+        if stop_distance == Decimal("0"):
             log.warning(
-                "position_sizer_zero_rps",
+                "position_sizer_zero_stop_distance",
                 entry=float(entry_price),
                 stop=float(stop_loss),
             )
             return None
 
-        raw_qty: int = int(
-            (risk_amount / risk_per_share).to_integral_value(rounding=ROUND_DOWN)
+        shares: int = int(
+            (risk_amount / stop_distance).to_integral_value(rounding=ROUND_DOWN)
         )
 
-        if raw_qty < 1:
+        if shares < 1:
             log.debug(
                 "position_sizer_reject_stop_too_wide",
                 entry=float(entry_price),
                 stop=float(stop_loss),
-                risk_per_share=float(risk_per_share),
-                raw_qty=raw_qty,
+                stop_distance=float(stop_distance),
+                risk_amount=float(risk_amount),
             )
             return None
 
-        # 40% capital cap — single position never exceeds 40% of capital
-        max_qty: int = int(
-            (capital * MAX_POSITION_FRACTION / entry_price).to_integral_value(
-                rounding=ROUND_DOWN
-            )
-        )
-        final_qty: int = min(raw_qty, max_qty)
+        # --- Layer 2: Capital cap — scale down if needed ---
+        capital_needed: Decimal = Decimal(str(shares)) * entry_price
+        scaled_down: bool = False
 
-        if final_qty < 1:
+        if capital_needed > slot_capital:
+            shares = int(
+                (slot_capital / entry_price).to_integral_value(rounding=ROUND_DOWN)
+            )
+            capital_needed = Decimal(str(shares)) * entry_price
+            scaled_down = True
+
+            if shares < 1:
+                log.debug(
+                    "position_sizer_reject_slot_too_small",
+                    entry=float(entry_price),
+                    slot_capital=float(slot_capital),
+                )
+                return None
+
+        # --- Layer 3: Viability checks ---
+        actual_risk: Decimal = Decimal(str(shares)) * stop_distance
+
+        if actual_risk < min_risk_floor:
             log.debug(
-                "position_sizer_reject_cap_too_small",
+                "position_sizer_reject_risk_floor",
                 entry=float(entry_price),
-                capital=float(capital),
-                max_qty=max_qty,
+                stop=float(stop_loss),
+                shares=shares,
+                actual_risk=float(actual_risk),
+                min_risk_floor=float(min_risk_floor),
+                scaled_down=scaled_down,
+            )
+            return None
+
+        position_value: Decimal = capital_needed
+
+        if position_value < min_position_value:
+            log.debug(
+                "position_sizer_reject_position_value",
+                entry=float(entry_price),
+                shares=shares,
+                position_value=float(position_value),
+                min_position_value=float(min_position_value),
             )
             return None
 
@@ -98,9 +138,12 @@ class PositionSizer:
             "position_sizer_calc",
             entry=float(entry_price),
             stop=float(stop_loss),
-            risk_amt=float(risk_amount),
-            risk_per_share=float(risk_per_share),
-            raw_qty=raw_qty,
-            final_qty=final_qty,
+            slot_capital=float(slot_capital),
+            risk_amount=float(risk_amount),
+            stop_distance=float(stop_distance),
+            shares=shares,
+            capital_needed=float(capital_needed),
+            actual_risk=float(actual_risk),
+            scaled_down=scaled_down,
         )
-        return final_qty
+        return shares
