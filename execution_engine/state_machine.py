@@ -62,10 +62,12 @@ TERMINAL_STATES: frozenset[OrderState] = frozenset({
 VALID_TRANSITIONS: dict[OrderState, frozenset[OrderState]] = {
     OrderState.CREATED: frozenset({
         OrderState.SUBMITTED,
+        OrderState.CANCELLED,       # hard_exit / manual cancellation
     }),
     OrderState.SUBMITTED: frozenset({
         OrderState.ACKNOWLEDGED,
         OrderState.REJECTED,
+        OrderState.CANCELLED,       # hard_exit / manual cancellation
     }),
     OrderState.ACKNOWLEDGED: frozenset({
         OrderState.PARTIALLY_FILLED,

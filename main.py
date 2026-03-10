@@ -251,6 +251,36 @@ def run_config_check() -> tuple[dict, dict]:
             total=round(alloc_total, 4),
         )
 
+    # Validate minimum slot capital
+    total_capital = float(config.get("capital", {}).get("total", 0))
+    s1_alloc = float(allocations.get("s1_intraday", 0))
+    max_positions = int(config.get("risk", {}).get("max_open_positions", 4))
+    pos_sizing = config.get("position_sizing", {})
+    min_slot_capital = float(pos_sizing.get("min_slot_capital", 40000))
+
+    slot_capital = (total_capital * s1_alloc) / max_positions if max_positions > 0 else 0
+
+    if slot_capital < min_slot_capital:
+        log.critical(
+            "slot_capital_too_small",
+            slot_capital=round(slot_capital, 2),
+            min_required=min_slot_capital,
+            total_capital=total_capital,
+            s1_allocation=s1_alloc,
+            max_positions=max_positions,
+        )
+        print(
+            f"FATAL: Slot capital ₹{slot_capital:,.0f} is below minimum ₹{min_slot_capital:,.0f}. "
+            f"Increase total_capital, increase S1 allocation, or reduce max_positions.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    log.info(
+        "slot_size_validated",
+        slot_capital=round(slot_capital, 2),
+        min_required=min_slot_capital,
+    )
+
     return config, secrets
 
 
@@ -673,6 +703,33 @@ async def risk_watchdog(
                     note="Scheduled EOD — NOT a kill switch event",
                 )
                 # Do NOT trigger kill_switch — this is scheduled, not anomalous
+
+                # Cancel any pending (unfilled) orders before closing positions
+                if exec_engine is not None:
+                    osm = getattr(exec_engine, "_osm", None)
+                    if osm is not None:
+                        from execution_engine.state_machine import (
+                            OrderState as _OSMState,
+                        )
+                        pending = [
+                            o for o in osm.get_active_orders()
+                            if o.state != _OSMState.FILLED
+                        ]
+                        for order in pending:
+                            try:
+                                osm.transition(order.order_id, _OSMState.CANCELLED)
+                            except Exception as exc:
+                                log.warning(
+                                    "pending_order_cancel_failed",
+                                    order_id=order.order_id,
+                                    state=order.state.value,
+                                    error=str(exc),
+                                )
+                        if pending:
+                            log.info(
+                                "pending_orders_cancelled",
+                                count=len(pending),
+                            )
 
                 # B1 fix: immediately force-close all open positions
                 if exec_engine is not None and open_count > 0:

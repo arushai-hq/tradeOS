@@ -25,8 +25,9 @@ risk:
   max_open_positions: 4
   hard_exit_time: "15:00"
 
-# Slot-based position sizing viability floors
+# Slot-based position sizing
 position_sizing:
+  min_slot_capital: 40000     # ₹40,000 — system refuses to start if slot capital < this
   min_risk_floor: 1000        # ₹1,000 — reject if actual risk per trade < this
   min_position_value: 15000   # ₹15,000 — reject if position value < this
 
