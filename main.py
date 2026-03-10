@@ -599,22 +599,30 @@ def _compute_unrealized_pnl(open_positions: dict, tick_prices: dict) -> float:
     """
     Compute total unrealized P&L (₹) from open positions and current tick prices.
 
+    Handles two schemas written to shared_state["open_positions"]:
+      - PnlTracker:  {"direction": "LONG/SHORT", "entry_price": X, "qty": N}
+      - ExitManager: {"side": "BUY/SELL", "avg_price": X, "qty": ±N}
+
     Args:
         open_positions: shared_state["open_positions"] — keyed by symbol.
-                        Each position dict must have "direction", "qty", "entry_price".
         tick_prices:    shared_state["last_tick_prices"] — keyed by symbol.
 
     Returns:
-        Total unrealized P&L in ₹. 0.0 if no tick prices available.
+        Total unrealized P&L in ₹. Positions with no tick price contribute ₹0.
     """
     unrealized = 0.0
     for symbol, pos in open_positions.items():
         current_price = tick_prices.get(symbol)
-        if current_price is None:
+        if current_price is None or float(current_price) <= 0:
+            log.debug("pnl_skip_no_tick", symbol=symbol,
+                      reason="no_tick_price_available")
             continue
-        entry_price = float(pos.get("entry_price", 0.0))
-        qty = int(pos.get("qty", 0))
-        direction = pos.get("direction", "LONG")
+        entry_price = float(pos.get("entry_price", pos.get("avg_price", 0.0)))
+        qty = abs(int(pos.get("qty", 0)))
+        direction = pos.get("direction")
+        if direction is None:
+            side = pos.get("side", "BUY")
+            direction = "LONG" if side == "BUY" else "SHORT"
         if direction == "LONG":
             unrealized += (float(current_price) - entry_price) * qty
         else:  # SHORT
