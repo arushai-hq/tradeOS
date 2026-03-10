@@ -19,6 +19,9 @@ This file is append-only. Current state lives in TradeOS_context.md (repo root).
 | ✅ B6 `Queue.put_nowait` overflow exceptions at ~15:44 — fixed: be16168 — `_safe_enqueue()` wraps `put_nowait` with `QueueFull` catch; overflow warning logged once, further drops suppressed | MEDIUM — resolved | Fixed |
 | ✅ B7 Unrealized P&L formula broken for SHORT positions — fixed: `cc9c018`. Field name mismatch (`entry_price`→`avg_price`, `direction`→`side`, qty sign). Added no-tick guard. Phantom -₹199,679 loss → false kill switch in Session 04. | CRITICAL — resolved | Fixed |
 | ✅ B8 Exit fill handler creates ghost LONG positions — fixed: `7ed6b7a`. `_on_exit_fill` snapshots position data before `on_close` deletes it. Removed duplicate `position_closed` log from OrderMonitor (PnlTracker is authoritative source). | CRITICAL — resolved | Fixed |
+| ✅ B9 Session report parser shows duplicate signals/trades — fixed: `028995d`. Parser deduplicates signals/trades within 5s window, filters ghost entries (entry_price=0, qty=0). | MEDIUM — resolved | Fixed |
+| ✅ B10 94 pre-market warnings before 09:15 — fixed: `028995d`. `nifty_intraday_unavailable`, `vix_data_unavailable`, `prev_close_load_failed`, `heartbeat_no_ticks_30s` downgraded to DEBUG before 9:15 via `is_market_hours()` gate. | LOW — resolved | Fixed |
+| ✅ B11 Regime detector double-initializes at startup — fixed: `028995d`. `_initialized` guard prevents double-init. Removed duplicate `regime_initialized` log from main.py. | LOW — resolved | Fixed |
 
 ---
 

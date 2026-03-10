@@ -39,7 +39,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **329 passing, 0 failures, 12 skipped** — commit `7ed6b7a` |
+| Tests | **340 passing, 0 failures, 12 skipped** — commit `028995d` |
 | S1 allocation | 70% (₹3,50,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
 | New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
@@ -53,6 +53,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Paper Session 04 | Complete — debrief complete. 2 trades taken (LT SHORT, AXISBANK SHORT), both killed after 30 seconds by false kill switch. Gross P&L: ₹0. Net P&L: -₹239 (charges only). Kill switch Level 2 for entire day due to phantom -₹199,679 unrealized P&L. 2 critical bugs found (B7, B8). |
 | Position sizing validation | Slot-based sizing working correctly — LT qty=51, AXISBANK qty=155 match slot capital calculations. |
 | B7+B8 fixes | **Both critical Session 04 bugs fixed.** Unrealized P&L now correct for SHORTs (`cc9c018`). No ghost positions from exit fills (`7ed6b7a`). Session 05 ready. |
+| All Session 04 bugs | **All 5 resolved (B7–B11).** B9 report parser hardened, B10 pre-market logs gated, B11 single regime init. System is Session 05 ready. |
 
 ---
 
@@ -91,9 +92,6 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Bug | Impact | Priority |
 |-----|--------|----------|
-| B9 Session report parser shows duplicate signals/trades due to ghost positions from B8. Will self-resolve when B8 is fixed. | MEDIUM | Open |
-| B10 94 pre-market warnings (`nifty_intraday_unavailable`, `vix_data_unavailable`, `prev_close_load_failed`) before 09:15. No trading impact — noise. | LOW | Open |
-| B11 Regime detector double-initializes at startup with different VIX values (15.0 and 0.0). Cosmetic. | LOW | Open |
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
 
@@ -109,11 +107,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 8. Immediate Next Actions
 
-1. **Run Session 05** — B7+B8 fixed, system is Session 05 ready
-2. B9 will self-resolve (depended on B8). Verify in Session 05.
-3. B10/B11 can wait — low impact, cosmetic
-4. Continue Nemawashi deep dive on capital management after Session 05
-5. Review trailing stop data gate on **2026-03-16**
+1. **Run Session 05** paper trading — all Session 04 bugs resolved, clean system
+2. **Verify:** (a) no false kill switch, (b) no ghost positions, (c) positions hold until stop/target/hard_exit, (d) report shows correct counts, (e) clean pre-market logs, (f) single regime init
+3. Continue Nemawashi capital management monitoring (slot-based sizing live, observing)
+4. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -127,6 +124,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-10 | Position Sizing | Slot-based 3-layer sizing (`361876e`), no-entry window 14:30 IST (`c60648f`), min slot capital + pending order cancel (`c862313`). Tests: 303→318. | Nemawashi complete. |
 | 2026-03-10 | Session 04 Debrief | 2 trades (LT SHORT, AXISBANK SHORT). Kill switch false-triggered at 30s — phantom unrealized P&L -₹199,679 from B7. Ghost positions from B8. Net P&L: -₹239 (charges). Slot-based sizing worked correctly. | 2 critical bugs (B7, B8), 3 minor (B9-B11). |
 | 2026-03-10 | Bug Fixes B7+B8 | B7: unrealized P&L field mismatch fixed (`cc9c018`). B8: exit fill snapshot-before-delete (`7ed6b7a`). Tests: 318→329. | Session 05 ready. Two critical Session 04 bugs resolved. |
+| 2026-03-10 | Bug Fixes B9-B11 | B9: report parser hardened (`028995d`). B10: pre-market warnings gated (`028995d`). B11: regime double-init fixed (`028995d`). All Session 04 bugs resolved. Tests: 329→340. | Session 05 ready. Clean system. |
 
 ---
 
@@ -145,4 +143,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-10** — B7+B8 fixed. False kill switch (`cc9c018`) and ghost positions (`7ed6b7a`) resolved. Tests: 329 passing. Session 05 ready.
+**2026-03-10** — All Session 04 bugs resolved (B7–B11). Tests: 340 passing. System fully clean for Session 05.
