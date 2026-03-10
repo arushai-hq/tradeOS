@@ -38,7 +38,8 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **299 passing, 0 failures, 12 skipped** — commit `4559b7a` |
+| Tests | **303 passing, 0 failures, 12 skipped** — commit `692e9f8` |
+| S1 allocation | 70% (₹3,50,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
 | New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
 | Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
@@ -59,6 +60,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 5. **AI/LLM dynamic watchlist parked** — Revisit after S1 validated on fixed watchlist.
 6. **Accept zero-signal sessions as valid outcome** — S1 sitting out unfavorable regimes is correct behavior. Do not loosen gates to force trades. Revisit only if zero-signal persists across 3+ sessions with mixed regimes.
 7. **Nemawashi Principle** — *"Preparing the roots before transplanting the tree."* All features, fixes, and system changes follow a 70-80% planning / 20-30% implementation split. Deep-dive analysis, edge case mapping, cost modeling, and brainstorming MUST be completed before any CC prompt is generated. No rushing to implementation. This applies to every session, every feature, every decision.
+8. **Scenario D capital config** — S1=70%, 4 slots. S2/S3/S4 placeholders at 15%/10%/5%. Full 3-layer slot-based position sizing pending Nemawashi deep dive.
 
 ---
 
@@ -124,6 +126,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-09 | Bug Fixes B4+B6 | Fixed PnL tracker (B4: real-time unrealized P&L in heartbeat), queue overflow (B6: safe enqueue with overflow suppression). All 6 Session 03 bugs resolved. Tests: 249→260. | Session 04 ready. |
 | 2026-03-09 | Test Fix | Fixed 2 time-dependent test failures caused by B1/B2 hard_exit gate. Tests: 260→262, 0 failures. | Clean test suite for Session 04. |
 | 2026-03-09 | Tooling | Rich Telegram alerts (`cdd066b`) + session report CLI (`4559b7a`). Tests: 262→299. Session 03 re-analysis revealed all accepted trades were oversold SHORTs. | Visibility tooling complete. |
+| 2026-03-10 | Config Fix | S1 allocation 30%→70%, max positions 3→4, allocation sum validation added (`692e9f8`). Tests: 299→303. | Session 04 ready with Scenario D config. |
 
 ---
 
@@ -134,9 +137,10 @@ These rules apply to every TradeOS session regardless of context window or sessi
 1. **Nemawashi First** — No CC prompt is generated until planning is complete. Every feature goes through: problem definition → research → brainstorm → edge case mapping → cost/risk analysis → decision lock → THEN implementation. Ratio: 70-80% planning, 20-30% implementation.
 2. **Living Document Protocol** — Every conclusion, decision, or significant discussion must be captured in `TradeOS_context.md` via a CC delta prompt before moving to the next topic.
 3. **Context Handoff** — If a session approaches context limits, generate a handoff document and update `TradeOS_context.md` with the exact resume point before the session ends.
+4. **Allocation Sum Rule** — All strategy allocations in `config/settings.yaml` MUST sum to 1.00. Validated at startup — system refuses to start if violated. Any config change to one allocation requires adjusting others to maintain sum.
 
 ---
 
 ## 11. Last Updated
 
-**2026-03-09** — Added Nemawashi principle as permanent operating rule (Key Decision 7). Session Rules section established (Section 10). Tests: 299 passing, 0 failures.
+**2026-03-10** — Scenario D config applied (S1=70%, 4 slots). Allocation sum validation rule added — system refuses to start if allocations ≠ 1.00. Tests: 303 passing, 0 failures.
