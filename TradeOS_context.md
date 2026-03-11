@@ -39,10 +39,12 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **353 passing, 0 failures, 12 skipped** — commit `96de8fa` |
+| Tests | **361 passing (main), 384 passing (feature/hawk), 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Stop floor at 2% prevents sizer rejection on tight swing stops. |
+| Paper Session 05 | Complete — system health PASS. Zero bugs, zero false kill switch, zero ghost positions. B7-B11 fixes confirmed. 6 signals (3 accepted, 3 blocked by no-entry window). Zero trades — all 3 accepted signals rejected by position sizer due to tight swing stops (pre-fix). Stop floor + ₹10L capital fix applied post-session. |
+| HAWK first run | First successful run (feature/hawk): 15 picks generated, all SHORT (bear day -1.63%), LLM cost $0.037. Data pipeline working via KiteConnect + nsetools fallbacks. |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
 | New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
 | Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
@@ -99,6 +101,9 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 |-----|--------|----------|
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
+| HAWK: nsepython bhavcopy/FII-DII broken (API changed) | Using KiteConnect fallback. Delivery % unavailable. | Medium |
+| HAWK: Regime shows "unknown" | Needs TradeOS regime integration | Low |
+| Merge feature/hawk into main | After Session 06 validates S1 changes independently | Medium |
 
 ---
 
@@ -113,10 +118,11 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 8. Immediate Next Actions
 
-1. **Run Session 05** paper trading — all Session 04 bugs resolved, clean system
-2. **Verify:** (a) no false kill switch, (b) no ghost positions, (c) positions hold until stop/target/hard_exit, (d) report shows correct counts, (e) clean pre-market logs, (f) single regime init
-3. Continue Nemawashi capital management monitoring (slot-based sizing live, observing)
-4. Review trailing stop data gate on **2026-03-16**
+1. **Session 06 tomorrow** — first session with ₹10L capital, 2% stop floor, configurable params. Validates S1 trades actually execute.
+2. **HAWK morning run tomorrow:** `python tools/hawk.py --run morning` (on feature/hawk branch)
+3. If Session 06 clean + HAWK runs clean → merge feature/hawk into main tomorrow EOD
+4. Fix nsepython data sources or find alternatives for HAWK FII/DII + delivery %
+5. Review trailing stop data gate on **2026-03-16**
 
 ---
 
@@ -133,6 +139,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-10 | Bug Fixes B9-B11 | B9: report parser hardened (`028995d`). B10: pre-market warnings gated (`028995d`). B11: regime double-init fixed (`028995d`). All Session 04 bugs resolved. Tests: 329→340. | Session 05 ready. Clean system. |
 | 2026-03-11 | HAWK Design + Rules | HAWK spec complete (`docs/hawk_spec.md`). Telegram channel separation rule added. Git branching model established (feature/*/fix/*/main). | Design + engineering practices locked. |
 | 2026-03-11 | Config Extraction | Capital 5L→10L, Option C stop floor 2%, all S1 params to config (`9d9f595`, `96de8fa`). Tests: 340→353. | Full playground mode — every parameter tunable from config. |
+| 2026-03-11 | Session 05 + HAWK | Session 05: system health PASS, 0 trades (sizer rejected all — pre-fix). T1-T3 Telegram bugs fixed (`86c67ea`). Stop floor 2% + ₹10L capital applied (`9d9f595`). All S1 params to config (`96de8fa`). HAWK first run: 15 picks on feature/hawk. Tests: 353→361 (main). | S1 ready for Session 06. HAWK pipeline proven. |
 
 ---
 
@@ -153,4 +160,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-11** — S1 fully configurable. 10 strategy parameters in settings.yaml. Capital ₹10L, stop floor 2%. Tests: 353.
+**2026-03-11** — Session 05 system health verified. HAWK first successful run (15 picks). S1 config: ₹10L, 2% stop floor, all params configurable. Merge feature/hawk after Session 06.
