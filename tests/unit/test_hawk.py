@@ -407,3 +407,183 @@ def test_evening_prompt_includes_all_sections():
     assert "TOP LOSERS" in prompt
     assert "UNUSUAL DELIVERY" in prompt
     assert "FULL BHAVCOPY" in prompt
+
+
+# ---------------------------------------------------------------------------
+# (j) Multi-provider LLM support
+# ---------------------------------------------------------------------------
+
+def test_call_llm_routes_to_anthropic():
+    """call_llm dispatches to _call_anthropic for provider='anthropic'."""
+    from unittest.mock import patch
+    from tools.hawk_engine.llm_analyst import call_llm
+
+    mock_response = ('[{"rank": 1, "symbol": "RELIANCE"}]', {"tokens_input": 100, "tokens_output": 50})
+
+    with patch("tools.hawk_engine.llm_analyst._call_anthropic", return_value=mock_response) as mock_fn:
+        text, usage = call_llm("anthropic", "sk-test", "model-1", "system", "user", 2000)
+        mock_fn.assert_called_once_with("sk-test", "model-1", "system", "user", 2000)
+        assert text == mock_response[0]
+        assert usage["tokens_input"] == 100
+
+
+def test_call_llm_routes_to_openrouter():
+    """call_llm dispatches to _call_openrouter for provider='openrouter'."""
+    from unittest.mock import patch
+    from tools.hawk_engine.llm_analyst import call_llm
+
+    mock_response = ('[{"rank": 1, "symbol": "INFY"}]', {"tokens_input": 200, "tokens_output": 80})
+
+    with patch("tools.hawk_engine.llm_analyst._call_openrouter", return_value=mock_response) as mock_fn:
+        text, usage = call_llm("openrouter", "or-test", "openai/gpt-4o", "system", "user", 2000, "TestApp")
+        mock_fn.assert_called_once_with("or-test", "openai/gpt-4o", "system", "user", 2000, "TestApp")
+        assert text == mock_response[0]
+        assert usage["tokens_input"] == 200
+
+
+def test_call_llm_unsupported_provider():
+    """call_llm raises ValueError for unknown provider."""
+    from tools.hawk_engine.llm_analyst import call_llm
+
+    with pytest.raises(ValueError, match="Unsupported LLM provider"):
+        call_llm("gemini", "key", "model", "sys", "user")
+
+
+def test_anthropic_request_format():
+    """_call_anthropic sends correct headers and payload format."""
+    from unittest.mock import patch, MagicMock
+    from tools.hawk_engine.llm_analyst import _call_anthropic
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "content": [{"type": "text", "text": "[]"}],
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+
+    with patch("tools.hawk_engine.llm_analyst.requests.post", return_value=mock_resp) as mock_post:
+        text, usage = _call_anthropic("sk-key", "claude-test", "sys prompt", "user prompt", 1000)
+
+        call_args = mock_post.call_args
+        headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
+        payload = call_args.kwargs.get("json") or call_args[1].get("json")
+
+        assert headers["x-api-key"] == "sk-key"
+        assert headers["anthropic-version"] == "2023-06-01"
+        assert payload["model"] == "claude-test"
+        assert payload["system"] == "sys prompt"
+        assert payload["messages"][0]["role"] == "user"
+        assert text == "[]"
+        assert usage["tokens_input"] == 10
+
+
+def test_openrouter_request_format():
+    """_call_openrouter sends correct headers and OpenAI-compatible payload."""
+    from unittest.mock import patch, MagicMock
+    from tools.hawk_engine.llm_analyst import _call_openrouter
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": "[]"}}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 10},
+    }
+
+    with patch("tools.hawk_engine.llm_analyst.requests.post", return_value=mock_resp) as mock_post:
+        text, usage = _call_openrouter("or-key", "openai/gpt-4o", "sys prompt", "user prompt", 1500, "MyApp")
+
+        call_args = mock_post.call_args
+        headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
+        payload = call_args.kwargs.get("json") or call_args[1].get("json")
+
+        assert headers["Authorization"] == "Bearer or-key"
+        assert headers["X-Title"] == "MyApp"
+        assert payload["model"] == "openai/gpt-4o"
+        assert payload["messages"][0]["role"] == "system"
+        assert payload["messages"][1]["role"] == "user"
+        assert text == "[]"
+        assert usage["tokens_input"] == 20
+        assert usage["tokens_output"] == 10
+
+
+def test_analyze_evening_includes_provider_in_metadata():
+    """analyze_evening includes provider field in metadata."""
+    from unittest.mock import patch
+    from tools.hawk_engine.llm_analyst import analyze_evening
+
+    mock_llm = ('[{"rank": 1, "symbol": "TCS", "direction": "LONG"}]', {"tokens_input": 100, "tokens_output": 50})
+
+    with patch("tools.hawk_engine.llm_analyst.call_llm", return_value=mock_llm):
+        result = analyze_evening(
+            {"date": "2026-03-11", "indices": {}, "fii_dii": {}, "sectors": {},
+             "top_gainers": [], "top_losers": [], "unusual_delivery": [], "bhavcopy": []},
+            api_key="test-key",
+            model="test-model",
+            provider="openrouter",
+        )
+        assert result["metadata"]["provider"] == "openrouter"
+        assert result["metadata"]["model"] == "test-model"
+        assert len(result["watchlist"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# (k) Config LLM resolution
+# ---------------------------------------------------------------------------
+
+def test_get_llm_provider_default():
+    """get_llm_provider returns 'anthropic' when not configured."""
+    from tools.hawk_engine.config import get_llm_provider
+
+    assert get_llm_provider({}) == "anthropic"
+
+
+def test_get_llm_provider_configured():
+    """get_llm_provider reads from secrets.llm.provider."""
+    from tools.hawk_engine.config import get_llm_provider
+
+    assert get_llm_provider({"llm": {"provider": "openrouter"}}) == "openrouter"
+
+
+def test_get_llm_api_key_new_format():
+    """get_llm_api_key reads from new llm.<provider>.api_key format."""
+    from tools.hawk_engine.config import get_llm_api_key
+
+    secrets = {"llm": {"provider": "anthropic", "anthropic": {"api_key": "sk-new"}}}
+    assert get_llm_api_key(secrets) == "sk-new"
+
+    secrets = {"llm": {"provider": "openrouter", "openrouter": {"api_key": "or-new"}}}
+    assert get_llm_api_key(secrets) == "or-new"
+
+
+def test_get_llm_api_key_backward_compat():
+    """get_llm_api_key falls back to old secrets.anthropic.api_key format."""
+    from tools.hawk_engine.config import get_llm_api_key
+
+    secrets = {"anthropic": {"api_key": "sk-old"}}
+    assert get_llm_api_key(secrets) == "sk-old"
+
+
+def test_get_llm_api_key_missing():
+    """get_llm_api_key returns empty string when no key configured."""
+    from tools.hawk_engine.config import get_llm_api_key
+
+    assert get_llm_api_key({}) == ""
+    assert get_llm_api_key({"llm": {"provider": "openrouter"}}) == ""
+
+
+def test_get_anthropic_api_key_backward_compat():
+    """get_anthropic_api_key still works with both old and new formats."""
+    from tools.hawk_engine.config import get_anthropic_api_key
+
+    # Old format
+    assert get_anthropic_api_key({"anthropic": {"api_key": "sk-old"}}) == "sk-old"
+    # New format
+    assert get_anthropic_api_key({"llm": {"anthropic": {"api_key": "sk-new"}}}) == "sk-new"
+    # Empty
+    assert get_anthropic_api_key({}) == ""
+
+
+def test_get_openrouter_site_name():
+    """get_openrouter_site_name returns configured or default value."""
+    from tools.hawk_engine.config import get_openrouter_site_name
+
+    assert get_openrouter_site_name({}) == "TradeOS-HAWK"
+    assert get_openrouter_site_name({"llm": {"openrouter": {"site_name": "MyApp"}}}) == "MyApp"

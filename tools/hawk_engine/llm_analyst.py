@@ -1,8 +1,12 @@
 """
-HAWK — LLM Analyst (Anthropic API).
+HAWK — LLM Analyst (Multi-Provider).
 
-Sends structured market data to Claude Sonnet and parses a ranked
+Sends structured market data to an LLM and parses a ranked
 stock watchlist from the JSON response.
+
+Supported providers:
+  - anthropic: Anthropic Messages API (default)
+  - openrouter: OpenRouter OpenAI-compatible API
 
 Retry: 1 retry on failure. Timeout: 30 seconds.
 """
@@ -18,6 +22,7 @@ import structlog
 log = structlog.get_logger()
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 SYSTEM_PROMPT_EVENING = (
     "You are HAWK, an expert Indian equity market analyst specializing in NSE "
@@ -233,6 +238,95 @@ def _call_anthropic(
     return text, metadata
 
 
+def _call_openrouter(
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 2000,
+    site_name: str = "TradeOS-HAWK",
+) -> tuple[str, dict]:
+    """
+    Call OpenRouter OpenAI-compatible API.
+
+    Returns:
+        (response_text, usage_metadata)
+    """
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": f"https://github.com/arushai-tech/tradeos",
+        "X-Title": site_name,
+        "content-type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+
+    resp = requests.post(
+        OPENROUTER_API_URL,
+        headers=headers,
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    text = ""
+    choices = data.get("choices", [])
+    if choices:
+        text = choices[0].get("message", {}).get("content", "")
+
+    usage = data.get("usage", {})
+    metadata = {
+        "tokens_input": usage.get("prompt_tokens", 0),
+        "tokens_output": usage.get("completion_tokens", 0),
+    }
+
+    return text, metadata
+
+
+def call_llm(
+    provider: str,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 2000,
+    site_name: str = "TradeOS-HAWK",
+) -> tuple[str, dict]:
+    """
+    Unified LLM call dispatcher.
+
+    Routes to the correct provider backend based on provider string.
+
+    Args:
+        provider:      "anthropic" or "openrouter"
+        api_key:       Provider API key
+        model:         Model ID (provider-specific)
+        system_prompt: System instructions
+        user_prompt:   User message
+        max_tokens:    Max response tokens
+        site_name:     App name for OpenRouter headers
+
+    Returns:
+        (response_text, usage_metadata)
+
+    Raises:
+        ValueError: If provider is not supported
+    """
+    if provider == "anthropic":
+        return _call_anthropic(api_key, model, system_prompt, user_prompt, max_tokens)
+    elif provider == "openrouter":
+        return _call_openrouter(api_key, model, system_prompt, user_prompt, max_tokens, site_name)
+    else:
+        raise ValueError(f"Unsupported LLM provider: {provider!r}. Use 'anthropic' or 'openrouter'.")
+
+
 def get_evening_prompt(data: dict) -> str:
     """Public accessor for the formatted evening prompt (used by dry-run)."""
     return _format_evening_prompt(data)
@@ -244,18 +338,22 @@ def analyze_evening(
     model: str = "claude-sonnet-4-20250514",
     max_tokens: int = 2000,
     watchlist_size: int = 15,
+    provider: str = "anthropic",
+    site_name: str = "TradeOS-HAWK",
 ) -> dict:
     """
-    Send evening data to Claude Sonnet, get watchlist back.
+    Send evening data to LLM, get watchlist back.
 
     Retries once on failure. Returns structured result dict.
 
     Args:
         data:           Collected market data from data_collector.
-        api_key:        Anthropic API key.
-        model:          Model ID.
+        api_key:        Provider API key.
+        model:          Model ID (provider-specific).
         max_tokens:     Max response tokens.
         watchlist_size: Expected number of picks.
+        provider:       LLM provider ("anthropic" or "openrouter").
+        site_name:      App name for OpenRouter headers.
 
     Returns:
         Dict with watchlist, metadata, and data context.
@@ -268,8 +366,8 @@ def analyze_evening(
     for attempt in range(2):  # 1 retry
         try:
             start = time.monotonic()
-            response_text, usage = _call_anthropic(
-                api_key, model, system, user_prompt, max_tokens
+            response_text, usage = call_llm(
+                provider, api_key, model, system, user_prompt, max_tokens, site_name
             )
             elapsed = time.monotonic() - start
 
@@ -283,6 +381,7 @@ def analyze_evening(
 
             log.info(
                 "hawk_llm_analysis_complete",
+                provider=provider,
                 model=model,
                 picks=len(watchlist),
                 tokens_in=usage["tokens_input"],
@@ -295,6 +394,7 @@ def analyze_evening(
             return {
                 "watchlist": watchlist,
                 "metadata": {
+                    "provider": provider,
                     "model": model,
                     "tokens_input": usage["tokens_input"],
                     "tokens_output": usage["tokens_output"],
@@ -307,16 +407,17 @@ def analyze_evening(
             last_error = exc
             log.warning(
                 "hawk_llm_attempt_failed",
+                provider=provider,
                 attempt=attempt + 1,
                 error=str(exc),
             )
             if attempt == 0:
                 time.sleep(2)  # Brief pause before retry
 
-    log.error("hawk_llm_analysis_failed", error=str(last_error))
+    log.error("hawk_llm_analysis_failed", provider=provider, error=str(last_error))
     return {
         "watchlist": [],
-        "metadata": {"model": model, "error": str(last_error)},
+        "metadata": {"provider": provider, "model": model, "error": str(last_error)},
     }
 
 
@@ -326,6 +427,8 @@ def analyze_morning(
     api_key: str = "",
     model: str = "claude-sonnet-4-20250514",
     max_tokens: int = 2000,
+    provider: str = "anthropic",
+    site_name: str = "TradeOS-HAWK",
 ) -> dict:
     """
     Morning update — review evening picks with overnight data.
@@ -334,13 +437,13 @@ def analyze_morning(
     """
     if not api_key:
         log.info("hawk_morning_stub", note="No API key — returning evening picks unchanged")
-        return {"watchlist": evening_picks, "metadata": {"model": model, "note": "stub"}}
+        return {"watchlist": evening_picks, "metadata": {"provider": provider, "model": model, "note": "stub"}}
 
     user_prompt = _format_morning_prompt(evening_picks, overnight_data)
 
     try:
-        response_text, usage = _call_anthropic(
-            api_key, model, SYSTEM_PROMPT_MORNING, user_prompt, max_tokens
+        response_text, usage = call_llm(
+            provider, api_key, model, SYSTEM_PROMPT_MORNING, user_prompt, max_tokens, site_name
         )
         watchlist = _parse_llm_response(response_text)
         cost_usd = (
@@ -350,6 +453,7 @@ def analyze_morning(
         return {
             "watchlist": watchlist,
             "metadata": {
+                "provider": provider,
                 "model": model,
                 "tokens_input": usage["tokens_input"],
                 "tokens_output": usage["tokens_output"],
@@ -357,5 +461,5 @@ def analyze_morning(
             },
         }
     except Exception as exc:
-        log.error("hawk_morning_analysis_failed", error=str(exc))
-        return {"watchlist": evening_picks, "metadata": {"model": model, "error": str(exc)}}
+        log.error("hawk_morning_analysis_failed", provider=provider, error=str(exc))
+        return {"watchlist": evening_picks, "metadata": {"provider": provider, "model": model, "error": str(exc)}}

@@ -1,4 +1,7 @@
 hawk:
+  # Model ID — must match the provider configured in secrets.yaml
+  #   Anthropic:   claude-sonnet-4-20250514, claude-haiku-4-5-20251001
+  #   OpenRouter:  anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-2.0-flash
   model: "claude-sonnet-4-20250514"
   max_tokens: 2000
   watchlist_size: 15          # Number of stocks to recommend

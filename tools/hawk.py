@@ -151,17 +151,22 @@ def run_evening(target_date: date, dry_run: bool, hawk_config: dict, secrets: di
         return 0
 
     # Step 2: LLM analysis
-    from tools.hawk_engine.config import get_anthropic_api_key
-    api_key = get_anthropic_api_key(secrets)
+    from tools.hawk_engine.config import get_llm_api_key, get_llm_provider, get_openrouter_site_name
+    provider = get_llm_provider(secrets)
+    api_key = get_llm_api_key(secrets)
     if not api_key:
-        log.error("hawk_no_api_key", note="Set anthropic.api_key in config/secrets.yaml")
+        log.error("hawk_no_api_key", provider=provider, note=f"Set llm.{provider}.api_key in config/secrets.yaml")
         return 1
 
     model = hawk_config.get("model", "claude-sonnet-4-20250514")
     max_tokens = hawk_config.get("max_tokens", 2000)
     watchlist_size = hawk_config.get("watchlist_size", 15)
+    site_name = get_openrouter_site_name(secrets)
 
-    llm_result = analyze_evening(data, api_key, model, max_tokens, watchlist_size)
+    llm_result = analyze_evening(
+        data, api_key, model, max_tokens, watchlist_size,
+        provider=provider, site_name=site_name,
+    )
 
     # Step 3: Assemble full result
     result = {
@@ -204,12 +209,17 @@ def run_morning(target_date: date, hawk_config: dict, secrets: dict) -> int:
 
     # MVP: return evening picks unchanged (morning LLM update is a stub)
     from tools.hawk_engine.llm_analyst import analyze_morning
-    from tools.hawk_engine.config import get_anthropic_api_key
+    from tools.hawk_engine.config import get_llm_api_key, get_llm_provider, get_openrouter_site_name
 
-    api_key = get_anthropic_api_key(secrets)
+    provider = get_llm_provider(secrets)
+    api_key = get_llm_api_key(secrets)
     model = hawk_config.get("model", "claude-sonnet-4-20250514")
+    site_name = get_openrouter_site_name(secrets)
 
-    morning_result = analyze_morning(evening_picks, None, api_key, model)
+    morning_result = analyze_morning(
+        evening_picks, None, api_key, model,
+        provider=provider, site_name=site_name,
+    )
 
     result = {
         "date": target_date.isoformat(),

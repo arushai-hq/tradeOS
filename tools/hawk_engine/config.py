@@ -34,9 +34,46 @@ def load_secrets() -> dict:
         return {}
 
 
+def get_llm_provider(secrets: dict) -> str:
+    """Get configured LLM provider name. Default: anthropic."""
+    return str(secrets.get("llm", {}).get("provider", "anthropic")).lower()
+
+
+def get_llm_api_key(secrets: dict) -> str:
+    """Get the API key for the configured LLM provider.
+
+    Supports:
+      - New format: secrets.llm.<provider>.api_key
+      - Backward compat: secrets.anthropic.api_key (old single-provider format)
+    """
+    llm = secrets.get("llm", {})
+    provider = get_llm_provider(secrets)
+
+    # New format: llm.<provider>.api_key
+    provider_cfg = llm.get(provider, {})
+    if isinstance(provider_cfg, dict) and provider_cfg.get("api_key"):
+        return str(provider_cfg["api_key"])
+
+    # Backward compat: secrets.anthropic.api_key (old format)
+    if provider == "anthropic":
+        old_key = secrets.get("anthropic", {}).get("api_key", "")
+        if old_key:
+            return str(old_key)
+
+    return ""
+
+
+def get_openrouter_site_name(secrets: dict) -> str:
+    """Get OpenRouter site name for HTTP-Referer header."""
+    return str(secrets.get("llm", {}).get("openrouter", {}).get("site_name", "TradeOS-HAWK"))
+
+
 def get_anthropic_api_key(secrets: dict) -> str:
-    """Extract Anthropic API key from secrets dict."""
-    return str(secrets.get("anthropic", {}).get("api_key", ""))
+    """Extract Anthropic API key from secrets dict.
+
+    Backward compat wrapper — prefers new llm.anthropic.api_key format.
+    """
+    return get_llm_api_key({**secrets, "llm": {**secrets.get("llm", {}), "provider": "anthropic"}})
 
 
 def get_hawk_telegram_credentials(secrets: dict) -> tuple[str, str]:
