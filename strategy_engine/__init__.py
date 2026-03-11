@@ -157,7 +157,10 @@ class StrategyEngine:
             self._indicator_engines[token] = IndicatorEngine(candles)
 
         # Steps 5: SignalGenerator + RiskGate
-        self._signal_generator = SignalGenerator()
+        min_stop_pct = Decimal(str(
+            self._config.get("strategy", {}).get("min_stop_pct", 0.02)
+        ))
+        self._signal_generator = SignalGenerator(min_stop_pct=min_stop_pct)
         self._risk_gate = RiskGate(
             kill_switch=self._kill_switch,
             regime_detector=self._regime_detector,

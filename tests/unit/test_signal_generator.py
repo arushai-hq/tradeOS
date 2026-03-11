@@ -15,6 +15,7 @@ import pytz
 from strategy_engine.candle_builder import Candle
 from strategy_engine.indicators import Indicators
 from strategy_engine.signal_generator import (
+    DEFAULT_MIN_STOP_PCT,
     LONG_RSI_MAX,
     LONG_RSI_MIN,
     MIN_VOLUME_RATIO,
@@ -288,12 +289,13 @@ def test_1_to_2_rr_target_calculated_correctly():
 # ---------------------------------------------------------------------------
 
 def test_stop_loss_at_previous_swing_low():
-    """LONG stop_loss must equal indicators.swing_low."""
+    """LONG stop_loss must equal indicators.swing_low when wider than 2% floor."""
     gen = SignalGenerator()
-    ind = _indicators(swing_low=2422.5, vwap=2430.0)
+    # swing_low=2390 → distance = 60/2450 = 2.45% > 2% floor → swing stop used as-is
+    ind = _indicators(swing_low=2390.0, vwap=2430.0)
     signal = gen.evaluate(_candle(), ind)
     assert signal is not None
-    assert signal.stop_loss == Decimal("2422.5")
+    assert signal.stop_loss == Decimal("2390.0")
 
 
 # ---------------------------------------------------------------------------
@@ -342,3 +344,116 @@ def test_rsi_boundary_values(rsi: float, expect_signal: bool):
         assert result.direction == "LONG"
     else:
         assert result is None, f"Expected no signal at RSI={rsi}"
+
+
+# ---------------------------------------------------------------------------
+# Stop floor tests (minimum stop distance)
+# ---------------------------------------------------------------------------
+
+def test_long_swing_stop_wider_than_floor_unchanged():
+    """LONG: swing stop already > 2% from entry → no floor override."""
+    gen = SignalGenerator()  # default 2% floor
+    # close=2450, swing_low=2380 → distance = 70/2450 = 2.86% > 2%
+    ind = _indicators(swing_low=2380.0, vwap=2430.0)
+    signal = gen.evaluate(_candle(close=2450.0), ind)
+    assert signal is not None
+    assert signal.stop_loss == Decimal("2380.0")  # swing stop unchanged
+
+
+def test_long_swing_stop_tighter_than_floor_widened():
+    """LONG: swing stop < 2% from entry → floor applied, stop widened down."""
+    gen = SignalGenerator()  # default 2% floor
+    # close=2450, swing_low=2445 → distance = 5/2450 = 0.20% < 2%
+    # floor stop = 2450 * 0.98 = 2401.0
+    ind = _indicators(swing_low=2445.0, vwap=2430.0)
+    signal = gen.evaluate(_candle(close=2450.0), ind)
+    assert signal is not None
+    expected_floor = Decimal("2450.0") * (Decimal("1") - Decimal("0.02"))
+    assert signal.stop_loss == expected_floor  # 2401.00
+    assert signal.stop_loss < Decimal("2445.0")  # widened (lower)
+
+
+def test_short_swing_stop_wider_than_floor_unchanged():
+    """SHORT: swing stop already > 2% from entry → no floor override."""
+    gen = SignalGenerator()  # default 2% floor
+    # close=2420, swing_high=2500 → distance = 80/2420 = 3.31% > 2%
+    ind = _short_indicators()
+    ind = Indicators(
+        ema9=Decimal("2435.0"), ema21=Decimal("2440.0"),
+        rsi=Decimal("45"), volume_ratio=Decimal("1.6"),
+        swing_high=Decimal("2500.0"), swing_low=Decimal("2415.0"),
+        vwap=Decimal("2430.0"), candle_time=BASE_TIME, symbol="RELIANCE",
+    )
+    signal = gen.evaluate(_short_candle(close=2420.0), ind)
+    assert signal is not None
+    assert signal.stop_loss == Decimal("2500.0")  # swing stop unchanged
+
+
+def test_short_swing_stop_tighter_than_floor_widened():
+    """SHORT: swing stop < 2% from entry → floor applied, stop widened up."""
+    gen = SignalGenerator()  # default 2% floor
+    # close=2420, swing_high=2425 → distance = 5/2420 = 0.21% < 2%
+    # floor stop = 2420 * 1.02 = 2468.40
+    ind = Indicators(
+        ema9=Decimal("2435.0"), ema21=Decimal("2440.0"),
+        rsi=Decimal("45"), volume_ratio=Decimal("1.6"),
+        swing_high=Decimal("2425.0"), swing_low=Decimal("2415.0"),
+        vwap=Decimal("2430.0"), candle_time=BASE_TIME, symbol="RELIANCE",
+    )
+    signal = gen.evaluate(_short_candle(close=2420.0), ind)
+    assert signal is not None
+    expected_floor = Decimal("2420.0") * (Decimal("1") + Decimal("0.02"))
+    assert signal.stop_loss == expected_floor  # 2468.40
+    assert signal.stop_loss > Decimal("2425.0")  # widened (higher)
+
+
+def test_target_recalculated_after_floor_widened_stop():
+    """Target uses the widened stop distance for 2R calculation."""
+    gen = SignalGenerator()
+    # LONG: close=2450, swing_low=2445 (tight) → floor stop = 2401.00
+    ind = _indicators(swing_low=2445.0, vwap=2430.0)
+    signal = gen.evaluate(_candle(close=2450.0), ind)
+    assert signal is not None
+
+    entry = signal.theoretical_entry  # 2450
+    stop = signal.stop_loss           # 2401.00
+    risk = entry - stop               # 49.00
+    expected_target = entry + Decimal("2") * risk  # 2450 + 98 = 2548.00
+    assert signal.target == expected_target
+
+
+def test_config_min_stop_pct_respected():
+    """Custom min_stop_pct value overrides default."""
+    # Use 5% floor → swing stop at 1% should be overridden
+    gen = SignalGenerator(min_stop_pct=Decimal("0.05"))
+    # close=2450, swing_low=2430 → distance = 20/2450 = 0.82% < 5%
+    # floor stop = 2450 * 0.95 = 2327.50
+    ind = _indicators(swing_low=2430.0, vwap=2430.0)
+    candle = _candle(close=2450.0)
+    signal = gen.evaluate(candle, ind)
+    assert signal is not None
+    expected_floor = Decimal("2450.0") * (Decimal("1") - Decimal("0.05"))
+    assert signal.stop_loss == expected_floor  # 2327.50
+
+
+def test_long_floor_stop_is_below_entry():
+    """LONG: floor stop must always be below entry price."""
+    gen = SignalGenerator()
+    ind = _indicators(swing_low=2445.0, vwap=2430.0)
+    signal = gen.evaluate(_candle(close=2450.0), ind)
+    assert signal is not None
+    assert signal.stop_loss < signal.theoretical_entry
+
+
+def test_short_floor_stop_is_above_entry():
+    """SHORT: floor stop must always be above entry price."""
+    gen = SignalGenerator()
+    ind = Indicators(
+        ema9=Decimal("2435.0"), ema21=Decimal("2440.0"),
+        rsi=Decimal("45"), volume_ratio=Decimal("1.6"),
+        swing_high=Decimal("2425.0"), swing_low=Decimal("2415.0"),
+        vwap=Decimal("2430.0"), candle_time=BASE_TIME, symbol="RELIANCE",
+    )
+    signal = gen.evaluate(_short_candle(close=2420.0), ind)
+    assert signal is not None
+    assert signal.stop_loss > signal.theoretical_entry

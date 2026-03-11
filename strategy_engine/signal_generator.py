@@ -55,6 +55,7 @@ SHORT_RSI_MIN: Decimal = Decimal("30")
 SHORT_RSI_MAX: Decimal = Decimal("45")
 MIN_VOLUME_RATIO: Decimal = Decimal("1.5")
 RR_RATIO: Decimal = Decimal("2")  # 1:2 risk-reward
+DEFAULT_MIN_STOP_PCT: Decimal = Decimal("0.02")  # 2.0% minimum stop distance
 
 
 @dataclass
@@ -86,9 +87,10 @@ class SignalGenerator:
     Call reset_session() at the start of each trading day.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, min_stop_pct: Decimal = DEFAULT_MIN_STOP_PCT) -> None:
         # (symbol, direction) pairs already signalled in this session
         self._session_signals: set[tuple[str, str]] = set()
+        self._min_stop_pct = min_stop_pct
 
     def reset_session(self) -> None:
         """Clear deduplication state for a new trading session."""
@@ -127,7 +129,18 @@ class SignalGenerator:
                 log.debug("signal_dedup_skipped", symbol=symbol, direction="LONG")
                 return None
 
-            stop = indicators.swing_low
+            swing_stop = indicators.swing_low
+            min_stop = close * (Decimal("1") - self._min_stop_pct)
+            stop = min(swing_stop, min_stop)  # wider stop (lower for LONG)
+            if stop != swing_stop:
+                log.info(
+                    "stop_floor_applied",
+                    symbol=symbol,
+                    direction="LONG",
+                    swing_stop=float(swing_stop),
+                    enforced_stop=float(stop),
+                    min_pct=f"{float(self._min_stop_pct) * 100:.1f}%",
+                )
             risk = close - stop
             target = close + (RR_RATIO * risk)
 
@@ -203,7 +216,18 @@ class SignalGenerator:
                 log.debug("signal_dedup_skipped", symbol=symbol, direction="SHORT")
                 return None
 
-            stop = indicators.swing_high
+            swing_stop = indicators.swing_high
+            min_stop = close * (Decimal("1") + self._min_stop_pct)
+            stop = max(swing_stop, min_stop)  # wider stop (higher for SHORT)
+            if stop != swing_stop:
+                log.info(
+                    "stop_floor_applied",
+                    symbol=symbol,
+                    direction="SHORT",
+                    swing_stop=float(swing_stop),
+                    enforced_stop=float(stop),
+                    min_pct=f"{float(self._min_stop_pct) * 100:.1f}%",
+                )
             risk = stop - close
             target = close - (RR_RATIO * risk)
 
