@@ -1,0 +1,8 @@
+hawk:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 2000
+  watchlist_size: 15          # Number of stocks to recommend
+  nifty50_source: "nsetools"  # nsetools or hardcoded
+  delivery_threshold: 1.5     # Unusual delivery = this x 20-day avg
+  output_dir: "logs/hawk"
+  db_enabled: false           # TimescaleDB storage (enable later)
