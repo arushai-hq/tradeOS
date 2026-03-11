@@ -197,6 +197,17 @@ class TelegramNotifier:
             symbol, direction, gate_name, gate_number, reason, rsi
         ))
 
+    def notify_signal_sizer_rejected(
+        self,
+        symbol: str,
+        direction: str,
+        entry: float,
+        stop: float,
+    ) -> None:
+        if not self._is_enabled("signal_generated"):
+            return
+        self._send(self._fmt_signal_sizer_rejected(symbol, direction, entry, stop))
+
     def notify_position_opened(
         self,
         symbol: str,
@@ -302,6 +313,21 @@ class TelegramNotifier:
             f"🔴 Signal Rejected: {direction} {html.escape(symbol)}\n"
             f"Reason: Gate {gate_number} — {html.escape(gate_name)} "
             f"({html.escape(reason)}) | RSI: {rsi:.1f}"
+        )
+
+    def _fmt_signal_sizer_rejected(
+        self,
+        symbol: str,
+        direction: str,
+        entry: float,
+        stop: float,
+    ) -> str:
+        stop_dist = abs(entry - stop)
+        stop_pct = stop_dist / entry * 100 if entry else 0.0
+        return (
+            f"⚠️ Sizer Rejected: {direction} {html.escape(symbol)}\n"
+            f"Entry: ₹{entry:.2f} | Stop: ₹{stop:.2f} "
+            f"(dist: ₹{stop_dist:.2f}, {stop_pct:.2f}%)"
         )
 
     def _fmt_position_opened(

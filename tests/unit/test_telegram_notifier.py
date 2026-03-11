@@ -212,6 +212,15 @@ class TestFormatters:
         assert "4 accepted" in msg
         assert "2 rejected" in msg
 
+    def test_fmt_signal_sizer_rejected(self):
+        msg = self.n._fmt_signal_sizer_rejected("WIPRO", "LONG", 480.0, 470.4)
+        assert "⚠️ Sizer Rejected" in msg
+        assert "LONG WIPRO" in msg
+        assert "480.00" in msg
+        assert "470.40" in msg
+        assert "9.60" in msg  # stop distance
+        assert "2.00%" in msg  # stop pct
+
     def test_fmt_heartbeat_with_positions(self):
         self.shared_state["open_positions"] = {
             "HCLTECH": {"direction": "LONG", "entry_price": 1370.60, "qty": 10},
@@ -252,6 +261,18 @@ class TestConfigToggle:
         with patch.object(n, "_send") as mock_send:
             n.notify_signal_rejected("X", "SHORT", "regime_check", 7, "REGIME_BLOCKED", 31.0)
             mock_send.assert_not_called()
+
+    def test_signal_generated_disabled_skips_sizer_rejected(self):
+        n = self._notifier_with({"signal_generated": False})
+        with patch.object(n, "_send") as mock_send:
+            n.notify_signal_sizer_rejected("X", "LONG", 100, 95)
+            mock_send.assert_not_called()
+
+    def test_signal_generated_enabled_calls_sizer_rejected_send(self):
+        n = self._notifier_with({"signal_generated": True})
+        with patch.object(n, "_send") as mock_send:
+            n.notify_signal_sizer_rejected("X", "LONG", 100, 95)
+            mock_send.assert_called_once()
 
     def test_position_opened_disabled_skips_send(self):
         n = self._notifier_with({"position_opened": False})

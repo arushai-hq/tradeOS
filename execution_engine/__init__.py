@@ -254,11 +254,38 @@ class ExecutionEngine:
                 entry=float(signal.theoretical_entry),
                 stop=float(signal.stop_loss),
             )
+            # T2+T3: count sizer rejection in heartbeat + send notification
+            self._shared_state["signals_rejected_today"] = (
+                self._shared_state.get("signals_rejected_today", 0) + 1
+            )
+            if self._notifier is not None:
+                self._notifier.notify_signal_sizer_rejected(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    entry=float(signal.theoretical_entry),
+                    stop=float(signal.stop_loss),
+                )
             return
 
         order = await self._order_placer.place_entry(signal, qty)
         if order:
             self._signals_consumed += 1
+            # T2+T3: count accepted signal + send notification AFTER sizer passes
+            self._shared_state["signals_generated_today"] = (
+                self._shared_state.get("signals_generated_today", 0) + 1
+            )
+            _regime = str(self._shared_state.get("market_regime") or "unknown")
+            if self._notifier is not None:
+                self._notifier.notify_signal_accepted(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    entry=float(signal.theoretical_entry),
+                    stop=float(signal.stop_loss),
+                    target=float(signal.target),
+                    rsi=float(signal.rsi),
+                    vol_ratio=float(signal.volume_ratio),
+                    regime=_regime,
+                )
             log.info(
                 "entry_placed",
                 symbol=signal.symbol,

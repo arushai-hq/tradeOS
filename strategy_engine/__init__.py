@@ -54,6 +54,7 @@ _GATE_INFO: dict[str, tuple[int, str]] = {
     "INSTRUMENT_LOCKED":      (3, "instrument_locked"),
     "MAX_POSITIONS_REACHED":  (4, "max_positions"),
     "HARD_EXIT_TIME_REACHED": (5, "hard_exit_time"),
+    "NO_ENTRY_WINDOW":        (5, "no_entry_window"),
     "DUPLICATE_SIGNAL":       (6, "duplicate_signal"),
     "REGIME_BLOCKED":         (7, "regime_check"),
     "REGIME_CRASH":           (7, "regime_check"),
@@ -272,13 +273,11 @@ class StrategyEngine:
         # Step 6: write signal to DB (always — for the audit trail)
         await self._write_signal(signal, allowed, reason)
 
-        # Step 7: enqueue if allowed
+        # Step 7: enqueue if allowed — notification deferred to execution engine
+        # (signal_accepted Telegram fires AFTER position sizer check in EE)
         if allowed:
             await self._order_queue.put(signal)
             self._signals_generated += 1
-            self._shared_state["signals_generated_today"] = (
-                self._shared_state.get("signals_generated_today", 0) + 1
-            )
             self._shared_state["last_signal"] = {
                 "symbol": signal.symbol,
                 "direction": signal.direction,
@@ -300,17 +299,6 @@ class StrategyEngine:
                 regime=_regime,
                 gates_passed="all",
             )
-            if getattr(self, "_notifier", None) is not None:
-                self._notifier.notify_signal_accepted(
-                    symbol=signal.symbol,
-                    direction=signal.direction,
-                    entry=float(signal.theoretical_entry),
-                    stop=float(signal.stop_loss),
-                    target=float(signal.target),
-                    rsi=float(signal.rsi),
-                    vol_ratio=float(signal.volume_ratio),
-                    regime=_regime,
-                )
             log.info(
                 "signal_queued",
                 symbol=signal.symbol,

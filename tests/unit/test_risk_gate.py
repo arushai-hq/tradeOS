@@ -412,3 +412,34 @@ def test_no_entry_window_configurable_cutoff():
         allowed, reason = gate.check(_signal(), _state(), custom_config)
     assert not allowed
     assert reason == "NO_ENTRY_WINDOW"
+
+
+# ---------------------------------------------------------------------------
+# T1: _parse_gate_info maps NO_ENTRY_WINDOW correctly
+# ---------------------------------------------------------------------------
+
+def test_parse_gate_info_no_entry_window():
+    """_parse_gate_info maps 'NO_ENTRY_WINDOW' to gate 5, 'no_entry_window'."""
+    from strategy_engine import _parse_gate_info
+
+    gate_number, gate_name = _parse_gate_info("NO_ENTRY_WINDOW")
+    assert gate_number == 5
+    assert gate_name == "no_entry_window"
+
+
+def test_parse_gate_info_hard_exit():
+    """_parse_gate_info maps 'HARD_EXIT_TIME_REACHED' to gate 5, 'hard_exit_time'."""
+    from strategy_engine import _parse_gate_info
+
+    gate_number, gate_name = _parse_gate_info("HARD_EXIT_TIME_REACHED")
+    assert gate_number == 5
+    assert gate_name == "hard_exit_time"
+
+
+def test_parse_gate_info_unknown_falls_through():
+    """_parse_gate_info returns (0, 'unknown') for unrecognised reason."""
+    from strategy_engine import _parse_gate_info
+
+    gate_number, gate_name = _parse_gate_info("SOME_WEIRD_REASON")
+    assert gate_number == 0
+    assert gate_name == "unknown"

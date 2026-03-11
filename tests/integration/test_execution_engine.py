@@ -342,6 +342,105 @@ async def test_startup_reconciliation_locks_unknown_orders():
 
 
 # ---------------------------------------------------------------------------
+# Test 5: Sizer rejection increments signals_rejected_today + sends notification
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sizer_rejection_increments_counter_and_notifies():
+    """
+    When position sizer returns None, execution engine must:
+      (a) increment signals_rejected_today
+      (b) call notify_signal_sizer_rejected on notifier
+    """
+    shared = _shared_state()
+    shared["signals_rejected_today"] = 0
+    config = _paper_config()
+    order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    mock_rm = _make_mock_risk_manager()
+    mock_rm.size_position.return_value = None  # sizer rejects
+    mock_kite = MagicMock()
+    mock_db = MagicMock()
+    mock_notifier = MagicMock()
+
+    ee = ExecutionEngine(
+        kite=mock_kite,
+        config=config,
+        shared_state=shared,
+        order_queue=order_queue,
+        risk_manager=mock_rm,
+        db_pool=mock_db,
+        notifier=mock_notifier,
+    )
+    # Manually set order_placer to avoid full __aenter__
+    ee._order_placer = MagicMock()
+    ee._risk_manager = mock_rm
+
+    signal = _make_signal()
+    await ee._handle_signal(signal)
+
+    # Counter incremented
+    assert shared["signals_rejected_today"] == 1
+
+    # Notification fired
+    mock_notifier.notify_signal_sizer_rejected.assert_called_once_with(
+        symbol="RELIANCE",
+        direction="LONG",
+        entry=2500.0,
+        stop=2450.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Sizer passes → signals_generated_today incremented + notification
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sizer_pass_increments_accepted_counter_and_notifies():
+    """
+    When position sizer returns qty, execution engine must:
+      (a) increment signals_generated_today (after order placed)
+      (b) call notify_signal_accepted on notifier
+    """
+    shared = _shared_state()
+    shared["signals_generated_today"] = 0
+    shared["market_regime"] = "bull_trend"
+    config = _paper_config()
+    order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    mock_rm = _make_mock_risk_manager()
+    mock_kite = MagicMock()
+    mock_db = MagicMock()
+    mock_notifier = MagicMock()
+
+    osm = OrderStateMachine(shared_state=shared)
+    placer = OrderPlacer(kite=mock_kite, config=config, osm=osm, shared_state=shared)
+
+    ee = ExecutionEngine(
+        kite=mock_kite,
+        config=config,
+        shared_state=shared,
+        order_queue=order_queue,
+        risk_manager=mock_rm,
+        db_pool=mock_db,
+        notifier=mock_notifier,
+    )
+    ee._order_placer = placer
+    ee._risk_manager = mock_rm
+
+    signal = _make_signal()
+    await ee._handle_signal(signal)
+
+    # Counter incremented
+    assert shared["signals_generated_today"] == 1
+
+    # Notification fired with correct args
+    mock_notifier.notify_signal_accepted.assert_called_once()
+    call_kwargs = mock_notifier.notify_signal_accepted.call_args.kwargs
+    assert call_kwargs["symbol"] == "RELIANCE"
+    assert call_kwargs["direction"] == "LONG"
+    assert call_kwargs["regime"] == "bull_trend"
+
+
+# ---------------------------------------------------------------------------
 # DB-required integration tests (skipped without DB_DSN)
 # ---------------------------------------------------------------------------
 
