@@ -34,11 +34,23 @@ def ist_today() -> str:
     return datetime.now(ist).strftime("%Y-%m-%d")
 
 
+def _resolve_trading_credentials(secrets: dict) -> tuple[str, str]:
+    """Resolve trading channel credentials — supports new nested + old flat format."""
+    tg = secrets.get("telegram", {})
+    if not isinstance(tg, dict):
+        return ("", "")
+    # New format: telegram.trading.bot_token
+    trading = tg.get("trading", {})
+    if isinstance(trading, dict) and trading.get("bot_token"):
+        return (str(trading.get("bot_token", "")), str(trading.get("chat_id", "")))
+    # Old flat format: telegram.bot_token
+    return (str(tg.get("bot_token", "")), str(tg.get("chat_id", "")))
+
+
 def send_telegram(secrets: dict, message: str) -> None:
     """Non-blocking Telegram notification. Silently skips if not configured."""
     try:
-        token = secrets.get("telegram", {}).get("bot_token", "")
-        chat_id = secrets.get("telegram", {}).get("chat_id", "")
+        token, chat_id = _resolve_trading_credentials(secrets)
         if not token or not chat_id:
             return
         import requests

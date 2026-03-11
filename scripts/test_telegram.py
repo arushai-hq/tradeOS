@@ -36,11 +36,11 @@ async def _send_test() -> None:
 
     secrets = _load_secrets()
 
-    bot_token = secrets.get("telegram", {}).get("bot_token", "")
-    chat_id = secrets.get("telegram", {}).get("chat_id", "")
+    from utils.telegram import resolve_telegram_credentials
+    bot_token, chat_id = resolve_telegram_credentials(secrets, "trading")
 
     if not bot_token or not chat_id:
-        print("❌ Missing telegram.bot_token or telegram.chat_id in secrets.yaml")
+        print("❌ Missing telegram credentials in secrets.yaml (check telegram.trading.bot_token/chat_id)")
         return
 
     user_id = secrets.get("zerodha", {}).get("user_id", "unknown")
