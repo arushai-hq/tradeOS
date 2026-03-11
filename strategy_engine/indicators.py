@@ -56,19 +56,39 @@ class IndicatorEngine:
     Returns None until at least MIN_CANDLES (21) are available.
     """
 
-    def __init__(self, warmup_candles: list[Candle]) -> None:
+    def __init__(
+        self,
+        warmup_candles: list[Candle],
+        ema_fast: int = 9,
+        ema_slow: int = 21,
+        rsi_period: int = 14,
+        swing_lookback: int = 5,
+    ) -> None:
         """
         Args:
             warmup_candles: Historical candles in chronological order.
-                            Minimum 21 required for non-None output; 60+ recommended.
+                            Minimum ema_slow required for non-None output; 60+ recommended.
+            ema_fast:       Fast EMA period (default 9).
+            ema_slow:       Slow EMA period (default 21).
+            rsi_period:     RSI calculation period (default 14).
+            swing_lookback: Number of candles for swing high/low (default 5).
         """
         self._candles: deque[Candle] = deque(
             warmup_candles[-DEQUE_MAXLEN:], maxlen=DEQUE_MAXLEN
         )
+        self._ema_fast = ema_fast
+        self._ema_slow = ema_slow
+        self._rsi_period = rsi_period
+        self._swing_lookback = swing_lookback
+        self._min_candles = ema_slow  # derived from slowest EMA
         log.debug(
             "indicator_engine_initialised",
             warmup_count=len(warmup_candles),
             loaded=len(self._candles),
+            ema_fast=ema_fast,
+            ema_slow=ema_slow,
+            rsi_period=rsi_period,
+            swing_lookback=swing_lookback,
         )
 
     def update(self, candle: Candle) -> Optional[Indicators]:
@@ -86,12 +106,12 @@ class IndicatorEngine:
         """
         self._candles.append(candle)
 
-        if len(self._candles) < MIN_CANDLES:
+        if len(self._candles) < self._min_candles:
             log.debug(
                 "indicator_engine_warming_up",
                 symbol=candle.symbol,
                 candle_count=len(self._candles),
-                required=MIN_CANDLES,
+                required=self._min_candles,
             )
             return None
 
@@ -113,12 +133,12 @@ class IndicatorEngine:
             [float(c.volume) for c in candle_list], dtype=float
         )
 
-        # EMA 9 and EMA 21 (via ta.trend.EMAIndicator)
+        # EMA fast and EMA slow (via ta.trend.EMAIndicator)
         ema9_series = ta.trend.EMAIndicator(
-            close=close_series, window=9, fillna=False
+            close=close_series, window=self._ema_fast, fillna=False
         ).ema_indicator()
         ema21_series = ta.trend.EMAIndicator(
-            close=close_series, window=21, fillna=False
+            close=close_series, window=self._ema_slow, fillna=False
         ).ema_indicator()
 
         ema9_val = ema9_series.iloc[-1]
@@ -128,9 +148,9 @@ class IndicatorEngine:
             log.warning("indicator_engine_ema_nan", symbol=candle.symbol, n=n)
             return None
 
-        # RSI(14) via ta.momentum.RSIIndicator
+        # RSI via ta.momentum.RSIIndicator
         rsi_series = ta.momentum.RSIIndicator(
-            close=close_series, window=14, fillna=False
+            close=close_series, window=self._rsi_period, fillna=False
         ).rsi()
         rsi_val = rsi_series.iloc[-1]
 
@@ -146,8 +166,8 @@ class IndicatorEngine:
         else:
             vol_ratio = Decimal(str(round(current_vol / float(vol_mean), 4)))
 
-        # Swing high/low: last 5 candles (inclusive of current)
-        last5 = candle_list[-5:]
+        # Swing high/low: last N candles (inclusive of current)
+        last5 = candle_list[-self._swing_lookback:]
         swing_high = max(c.high for c in last5)
         swing_low = min(c.low for c in last5)
 

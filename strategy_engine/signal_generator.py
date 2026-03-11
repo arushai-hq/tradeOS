@@ -87,10 +87,31 @@ class SignalGenerator:
     Call reset_session() at the start of each trading day.
     """
 
-    def __init__(self, min_stop_pct: Decimal = DEFAULT_MIN_STOP_PCT) -> None:
+    def __init__(self, s1_config: dict | None = None) -> None:
         # (symbol, direction) pairs already signalled in this session
         self._session_signals: set[tuple[str, str]] = set()
-        self._min_stop_pct = min_stop_pct
+
+        cfg = s1_config or {}
+        self._rsi_long_min = Decimal(str(cfg.get("rsi_long_min", LONG_RSI_MIN)))
+        self._rsi_long_max = Decimal(str(cfg.get("rsi_long_max", LONG_RSI_MAX)))
+        self._rsi_short_min = Decimal(str(cfg.get("rsi_short_min", SHORT_RSI_MAX)))
+        self._volume_ratio_min = Decimal(str(cfg.get("volume_ratio_min", MIN_VOLUME_RATIO)))
+        self._rr_ratio = Decimal(str(cfg.get("rr_ratio", RR_RATIO)))
+        self._min_stop_pct = Decimal(str(cfg.get("min_stop_pct", DEFAULT_MIN_STOP_PCT)))
+
+        log.info(
+            "s1_config_loaded",
+            ema_fast=cfg.get("ema_fast", 9),
+            ema_slow=cfg.get("ema_slow", 21),
+            rsi_period=cfg.get("rsi_period", 14),
+            rsi_long_min=float(self._rsi_long_min),
+            rsi_long_max=float(self._rsi_long_max),
+            rsi_short_min=float(self._rsi_short_min),
+            volume_ratio_min=float(self._volume_ratio_min),
+            rr_ratio=float(self._rr_ratio),
+            swing_lookback=cfg.get("swing_lookback", 5),
+            min_stop_pct=float(self._min_stop_pct),
+        )
 
     def reset_session(self) -> None:
         """Clear deduplication state for a new trading session."""
@@ -121,8 +142,8 @@ class SignalGenerator:
         if (
             indicators.ema9 > indicators.ema21
             and close > vwap
-            and LONG_RSI_MIN <= indicators.rsi <= LONG_RSI_MAX
-            and indicators.volume_ratio >= MIN_VOLUME_RATIO
+            and self._rsi_long_min <= indicators.rsi <= self._rsi_long_max
+            and indicators.volume_ratio >= self._volume_ratio_min
         ):
             key = (symbol, "LONG")
             if key in self._session_signals:
@@ -142,7 +163,7 @@ class SignalGenerator:
                     min_pct=f"{float(self._min_stop_pct) * 100:.1f}%",
                 )
             risk = close - stop
-            target = close + (RR_RATIO * risk)
+            target = close + (self._rr_ratio * risk)
 
             signal = Signal(
                 symbol=symbol,
@@ -193,23 +214,23 @@ class SignalGenerator:
         if (
             indicators.ema9 < indicators.ema21
             and close < vwap
-            and indicators.rsi < SHORT_RSI_MAX
-            and indicators.volume_ratio >= MIN_VOLUME_RATIO
+            and indicators.rsi < self._rsi_short_min
+            and indicators.volume_ratio >= self._volume_ratio_min
         ):
             log.debug(
                 "rsi_filter_rejected",
                 symbol=symbol,
                 direction="SHORT",
                 rsi=float(indicators.rsi),
-                threshold=float(SHORT_RSI_MAX),
+                threshold=float(self._rsi_short_min),
             )
 
         # --- SHORT signal evaluation ---
         if (
             indicators.ema9 < indicators.ema21
             and close < vwap
-            and indicators.rsi >= SHORT_RSI_MAX   # B3 fix: was SHORT_RSI_MIN <= rsi <= SHORT_RSI_MAX
-            and indicators.volume_ratio >= MIN_VOLUME_RATIO
+            and indicators.rsi >= self._rsi_short_min   # B3 fix: RSI above oversold zone
+            and indicators.volume_ratio >= self._volume_ratio_min
         ):
             key = (symbol, "SHORT")
             if key in self._session_signals:
@@ -229,7 +250,7 @@ class SignalGenerator:
                     min_pct=f"{float(self._min_stop_pct) * 100:.1f}%",
                 )
             risk = stop - close
-            target = close - (RR_RATIO * risk)
+            target = close - (self._rr_ratio * risk)
 
             signal = Signal(
                 symbol=symbol,
@@ -289,10 +310,10 @@ class SignalGenerator:
             ema_cross=indicators.ema9 > indicators.ema21,
             price_above_vwap=close > vwap,
             rsi_in_range=(
-                (LONG_RSI_MIN <= indicators.rsi <= LONG_RSI_MAX)
-                or (indicators.rsi >= SHORT_RSI_MAX)  # B3 fix: was SHORT_RSI_MIN <= rsi <= SHORT_RSI_MAX
+                (self._rsi_long_min <= indicators.rsi <= self._rsi_long_max)
+                or (indicators.rsi >= self._rsi_short_min)
             ),
-            volume_ok=indicators.volume_ratio >= MIN_VOLUME_RATIO,
+            volume_ok=indicators.volume_ratio >= self._volume_ratio_min,
             result="no_signal",
         )
         return None

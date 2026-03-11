@@ -425,7 +425,7 @@ def test_target_recalculated_after_floor_widened_stop():
 def test_config_min_stop_pct_respected():
     """Custom min_stop_pct value overrides default."""
     # Use 5% floor → swing stop at 1% should be overridden
-    gen = SignalGenerator(min_stop_pct=Decimal("0.05"))
+    gen = SignalGenerator(s1_config={"min_stop_pct": 0.05})
     # close=2450, swing_low=2430 → distance = 20/2450 = 0.82% < 5%
     # floor stop = 2450 * 0.95 = 2327.50
     ind = _indicators(swing_low=2430.0, vwap=2430.0)
@@ -457,3 +457,83 @@ def test_short_floor_stop_is_above_entry():
     signal = gen.evaluate(_short_candle(close=2420.0), ind)
     assert signal is not None
     assert signal.stop_loss > signal.theoretical_entry
+
+
+# ---------------------------------------------------------------------------
+# S1 config loading tests
+# ---------------------------------------------------------------------------
+
+def test_s1_config_loads_all_defaults_when_empty():
+    """SignalGenerator() with no config uses all current code defaults."""
+    gen = SignalGenerator()
+    assert gen._rsi_long_min == Decimal("55")
+    assert gen._rsi_long_max == Decimal("70")
+    assert gen._rsi_short_min == Decimal("45")
+    assert gen._volume_ratio_min == Decimal("1.5")
+    assert gen._rr_ratio == Decimal("2")
+    assert gen._min_stop_pct == Decimal("0.02")
+
+
+def test_s1_config_custom_values_override_defaults():
+    """Custom config values override all defaults."""
+    cfg = {
+        "rsi_long_min": 40,
+        "rsi_long_max": 80,
+        "rsi_short_min": 35,
+        "volume_ratio_min": 2.0,
+        "rr_ratio": 3.0,
+        "min_stop_pct": 0.03,
+    }
+    gen = SignalGenerator(s1_config=cfg)
+    assert gen._rsi_long_min == Decimal("40")
+    assert gen._rsi_long_max == Decimal("80")
+    assert gen._rsi_short_min == Decimal("35")
+    assert gen._volume_ratio_min == Decimal("2.0")
+    assert gen._rr_ratio == Decimal("3.0")
+    assert gen._min_stop_pct == Decimal("0.03")
+
+
+def test_s1_config_rr_ratio_3_produces_wider_target():
+    """Custom rr_ratio=3 produces a 3R target instead of 2R."""
+    gen = SignalGenerator(s1_config={"rr_ratio": 3.0})
+    ind = _indicators(swing_low=2390.0, vwap=2430.0)
+    signal = gen.evaluate(_candle(close=2450.0), ind)
+    assert signal is not None
+
+    entry = signal.theoretical_entry  # 2450
+    stop = signal.stop_loss           # 2390 (wider than 2% floor)
+    risk = entry - stop               # 60
+    expected_target = entry + Decimal("3") * risk  # 2450 + 180 = 2630
+    assert signal.target == expected_target
+
+
+def test_s1_config_missing_key_uses_default():
+    """Partial config — missing keys silently fall back to defaults."""
+    cfg = {"rr_ratio": 2.5}  # only override one param
+    gen = SignalGenerator(s1_config=cfg)
+    assert gen._rr_ratio == Decimal("2.5")
+    assert gen._rsi_long_min == Decimal("55")  # default
+    assert gen._min_stop_pct == Decimal("0.02")  # default
+
+
+def test_s1_config_loaded_log_emitted():
+    """s1_config_loaded log event is emitted at init."""
+    import io
+    import re
+    import structlog
+
+    output = io.StringIO()
+    structlog.configure(
+        processors=[structlog.dev.ConsoleRenderer()],
+        wrapper_class=structlog.BoundLogger,
+        logger_factory=structlog.PrintLoggerFactory(file=output),
+    )
+    try:
+        SignalGenerator(s1_config={"rr_ratio": 2.5})
+        # Strip ANSI escape codes for assertion
+        raw = re.sub(r"\x1b\[[0-9;]*m", "", output.getvalue())
+        assert "s1_config_loaded" in raw
+        assert "rr_ratio=2.5" in raw
+        assert "rsi_long_min=55" in raw  # default logged
+    finally:
+        structlog.reset_defaults()

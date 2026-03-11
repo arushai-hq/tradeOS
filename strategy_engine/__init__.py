@@ -148,19 +148,25 @@ class StrategyEngine:
         loader = WarmupLoader()
         warmup_data = await loader.load(self._instruments, self._kite, self._db_pool)
 
+        # Load S1 strategy config
+        s1_config = self._config.get("strategy", {}).get("s1", {})
+
         # Steps 3 & 4: CandleBuilder + IndicatorEngine per instrument
         for instrument in self._instruments:
             token = instrument["instrument_token"]
             symbol = instrument.get("tradingsymbol", str(token))
             self._candle_builders[token] = CandleBuilder(token, symbol)
             candles = warmup_data.get(token, [])
-            self._indicator_engines[token] = IndicatorEngine(candles)
+            self._indicator_engines[token] = IndicatorEngine(
+                candles,
+                ema_fast=int(s1_config.get("ema_fast", 9)),
+                ema_slow=int(s1_config.get("ema_slow", 21)),
+                rsi_period=int(s1_config.get("rsi_period", 14)),
+                swing_lookback=int(s1_config.get("swing_lookback", 5)),
+            )
 
         # Steps 5: SignalGenerator + RiskGate
-        min_stop_pct = Decimal(str(
-            self._config.get("strategy", {}).get("min_stop_pct", 0.02)
-        ))
-        self._signal_generator = SignalGenerator(min_stop_pct=min_stop_pct)
+        self._signal_generator = SignalGenerator(s1_config=s1_config)
         self._risk_gate = RiskGate(
             kill_switch=self._kill_switch,
             regime_detector=self._regime_detector,
