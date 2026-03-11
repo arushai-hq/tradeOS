@@ -39,8 +39,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **340 passing, 0 failures, 12 skipped** — commit `028995d` |
-| S1 allocation | 70% (₹3,50,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
+| Tests | **353 passing, 0 failures, 12 skipped** — commit `96de8fa` |
+| Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
+| S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
+| S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Stop floor at 2% prevents sizer rejection on tight swing stops. |
 | Session 03 bugs | **All 6 resolved (B1–B6).** System is Session 04 ready. |
 | New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
 | Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
@@ -70,6 +72,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 9. **Slot-based position sizing** — 3-layer calculation: risk-based shares → capital cap scale-down → viability floors (min_risk ₹1,000, min_position_value ₹15,000). Charge estimation logged per sized position. No-entry window at 14:30 IST (Gate 5b). Startup refuses if slot_capital < ₹40,000. Pending orders cancelled at hard_exit before emergency_exit_all.
 10. **Futures trading gate criteria** — No futures until ALL conditions met: (a) 10 completed S1 trades (stop/target/hard_exit, not just opened), (b) 3 consecutive bug-free sessions, (c) every trade P&L verified in session report matches expected calculation, (d) at least 1 winning trade proving strategy can make money. Manual delivery trades (NIFTY BEES, large-caps) are acceptable anytime for market views — separate from TradeOS.
 11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. nsepython primary + nsetools fallback. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Development on feature/hawk branch. Full spec: `docs/hawk_spec.md`.
+12. **Option C stop floor** — Minimum 2% stop distance enforced when swing-based stops are tighter. Paper capital increased ₹5L→₹10L for realistic testing. All 10 S1 strategy parameters (EMA periods, RSI thresholds, volume ratio, RR ratio, swing lookback, min stop %) now configurable via settings.yaml. Zero hardcoded numbers in signal generation.
 
 ---
 
@@ -129,6 +132,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-10 | Bug Fixes B7+B8 | B7: unrealized P&L field mismatch fixed (`cc9c018`). B8: exit fill snapshot-before-delete (`7ed6b7a`). Tests: 318→329. | Session 05 ready. Two critical Session 04 bugs resolved. |
 | 2026-03-10 | Bug Fixes B9-B11 | B9: report parser hardened (`028995d`). B10: pre-market warnings gated (`028995d`). B11: regime double-init fixed (`028995d`). All Session 04 bugs resolved. Tests: 329→340. | Session 05 ready. Clean system. |
 | 2026-03-11 | HAWK Design + Rules | HAWK spec complete (`docs/hawk_spec.md`). Telegram channel separation rule added. Git branching model established (feature/*/fix/*/main). | Design + engineering practices locked. |
+| 2026-03-11 | Config Extraction | Capital 5L→10L, Option C stop floor 2%, all S1 params to config (`9d9f595`, `96de8fa`). Tests: 340→353. | Full playground mode — every parameter tunable from config. |
 
 ---
 
@@ -149,4 +153,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-11** — HAWK design spec created. Telegram separation and git branching rules established as permanent session rules.
+**2026-03-11** — S1 fully configurable. 10 strategy parameters in settings.yaml. Capital ₹10L, stop floor 2%. Tests: 353.
