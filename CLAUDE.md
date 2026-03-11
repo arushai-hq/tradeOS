@@ -186,6 +186,21 @@ Always push to `main` on task completion unless told otherwise.
 
 ---
 
+## Git Branching Rules
+
+- main = production. Always deployable. Runs on VPS.
+- feature/* = new features (e.g., feature/hawk, feature/trailing-stop)
+- fix/* = bug fixes (e.g., fix/pnl-short-direction)
+- Create feature branches from main: `git checkout -b feature/name main`
+- Keep in sync: `git rebase main` regularly
+- Merge to main only when ALL tests pass and feature is complete
+- Never commit new feature code directly to main
+- Track active branches:
+  - main: S1 trading engine (production)
+  - (future) feature/hawk: AI watchlist engine
+
+---
+
 *Arushai Systems Private Limited — TradeOS*
 *Web UI brainstorm session → Claude Code execution pipeline*
 *Context last updated: Session 3 — Post reliability engineering design*
