@@ -40,7 +40,7 @@ strategy:
     rsi_long_min: 55           # Minimum RSI for LONG signals
     rsi_long_max: 70           # Maximum RSI for LONG signals
     rsi_short_min: 45          # Minimum RSI for SHORT signals (B3 fix)
-    volume_ratio_min: 1.5      # Minimum volume ratio
+    volume_ratio_min: 1.2      # Minimum volume ratio
     rr_ratio: 2.0              # Risk-reward ratio for target calculation
     swing_lookback: 5          # Candles for swing high/low
     min_stop_pct: 0.02         # 2.0% minimum stop distance from entry
