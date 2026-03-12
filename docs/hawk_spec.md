@@ -201,3 +201,36 @@ Minimum 20 trading days before drawing conclusions.
 | 6 | Merge to main when all tests pass | main | All steps complete + tested |
 
 New dependencies: nsepython, nsetools (add to requirements.txt on feature/hawk branch)
+
+---
+
+## 10. Cron Configuration
+
+> **Note:** Do not set up cron yet — manual runs only until HAWK is validated.
+> These commands are for documentation and future automation.
+
+### Evening Analysis (Single Model)
+```bash
+# 4:30 PM IST (11:00 UTC) every weekday
+0 11 * * 1-5 cd /opt/tradeOS && git checkout feature/hawk && source .venv/bin/activate && python tools/hawk.py --run evening >> logs/hawk/cron.log 2>&1
+```
+
+### Evening Consensus (Multi-Model)
+```bash
+# 4:30 PM IST (11:00 UTC) every weekday
+0 11 * * 1-5 cd /opt/tradeOS && git checkout feature/hawk && source .venv/bin/activate && python tools/hawk.py --run evening --consensus >> logs/hawk/cron.log 2>&1
+```
+
+### Morning Update
+```bash
+# 8:00 AM IST (2:30 UTC) every weekday
+30 2 * * 1-5 cd /opt/tradeOS && git checkout feature/hawk && source .venv/bin/activate && python tools/hawk.py --run morning >> logs/hawk/cron.log 2>&1
+```
+
+### Pick Evaluation
+```bash
+# 5:00 PM IST (11:30 UTC) every weekday — evaluate yesterday's picks
+30 11 * * 1-5 cd /opt/tradeOS && git checkout feature/hawk && source .venv/bin/activate && python tools/hawk_eval.py --telegram >> logs/hawk/cron.log 2>&1
+```
+
+Morning consensus mode is not yet implemented. Use `--single` to override config if consensus is enabled globally but you want single-model for a specific run.

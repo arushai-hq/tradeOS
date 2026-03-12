@@ -3,12 +3,18 @@ TradeOS — Telegram alert utilities.
 
 send_telegram()     — async Telegram send with telegram_active gate.
 send_daily_summary()— queries trades table and sends formatted daily summary.
+resolve_telegram_credentials() — multi-channel credential resolver with backward compat.
 
 Rules (D4):
   - Only sends if shared_state["telegram_active"] is True.
   - On failure: sets telegram_active = False, logs [TELEGRAM_FAILED].
   - Never raises — catches all exceptions.
   - asyncio.to_thread() for the HTTP call (D6 — never block event loop).
+
+Channel architecture:
+  - Each engine/module sends to its own Telegram channel (Session Rule 7).
+  - Channels configured under secrets.telegram.<channel_name>.{bot_token, chat_id}.
+  - Backward compat: old flat format (secrets.telegram.bot_token) auto-mapped to "trading".
 """
 from __future__ import annotations
 
@@ -24,15 +30,73 @@ from utils.time_utils import today_ist
 
 log = structlog.get_logger()
 
+# Track whether the flat-format deprecation warning has been logged this session
+_flat_format_warned: bool = False
+
+
+def resolve_telegram_credentials(
+    secrets: dict,
+    channel: str = "trading",
+) -> tuple[str, str]:
+    """
+    Resolve bot_token and chat_id for a Telegram channel.
+
+    Supports two config formats:
+      New (multi-channel):  secrets.telegram.<channel>.bot_token / chat_id
+      Old (flat, deprecated): secrets.telegram.bot_token / chat_id
+
+    If old flat format is detected and channel is "trading", uses it with a
+    deprecation warning (logged once per session). For non-trading channels,
+    old format returns empty credentials.
+
+    Args:
+        secrets:  Loaded secrets.yaml dict.
+        channel:  Channel name — "trading", "hawk", or any future module.
+
+    Returns:
+        (bot_token, chat_id) tuple. Both empty strings if unconfigured.
+    """
+    global _flat_format_warned
+    tg = secrets.get("telegram", {})
+    if not isinstance(tg, dict):
+        return ("", "")
+
+    # New format: secrets.telegram.<channel>.{bot_token, chat_id}
+    channel_cfg = tg.get(channel, {})
+    if isinstance(channel_cfg, dict) and channel_cfg.get("bot_token"):
+        return (
+            str(channel_cfg.get("bot_token", "")),
+            str(channel_cfg.get("chat_id", "")),
+        )
+
+    # Backward compat: old flat format (secrets.telegram.bot_token)
+    flat_token = tg.get("bot_token", "")
+    if isinstance(flat_token, str) and flat_token:
+        if channel == "trading":
+            if not _flat_format_warned:
+                _flat_format_warned = True
+                log.warning(
+                    "telegram_config_deprecated",
+                    note="Flat telegram.bot_token format detected. "
+                         "Migrate to telegram.trading.bot_token. "
+                         "See config/secrets.yaml.template for new structure.",
+                )
+            return (str(flat_token), str(tg.get("chat_id", "")))
+        # Non-trading channels can't use old flat format
+        return ("", "")
+
+    return ("", "")
+
 
 async def send_telegram(
     msg: str,
     shared_state: dict,
     secrets: dict,
     parse_mode: str = "",
+    channel: str = "trading",
 ) -> None:
     """
-    Send a Telegram message.
+    Send a Telegram message to a specific channel.
 
     Non-blocking (asyncio.to_thread). Never raises.
     If telegram_active is False, logs with [TELEGRAM_FAILED] prefix instead.
@@ -40,8 +104,9 @@ async def send_telegram(
     Args:
         msg:          Message text to send.
         shared_state: D6 shared state dict.
-        secrets:      Loaded secrets.yaml dict (for bot_token + chat_id).
+        secrets:      Loaded secrets.yaml dict.
         parse_mode:   Optional Telegram parse mode (e.g. "HTML"). Empty = no mode set.
+        channel:      Telegram channel name — "trading" (default) or "hawk".
     """
     if not shared_state.get("telegram_active", True):
         log.warning(
@@ -51,12 +116,12 @@ async def send_telegram(
         )
         return
 
-    bot_token = secrets.get("telegram", {}).get("bot_token", "")
-    chat_id = secrets.get("telegram", {}).get("chat_id", "")
+    bot_token, chat_id = resolve_telegram_credentials(secrets, channel)
 
     if not bot_token or not chat_id:
-        shared_state["telegram_active"] = False
-        log.warning("telegram_credentials_missing")
+        if channel == "trading":
+            shared_state["telegram_active"] = False
+            log.warning("telegram_credentials_missing", channel=channel)
         return
 
     try:
@@ -70,8 +135,9 @@ async def send_telegram(
             timeout=5,
         )
     except Exception as exc:
-        log.warning("telegram_send_failed", error=str(exc))
-        shared_state["telegram_active"] = False
+        log.warning("telegram_send_failed", error=str(exc), channel=channel)
+        if channel == "trading":
+            shared_state["telegram_active"] = False
 
 
 async def send_daily_summary(

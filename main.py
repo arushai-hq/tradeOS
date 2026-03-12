@@ -37,7 +37,7 @@ from execution_engine import ExecutionEngine
 from risk_manager import RiskManager
 from strategy_engine import StrategyEngine
 from utils.db_events import write_system_event
-from utils.telegram import send_daily_summary, send_telegram
+from utils.telegram import resolve_telegram_credentials, send_daily_summary, send_telegram
 from utils.telegram_notifier import TelegramNotifier
 from utils.time_utils import is_market_hours, now_ist, today_ist
 
@@ -164,8 +164,7 @@ REQUIRED_SECRETS_KEYS = [
     "zerodha.api_secret",
     "zerodha.access_token",
     "zerodha.token_date",
-    "telegram.bot_token",
-    "telegram.chat_id",
+    # telegram keys validated separately — supports old flat + new nested format
 ]
 
 
@@ -187,8 +186,7 @@ def _send_startup_alert_sync(secrets: dict, message: str) -> None:
     Failure is silent — structured log already written before this call.
     """
     try:
-        bot_token = secrets.get("telegram", {}).get("bot_token", "")
-        chat_id = secrets.get("telegram", {}).get("chat_id", "")
+        bot_token, chat_id = resolve_telegram_credentials(secrets, "trading")
         if bot_token and chat_id:
             requests.post(
                 f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -226,6 +224,16 @@ def run_config_check() -> tuple[dict, dict]:
 
     if missing:
         log.critical("config_incomplete", missing_keys=missing)
+        sys.exit(1)
+
+    # Validate Telegram config — accept new nested or old flat format
+    trading_token, trading_chat = resolve_telegram_credentials(secrets, "trading")
+    if not trading_token or not trading_chat:
+        log.critical(
+            "config_incomplete",
+            missing_keys=["secrets.yaml:telegram.trading.bot_token/chat_id"],
+            note="See config/secrets.yaml.template for expected format",
+        )
         sys.exit(1)
 
     # Validate strategy allocation sums to 1.00
@@ -408,11 +416,10 @@ def run_telegram_check(secrets: dict, shared_state: dict) -> None:
     """
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
     try:
-        bot_token = secrets.get("telegram", {}).get("bot_token", "")
-        chat_id = secrets.get("telegram", {}).get("chat_id", "")
+        bot_token, chat_id = resolve_telegram_credentials(secrets, "trading")
 
         if not bot_token or not chat_id:
-            raise ValueError("telegram.bot_token or telegram.chat_id missing")
+            raise ValueError("telegram.trading.bot_token or telegram.trading.chat_id missing")
 
         resp = requests.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
