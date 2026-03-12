@@ -64,7 +64,7 @@ def _print_summary(result: dict) -> None:
         print(f"\n  {len(watchlist)} PICKS:")
         print(f"  {'#':<3} {'Symbol':<12} {'Dir':<6} {'Conv':<6} {'Entry Zone':<16} Reasoning")
         print("  " + "-" * 70)
-        for pick in watchlist:
+        for pick in sorted(watchlist, key=lambda p: p.get("symbol", "").upper()):
             ez = pick.get("entry_zone", [0, 0])
             ez_str = f"{ez[0]:.0f}-{ez[1]:.0f}" if len(ez) == 2 else "N/A"
             print(
@@ -383,6 +383,7 @@ def _print_consensus_summary(result: dict) -> None:
             tagged = [p for p in consensus_picks if p.get("consensus_tag") == tag]
             if not tagged:
                 continue
+            tagged.sort(key=lambda p: p.get("symbol", "").upper())
             print(f"\n  {tag} ({len(tagged)} picks):")
             print(f"  {'#':<3} {'Symbol':<12} {'Dir':<6} {'Conv':<6} "
                   f"{'Votes':<6} {'Score':<7} {'Entry Zone':<14}")

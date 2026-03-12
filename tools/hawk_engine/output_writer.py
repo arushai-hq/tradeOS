@@ -84,7 +84,7 @@ def format_telegram_message(result: dict) -> str:
         return "\n".join(lines)
 
     lines.append("TOP PICKS:")
-    for pick in watchlist[:10]:  # Show top 10 in Telegram
+    for pick in sorted(watchlist, key=lambda p: p.get("symbol", "").upper())[:10]:
         rank = pick.get("rank", "?")
         symbol = pick.get("symbol", "???")
         direction = pick.get("direction", "?")
@@ -253,7 +253,10 @@ def format_consensus_telegram(result: dict) -> str:
     remaining_counts: dict[str, int] = {}
 
     for tag in tag_order:
-        tagged = [p for p in consensus_picks if p.get("consensus_tag") == tag]
+        tagged = sorted(
+            [p for p in consensus_picks if p.get("consensus_tag") == tag],
+            key=lambda p: p.get("symbol", "").upper(),
+        )
         if not tagged:
             continue
 
