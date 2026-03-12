@@ -43,7 +43,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Tests | **439 passing (unified main), 0 failures, 12 skipped as of merge commit 094e04a** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
-| S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Stop floor at 2% prevents sizer rejection on tight swing stops. |
+| S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
 | Paper Session 05 | Complete — system health PASS. Zero bugs, zero false kill switch, zero ghost positions. B7-B11 fixes confirmed. 6 signals (3 accepted, 3 blocked by no-entry window). Zero trades — all 3 accepted signals rejected by position sizer due to tight swing stops (pre-fix). Stop floor + ₹10L capital fix applied post-session. |
 | Paper Session 06 | Config tuning: volume_ratio_min 1.5→1.2, no_entry_after 14:30→14:45. T1-T3 Telegram fixes live. Validates S1 with ₹10L capital + 2% stop floor + widened params. |
 | HAWK status | feature/hawk merged into main (`094e04a`). Codebase unified — S1 trading + HAWK AI engine on single branch. |
@@ -75,7 +75,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 6. **Accept zero-signal sessions as valid outcome** — S1 sitting out unfavorable regimes is correct behavior. Do not loosen gates to force trades. Revisit only if zero-signal persists across 3+ sessions with mixed regimes.
 7. **Nemawashi Principle** — *"Preparing the roots before transplanting the tree."* All features, fixes, and system changes follow a 70-80% planning / 20-30% implementation split. Deep-dive analysis, edge case mapping, cost modeling, and brainstorming MUST be completed before any CC prompt is generated. No rushing to implementation. This applies to every session, every feature, every decision.
 8. **Scenario D capital config** — S1=70%, 4 slots. S2/S3/S4 placeholders at 15%/10%/5%. Full 3-layer slot-based position sizing pending Nemawashi deep dive.
-9. **Slot-based position sizing** — 3-layer calculation: risk-based shares → capital cap scale-down → viability floors (min_risk ₹1,000, min_position_value ₹15,000). Charge estimation logged per sized position. No-entry window at 14:30 IST (Gate 5b). Startup refuses if slot_capital < ₹40,000. Pending orders cancelled at hard_exit before emergency_exit_all.
+9. **Slot-based position sizing** — 3-layer calculation: risk-based shares → capital cap scale-down → viability floors (min_risk ₹1,000, min_position_value ₹15,000). Charge estimation logged per sized position. No-entry window at 14:45 IST (Gate 5b). Startup refuses if slot_capital < ₹40,000. Pending orders cancelled at hard_exit before emergency_exit_all.
 10. **Futures trading gate criteria** — No futures until ALL conditions met: (a) 10 completed S1 trades (stop/target/hard_exit, not just opened), (b) 3 consecutive bug-free sessions, (c) every trade P&L verified in session report matches expected calculation, (d) at least 1 winning trade proving strategy can make money. Manual delivery trades (NIFTY BEES, large-caps) are acceptable anytime for market views — separate from TradeOS.
 11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. nsepython primary + nsetools fallback. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Development on feature/hawk branch. Full spec: `docs/hawk_spec.md`.
 12. **Option C stop floor** — Minimum 2% stop distance enforced when swing-based stops are tighter. Paper capital increased ₹5L→₹10L for realistic testing. All 10 S1 strategy parameters (EMA periods, RSI thresholds, volume ratio, RR ratio, swing lookback, min stop %) now configurable via settings.yaml. Zero hardcoded numbers in signal generation.
@@ -114,10 +114,13 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 7. Deferred Roadmap
 
-- **HAWK (AI Market Intelligence Engine)** — Design spec complete at `docs/hawk_spec.md`. Branch: feature/hawk. Standalone daily tool: evening + morning runs, nsepython + nsetools + KiteConnect data, Claude Sonnet LLM, JSON + DB + Telegram (HAWK-Picks channel). Shadow-testing alongside S1. Implementation: 2-3 CC prompts when ready.
-- **S2 multi-regime short strategy** — BEAR_TREND / HIGH_VOLATILITY regime-aware entries
+- **Trailing stop** — Design spec complete (`docs/strategy_specs/trailing_stop_spec.md`). Data-gated: blocked until ≥ 5 trades past 2R target. First review: **2026-03-16**.
+- **S2 multi-regime short strategy** — BEAR_TREND / HIGH_VOLATILITY regime-aware entries. Allocation: 15%.
+- **S3 positional strategy** — Multi-day swing trades. Allocation placeholder: 10%. Design pending S1 validation.
+- **S4 event strategy** — Earnings/macro event-driven trades. Allocation placeholder: 5%. Design pending S2.
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
 - **Futures paper trading** — NIFTY futures alongside S1. Gated on: 10 completed S1 trades + 3 clean sessions + verified P&L + 1 winner. Infrastructure needed: lot-aware position sizer, expiry management, margin monitoring. Design (Nemawashi) can begin during S1 validation phase — no code until gates clear.
+- **Commodities** — Deferred until futures infrastructure built and validated.
 
 ---
 
@@ -155,6 +158,7 @@ These rules apply to every TradeOS session regardless of context window or sessi
 6. **Context Hygiene** — `TradeOS_context.md` is a rolling window, not a history book. Rules: (a) Known TODOs: Only OPEN items stay. Completed items move to `docs/context_archive.md` after 2 sessions. (b) Session Log: Keep last 5 sessions only. Older rows move to `docs/context_archive.md`. (c) Completed Work: Summarize, don't accumulate. Move details to archive when section exceeds 10 items. (d) Key Decisions and Session Rules: Stay in main file permanently (compact, always relevant). (e) Archive file is append-only — never edit or delete archived content.
 7. **Telegram Channel Separation** — Each engine/module gets its own Telegram channel. Never mix notification streams. Current channels: TradeOS-Trading (S1 signals, fills, exits, heartbeat, system), HAWK-Picks (AI watchlist). New modules must define their own channel before implementation.
 8. **Git Branching** — feature/* for new features, fix/* for bugs, main = production (deployed on VPS). Feature branches created from main, kept in sync with `git rebase main`. Merge to main only when fully tested and all tests pass. CC must track which branch is for which feature. Never develop new features directly on main. Current branches: main (S1 trading + HAWK AI engine, production).
+9. **SHORT Position Accounting** — Negative qty for shorts. Field names: `avg_price` (not `entry_price`), `side` (not `direction`). This mismatch caused B7 (false kill switch with -₹199,679 phantom P&L). Always verify field names when accessing position data.
 
 ---
 
