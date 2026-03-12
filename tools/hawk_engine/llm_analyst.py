@@ -463,3 +463,94 @@ def analyze_morning(
     except Exception as exc:
         log.error("hawk_morning_analysis_failed", provider=provider, error=str(exc))
         return {"watchlist": evening_picks, "metadata": {"provider": provider, "model": model, "error": str(exc)}}
+
+
+def analyze_evening_consensus(
+    data: dict,
+    models: list[dict],
+    api_key: str,
+    max_tokens: int = 4000,
+    watchlist_size: int = 15,
+    provider: str = "openrouter",
+    site_name: str = "TradeOS-HAWK",
+) -> dict:
+    """
+    Run evening analysis across multiple models and build consensus.
+
+    Calls each model sequentially (avoids OpenRouter rate limits).
+    Reuses analyze_evening() per model (inherits retry logic).
+    If a model fails (empty watchlist), logs warning and continues.
+
+    Args:
+        data:           Collected market data from data_collector.
+        models:         List of model configs: [{"id": "...", "name": "..."}, ...].
+        api_key:        OpenRouter API key (single key for all models).
+        max_tokens:     Max response tokens per model.
+        watchlist_size: Expected number of picks per model.
+        provider:       LLM provider (typically "openrouter" for consensus).
+        site_name:      App name for OpenRouter headers.
+
+    Returns:
+        Full consensus structure from build_consensus().
+    """
+    from tools.hawk_engine.consensus import build_consensus
+
+    model_results: list[dict] = []
+    models_failed: list[str] = []
+
+    for i, model_cfg in enumerate(models):
+        model_id = model_cfg["id"]
+        model_name = model_cfg["name"]
+
+        log.info(
+            "hawk_consensus_model_start",
+            model=model_name,
+            model_id=model_id,
+            index=i + 1,
+            total=len(models),
+        )
+
+        result = analyze_evening(
+            data, api_key, model_id, max_tokens, watchlist_size,
+            provider=provider, site_name=site_name,
+        )
+
+        if result.get("watchlist"):
+            model_results.append({
+                "name": model_name,
+                "model_id": model_id,
+                "picks": result["watchlist"],
+                "metadata": result.get("metadata", {}),
+            })
+            log.info(
+                "hawk_consensus_model_done",
+                model=model_name,
+                picks=len(result["watchlist"]),
+                cost=result.get("metadata", {}).get("cost_usd", 0),
+            )
+        else:
+            models_failed.append(model_name)
+            error = result.get("metadata", {}).get("error", "empty watchlist")
+            log.warning(
+                "hawk_consensus_model_failed",
+                model=model_name,
+                model_id=model_id,
+                error=error,
+            )
+
+        # Brief pause between models to avoid rate limits
+        if i < len(models) - 1:
+            time.sleep(1)
+
+    consensus = build_consensus(model_results, total_models=len(models))
+    consensus["models_failed"] = models_failed
+
+    log.info(
+        "hawk_consensus_complete",
+        models_used=len(model_results),
+        models_failed=len(models_failed),
+        consensus_picks=len(consensus.get("consensus_picks", [])),
+        total_cost=consensus.get("aggregate_metadata", {}).get("total_cost_usd", 0),
+    )
+
+    return consensus

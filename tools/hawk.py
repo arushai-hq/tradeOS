@@ -6,7 +6,9 @@ Standalone CLI tool for AI-powered daily watchlist generation.
 No dependency on running TradeOS process.
 
 Usage:
-    python tools/hawk.py --run evening              # Evening analysis
+    python tools/hawk.py --run evening              # Evening analysis (single or consensus per config)
+    python tools/hawk.py --run evening --consensus   # Force multi-model consensus
+    python tools/hawk.py --run evening --single      # Force single model
     python tools/hawk.py --run morning              # Morning update
     python tools/hawk.py --run evening --dry-run     # Data only, no LLM
     python tools/hawk.py --run evening --date 2026-03-10  # Specific date
@@ -240,6 +242,180 @@ def run_morning(target_date: date, hawk_config: dict, secrets: dict) -> int:
     return 0
 
 
+def run_evening_consensus(
+    target_date: date, dry_run: bool, hawk_config: dict, secrets: dict,
+) -> int:
+    """Execute evening consensus analysis pipeline (multi-model)."""
+    from tools.hawk_engine.data_collector import collect_evening_data
+    from tools.hawk_engine.llm_analyst import analyze_evening_consensus, get_evening_prompt
+    from tools.hawk_engine.output_writer import (
+        send_hawk_consensus_telegram,
+        write_consensus_json,
+        write_json,
+        write_model_json,
+    )
+
+    # Step 1: Collect data (same as single mode)
+    consensus_cfg = hawk_config.get("consensus", {})
+    models = consensus_cfg.get("models", [])
+
+    log.info("hawk_consensus_start", date=target_date.isoformat(),
+             dry_run=dry_run, models=len(models))
+    data = collect_evening_data(target_date, hawk_config)
+
+    if not data.get("bhavcopy"):
+        log.warning("hawk_no_bhavcopy", note="No bhavcopy data — cannot generate picks")
+
+    # Build market context
+    indices = data.get("indices", {})
+    fii_dii = data.get("fii_dii", {})
+    market_context = {
+        "nifty_close": indices.get("nifty_50", {}).get("close", 0),
+        "nifty_change_pct": indices.get("nifty_50", {}).get("change_pct", 0),
+        "banknifty_close": indices.get("bank_nifty", {}).get("close", 0),
+        "vix": indices.get("india_vix", {}).get("close", 0),
+        "fii_net_cr": fii_dii.get("fii_net_equity", 0),
+        "dii_net_cr": fii_dii.get("dii_net_equity", 0),
+    }
+
+    if dry_run:
+        prompt = get_evening_prompt(data)
+        print("\n" + "=" * 60)
+        print("  DRY RUN (CONSENSUS) — LLM Prompt Preview")
+        print(f"  Models: {', '.join(m['name'] for m in models)}")
+        print("=" * 60)
+        print(prompt)
+        print("=" * 60 + "\n")
+        log.info("hawk_consensus_dry_run_complete", date=target_date.isoformat())
+        return 0
+
+    # Step 2: LLM consensus analysis
+    from tools.hawk_engine.config import get_llm_api_key, get_llm_provider, get_openrouter_site_name
+    provider = get_llm_provider(secrets)
+    api_key = get_llm_api_key(secrets)
+    if not api_key:
+        log.error("hawk_no_api_key", provider=provider,
+                  note=f"Set llm.{provider}.api_key in config/secrets.yaml")
+        return 1
+
+    if not models:
+        log.error("hawk_consensus_no_models",
+                  note="No models configured in hawk.yaml consensus.models")
+        return 1
+
+    max_tokens = hawk_config.get("max_tokens", 4000)
+    watchlist_size = hawk_config.get("watchlist_size", 15)
+    site_name = get_openrouter_site_name(secrets)
+
+    consensus_result = analyze_evening_consensus(
+        data, models, api_key, max_tokens, watchlist_size,
+        provider=provider, site_name=site_name,
+    )
+
+    # Step 3: Assemble full result
+    result = {
+        "date": target_date.isoformat(),
+        "run": "evening",
+        "mode": "consensus",
+        "regime": data.get("regime", "unknown"),
+        "market_context": market_context,
+        "bhavcopy": data.get("bhavcopy", []),
+        "models_used": consensus_result.get("models_used", []),
+        "models_failed": consensus_result.get("models_failed", []),
+        "total_models": consensus_result.get("total_models", len(models)),
+        "consensus_picks": consensus_result.get("consensus_picks", []),
+        "per_model": consensus_result.get("per_model", {}),
+        # watchlist = consensus_picks for evaluator compatibility
+        "watchlist": consensus_result.get("consensus_picks", []),
+        "metadata": {
+            **consensus_result.get("aggregate_metadata", {}),
+            "data_sources": data.get("metadata", {}).get("data_sources", []),
+            "fallbacks_used": data.get("metadata", {}).get("fallbacks_used", []),
+        },
+    }
+
+    # Step 4: Write outputs
+    output_dir = hawk_config.get("output_dir", "logs/hawk")
+    write_consensus_json(result, output_dir)
+    write_json(result, output_dir)  # evaluator-compatible {date}_evening.json
+
+    # Write per-model JSONs
+    for model_name, model_data in consensus_result.get("per_model", {}).items():
+        write_model_json(
+            target_date.isoformat(),
+            model_name,
+            model_data.get("picks", []),
+            model_data.get("metadata", {}),
+            output_dir,
+        )
+
+    # Step 5: Telegram
+    send_hawk_consensus_telegram(result, secrets)
+
+    # Step 6: Terminal summary
+    _print_consensus_summary(result)
+
+    log.info("hawk_consensus_evening_complete",
+             date=target_date.isoformat(),
+             models_used=len(consensus_result.get("models_used", [])),
+             picks=len(result["consensus_picks"]))
+    return 0
+
+
+def _print_consensus_summary(result: dict) -> None:
+    """Print consensus summary to terminal."""
+    date_str = result.get("date", "?")
+    models_used = result.get("models_used", [])
+    models_failed = result.get("models_failed", [])
+    total_models = result.get("total_models", 0)
+    consensus_picks = result.get("consensus_picks", [])
+    metadata = result.get("metadata", {})
+
+    print("\n" + "=" * 70)
+    print(f"  HAWK CONSENSUS — {date_str}")
+    print(f"  Models: {', '.join(models_used)} ({len(models_used)}/{total_models})")
+    if models_failed:
+        print(f"  Failed: {', '.join(models_failed)}")
+    print("=" * 70)
+
+    if consensus_picks:
+        for tag in ("UNANIMOUS", "STRONG", "MAJORITY", "SINGLE"):
+            tagged = [p for p in consensus_picks if p.get("consensus_tag") == tag]
+            if not tagged:
+                continue
+            print(f"\n  {tag} ({len(tagged)} picks):")
+            print(f"  {'#':<3} {'Symbol':<12} {'Dir':<6} {'Conv':<6} "
+                  f"{'Votes':<6} {'Score':<7} {'Entry Zone':<14}")
+            print("  " + "-" * 60)
+            for pick in tagged:
+                ez = pick.get("entry_zone", [0, 0])
+                ez_str = f"{ez[0]:.0f}-{ez[1]:.0f}" if len(ez) == 2 else "N/A"
+                print(
+                    f"  {pick.get('rank', '?'):<3} "
+                    f"{pick.get('symbol', '?'):<12} "
+                    f"{pick.get('direction', '?'):<6} "
+                    f"{pick.get('avg_conviction', '?'):<6} "
+                    f"{pick.get('model_votes', 0):<6} "
+                    f"{pick.get('consensus_score', 0):<7.1f} "
+                    f"{ez_str:<14}"
+                )
+    else:
+        print("\n  No consensus picks generated.")
+
+    cost = metadata.get("total_cost_usd", 0)
+    if cost:
+        elapsed = metadata.get("total_elapsed_s", 0)
+        mins = int(elapsed // 60)
+        secs = int(elapsed % 60)
+        time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
+        print(f"\n  Cost: ${cost:.4f} | "
+              f"Tokens: {metadata.get('total_tokens_input', 0)}in/"
+              f"{metadata.get('total_tokens_output', 0)}out | "
+              f"Time: {time_str}")
+
+    print("=" * 70 + "\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="hawk",
@@ -256,6 +432,14 @@ def main() -> int:
     parser.add_argument(
         "--date", type=str, default=None,
         help="Target date in YYYY-MM-DD format (default: today IST)",
+    )
+    parser.add_argument(
+        "--consensus", action="store_true",
+        help="Force consensus mode (multi-model analysis)",
+    )
+    parser.add_argument(
+        "--single", action="store_true",
+        help="Force single-model mode (overrides consensus.enabled in config)",
     )
     args = parser.parse_args()
 
@@ -274,7 +458,17 @@ def main() -> int:
     hawk_config = load_hawk_config()
     secrets = load_secrets()
 
+    # Determine consensus vs single mode
+    consensus_cfg = hawk_config.get("consensus", {})
+    consensus_enabled = consensus_cfg.get("enabled", False)
+    if args.consensus:
+        consensus_enabled = True
+    if args.single:
+        consensus_enabled = False
+
     if args.run == "evening":
+        if consensus_enabled:
+            return run_evening_consensus(target_date, args.dry_run, hawk_config, secrets)
         return run_evening(target_date, args.dry_run, hawk_config, secrets)
     elif args.run == "morning":
         if args.dry_run:
