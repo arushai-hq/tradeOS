@@ -212,6 +212,33 @@ def test_output_writer_load_missing_returns_empty(tmp_path):
     assert picks == []
 
 
+def test_output_writer_preserves_bhavcopy(tmp_path):
+    """write_json preserves bhavcopy array in output JSON for evaluator."""
+    from tools.hawk_engine.output_writer import write_json
+
+    bhavcopy = [
+        {"symbol": "TCS", "open": 2508.1, "high": 2521.0, "low": 2460.1,
+         "close": 2463.0, "volume": 2694552, "change_pct": -1.80},
+        {"symbol": "INFY", "open": 1550.0, "high": 1560.0, "low": 1520.0,
+         "close": 1530.0, "volume": 8100000, "change_pct": -1.29},
+    ]
+    result = {
+        "date": "2026-03-12",
+        "run": "evening",
+        "bhavcopy": bhavcopy,
+        "watchlist": [{"rank": 1, "symbol": "TCS"}],
+        "metadata": {},
+    }
+    filepath = write_json(result, str(tmp_path))
+
+    with open(filepath) as f:
+        loaded = json.load(f)
+    assert "bhavcopy" in loaded
+    assert len(loaded["bhavcopy"]) == 2
+    assert loaded["bhavcopy"][0]["symbol"] == "TCS"
+    assert loaded["bhavcopy"][1]["close"] == 1530.0
+
+
 # ---------------------------------------------------------------------------
 # (d) Telegram formatter produces expected message format
 # ---------------------------------------------------------------------------

@@ -135,6 +135,7 @@ def run_evening(target_date: date, dry_run: bool, hawk_config: dict, secrets: di
             "run": "evening",
             "regime": data.get("regime", "unknown"),
             "market_context": market_context,
+            "bhavcopy": data.get("bhavcopy", []),
             "watchlist": [],
             "metadata": {
                 "model": hawk_config.get("model", "claude-sonnet-4-20250514"),
@@ -174,6 +175,7 @@ def run_evening(target_date: date, dry_run: bool, hawk_config: dict, secrets: di
         "run": "evening",
         "regime": data.get("regime", "unknown"),
         "market_context": market_context,
+        "bhavcopy": data.get("bhavcopy", []),
         "watchlist": llm_result.get("watchlist", []),
         "metadata": {
             **llm_result.get("metadata", {}),
