@@ -45,6 +45,17 @@ This file is append-only. Current state lives in TradeOS_context.md (repo root).
 | 2026-03-10 | Session 04 Debrief | 2 trades (LT SHORT, AXISBANK SHORT). Kill switch false-triggered at 30s — phantom unrealized P&L -₹199,679 from B7. Ghost positions from B8. Net P&L: -₹239 (charges). Slot-based sizing worked correctly. | 2 critical bugs (B7, B8), 3 minor (B9-B11). |
 | 2026-03-10 | Bug Fixes B7+B8 | B7: unrealized P&L field mismatch fixed (`cc9c018`). B8: exit fill snapshot-before-delete (`7ed6b7a`). Tests: 318→329. | Session 05 ready. Two critical Session 04 bugs resolved. |
 | 2026-03-10 | Bug Fixes B9-B11 | B9: report parser hardened (`028995d`). B10: pre-market warnings gated (`028995d`). B11: regime double-init fixed (`028995d`). All Session 04 bugs resolved. Tests: 329→340. | Session 05 ready. Clean system. |
+| 2026-03-11 | HAWK Design + Rules | HAWK spec complete (`docs/hawk_spec.md`). Telegram channel separation rule added. Git branching model established (feature/*/fix/*/main). | Design + engineering practices locked. |
+
+---
+
+## Archived TODOs (Resolved) — B12-B14
+
+| Bug | Impact | Priority |
+|-----|--------|----------|
+| ✅ B12 gross_pnl=0.0 on position close — fixed: `af8a007`. emergency_exit_all used entry_price as exit_price; now uses tick price. | CRITICAL — resolved | Fixed |
+| ✅ B13 Telegram heartbeat wrong entry/direction — fixed: `af8a007`. Telegram read entry_price/direction from shared_state which uses avg_price/side. Now uses resolve_position_fields(). | HIGH — resolved | Fixed |
+| ✅ B14 exit_reason=KILL_SWITCH instead of HARD_EXIT_1500 — fixed: `af8a007`. emergency_exit_all now accepts exit_type parameter; hard exit passes "HARD_EXIT". | MEDIUM — resolved | Fixed |
 
 ---
 
