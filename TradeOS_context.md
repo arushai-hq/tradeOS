@@ -29,6 +29,8 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | `tools/session_report.py` | Standalone CLI session report — parses structlog, outputs signal/trade/P&L/regime/health tables. Supports `--export csv/xlsx/all` |
 | `risk_manager/position_sizer.py` | 3-layer slot-based sizing: risk-based → capital cap → viability floors (min_risk ₹1K, min_value ₹15K) |
 | `hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect + nsetools. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
+| `migrations/` | SQL migration files. `001_create_sessions_table.sql`. Auto-created at startup if missing. |
+| `tools/db_backfill_session07.py` | One-time data fix for Session 07 trades (incorrect P&L + exit_reason from pre-B12 code). |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
 **Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
@@ -40,7 +42,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **453 passing, 0 failures, 12 skipped as of commit af8a007** |
+| Tests | **464 passing, 0 failures, 12 skipped as of commit 01d1ab6** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -54,6 +56,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | New tooling | Rich Telegram notifications (`cdd066b`) and session report CLI (`4559b7a`) |
 | Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
 | Slot-based position sizing | 3-layer calculation implemented (`361876e`). No-entry window at 14:30 IST (`c60648f`). Min slot capital ₹40K startup validation + pending order cancellation at hard_exit (`c862313`). |
+| DB trade history | D1 signal status updates (FILLED/REJECTED) wired. D3 sessions table created with EOD write. D4 backfill script ready. D5 dead code removed from storage.py. On feature/db-trade-history — pending VPS deploy + merge. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -110,7 +113,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | HAWK: nsepython bhavcopy/FII-DII broken (API changed) | Using KiteConnect fallback. Delivery % unavailable. | Medium |
 | HAWK: Telegram config for HAWK-Picks channel | bot_token + chat_id not yet configured in secrets.yaml | Medium |
 | HAWK: Regime shows "unknown" | Needs TradeOS regime integration | Low |
-| B12-B14 verify in Session 08 | Confirm correct P&L, Telegram display, exit reason in live session | High |
+| D2: System events expansion | SESSION_START, SESSION_END, KILL_SWITCH, REGIME_CHANGE, HARD_EXIT not yet captured | Medium |
 | HAWK: evaluator shows "?" for consensus conviction | Evaluator not parsing consensus conviction field | Medium |
 | HAWK: morning run looks for today's evening file | Should look for yesterday's evening file | Medium |
 
@@ -125,7 +128,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
 - **Futures paper trading** — NIFTY futures alongside S1. Gated on: 10 completed S1 trades + 3 clean sessions + verified P&L + 1 winner. Infrastructure needed: lot-aware position sizer, expiry management, margin monitoring. Design (Nemawashi) can begin during S1 validation phase — no code until gates clear.
 - **Commodities** — Deferred until futures infrastructure built and validated.
-- **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. See session notes for detail.
+- **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. Phase 1 progress — DB trade history (D1+D3) complete. Token automation next. Remaining Phase 1: log rotation + systemd.
 
 ---
 
@@ -150,6 +153,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-12 | Merge + Consensus | feature/hawk merged into main (`094e04a`). 439 tests. HAWK multi-model consensus built (Claude+Gemini+GPT-5.4+Kimi). Day 2: 12 unanimous picks, $0.23/run. Model comparison completed. | Unified codebase. Session 07 ready. |
 | 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
 | 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
+| 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
 
 ---
 
@@ -171,4 +175,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-13** — Session 07 milestone (first trades +₹1,390). B12-B14 fixed. Weekend: DB design + token automation. New session starting.
+**2026-03-13** — DB trade history feature complete (feature/db-trade-history). Signal status updates, sessions table, backfill script. Weekend token automation next.
