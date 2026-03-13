@@ -85,6 +85,7 @@ class OrderMonitor:
         exit_manager: "ExitManager",
         config: dict,
         notifier=None,
+        db_pool=None,
     ) -> None:
         self._kite = kite
         self._osm = osm
@@ -94,6 +95,8 @@ class OrderMonitor:
         self._mode: str = config.get("system", {}).get("mode", "paper")
         self._is_paper: bool = self._mode == "paper"
         self._notifier = notifier
+        self._db_pool = db_pool
+        self._session_date = datetime.now(IST).date()
 
         # Set of order_ids already sent to accounting callbacks
         self._processed_order_ids: set[str] = set()
@@ -253,6 +256,11 @@ class OrderMonitor:
             fill_price=float(fill_price),
         )
 
+        # D1: Update signal status to FILLED in DB
+        await self._update_signal_status(
+            order.symbol, "FILLED", order_id=order.order_id,
+        )
+
         # Notify RiskManager
         await self._risk_manager.on_fill(
             symbol=order.symbol,
@@ -370,3 +378,47 @@ class OrderMonitor:
             }
             for o in active
         }
+
+    # ------------------------------------------------------------------
+    # D1: Signal status DB updates
+    # ------------------------------------------------------------------
+
+    async def _update_signal_status(
+        self,
+        symbol: str,
+        status: str,
+        *,
+        order_id: str | None = None,
+    ) -> None:
+        """Update the most recent PENDING signal for this symbol today."""
+        if getattr(self, "_db_pool", None) is None:
+            return
+        try:
+            async with self._db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE signals SET status = $1, order_id = $2
+                    WHERE id = (
+                        SELECT id FROM signals
+                        WHERE session_date = $3 AND symbol = $4 AND status = 'PENDING'
+                        ORDER BY signal_time DESC LIMIT 1
+                    )
+                    """,
+                    status,
+                    order_id,
+                    self._session_date,
+                    symbol,
+                )
+            log.debug(
+                "signal_status_updated",
+                symbol=symbol,
+                status=status,
+                order_id=order_id,
+            )
+        except Exception as exc:
+            log.error(
+                "signal_status_update_failed",
+                symbol=symbol,
+                status=status,
+                error=str(exc),
+            )

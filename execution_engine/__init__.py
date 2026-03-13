@@ -151,6 +151,7 @@ class ExecutionEngine:
             exit_manager=self._exit_manager,
             config=self._config,
             notifier=self._notifier,
+            db_pool=self._db_pool,
         )
 
         log.info(
@@ -265,6 +266,11 @@ class ExecutionEngine:
                     entry=float(signal.theoretical_entry),
                     stop=float(signal.stop_loss),
                 )
+            # D1: Update signal status in DB
+            await self._update_signal_status(
+                signal.symbol, "REJECTED",
+                reject_reason=f"SIZER_REJECTED:{signal.direction}",
+            )
             return
 
         order = await self._order_placer.place_entry(signal, qty)
@@ -401,3 +407,46 @@ class ExecutionEngine:
             zerodha_orders_checked=len(zerodha_orders),
         )
         return system_ready
+
+    # ------------------------------------------------------------------
+    # D1: Signal status DB updates
+    # ------------------------------------------------------------------
+
+    async def _update_signal_status(
+        self,
+        symbol: str,
+        status: str,
+        *,
+        reject_reason: str | None = None,
+        order_id: str | None = None,
+    ) -> None:
+        """Update the most recent PENDING signal for this symbol today."""
+        try:
+            async with self._db_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE signals SET status = $1, reject_reason = $2, order_id = $3
+                    WHERE id = (
+                        SELECT id FROM signals
+                        WHERE session_date = $4 AND symbol = $5 AND status = 'PENDING'
+                        ORDER BY signal_time DESC LIMIT 1
+                    )
+                    """,
+                    status,
+                    reject_reason,
+                    order_id,
+                    self._session_date,
+                    symbol,
+                )
+            log.debug(
+                "signal_status_updated",
+                symbol=symbol,
+                status=status,
+            )
+        except Exception as exc:
+            log.error(
+                "signal_status_update_failed",
+                symbol=symbol,
+                status=status,
+                error=str(exc),
+            )
