@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
-import json
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -186,92 +185,3 @@ class TickStorage:
             log.critical("tick_storage_fallback_csv_failed",
                          path=str(csv_path), error=str(exc))
 
-    # ------------------------------------------------------------------
-    # Low-frequency direct writes (not batched)
-    # ------------------------------------------------------------------
-
-    async def write_signal(self, signal: dict) -> None:
-        """Write a signal to the signals table (immediate INSERT, not batched)."""
-        if self._pool is None:
-            return
-        try:
-            async with self._pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO signals (
-                        session_date, symbol, instrument_token, direction,
-                        signal_time, candle_time,
-                        ema9, ema21, rsi, vwap, volume_ratio,
-                        theoretical_entry, stop_loss, target,
-                        order_id, status
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-                    """,
-                    self._session_date,
-                    signal["symbol"], signal["instrument_token"], signal["direction"],
-                    signal["signal_time"], signal["candle_time"],
-                    signal["ema9"], signal["ema21"], signal["rsi"],
-                    signal["vwap"], signal["volume_ratio"],
-                    signal["theoretical_entry"], signal["stop_loss"], signal["target"],
-                    signal.get("order_id"), signal.get("status", "PENDING"),
-                )
-            log.info("signal_written",
-                     symbol=signal["symbol"], direction=signal["direction"])
-        except Exception as exc:
-            log.error("signal_write_failed",
-                      symbol=signal.get("symbol"), error=str(exc))
-
-    async def write_trade(self, trade: dict) -> None:
-        """Write a completed trade to the trades table (immediate INSERT)."""
-        if self._pool is None:
-            return
-        try:
-            async with self._pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO trades (
-                        session_date, symbol, direction, signal_id,
-                        entry_order_id, entry_time, actual_entry, theoretical_entry,
-                        entry_slippage, qty,
-                        exit_order_id, exit_time, actual_exit, exit_reason,
-                        gross_pnl, charges, net_pnl, pnl_pct
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-                    """,
-                    self._session_date,
-                    trade["symbol"], trade["direction"], trade.get("signal_id"),
-                    trade["entry_order_id"], trade["entry_time"],
-                    trade["actual_entry"], trade["theoretical_entry"],
-                    trade.get("entry_slippage"), trade["qty"],
-                    trade.get("exit_order_id"), trade.get("exit_time"),
-                    trade.get("actual_exit"), trade.get("exit_reason"),
-                    trade.get("gross_pnl"), trade.get("charges"),
-                    trade.get("net_pnl"), trade.get("pnl_pct"),
-                )
-            log.info("trade_written",
-                     symbol=trade["symbol"], direction=trade["direction"],
-                     net_pnl=trade.get("net_pnl"))
-        except Exception as exc:
-            log.error("trade_write_failed",
-                      symbol=trade.get("symbol"), error=str(exc))
-
-    async def write_system_event(self, event: dict) -> None:
-        """Write a system event to the system_events table (immediate INSERT)."""
-        if self._pool is None:
-            return
-        try:
-            async with self._pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO system_events (
-                        session_date, event_time, event_type, level, detail, kill_switch_level
-                    ) VALUES ($1,$2,$3,$4,$5::jsonb,$6)
-                    """,
-                    self._session_date,
-                    event.get("event_time", datetime.now(IST)),
-                    event["event_type"],
-                    event.get("level", "INFO"),
-                    json.dumps(event["detail"]) if event.get("detail") else None,
-                    event.get("kill_switch_level"),
-                )
-        except Exception as exc:
-            log.error("system_event_write_failed",
-                      event_type=event.get("event_type"), error=str(exc))
