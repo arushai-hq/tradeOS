@@ -109,6 +109,7 @@ def _init_shared_state() -> dict:
         "daily_pnl_rs": 0.0,
         "consecutive_losses": 0,
         "kill_switch_level": 0,
+        "kill_switch_max": 0,
         # D6 — heartbeat
         "system_start_time": None,
         "tasks_alive": {
@@ -566,6 +567,9 @@ async def trigger_kill_switch(
         return  # Already at this level or higher — never downgrade
 
     shared_state["kill_switch_level"] = level
+    # Track max kill switch level for session summary
+    if level > shared_state.get("kill_switch_max", 0):
+        shared_state["kill_switch_max"] = level
     log.critical(
         "kill_switch_triggered",
         level=level,
@@ -929,8 +933,112 @@ async def run_trading_session(
 
 
 # ===========================================================================
-# SECTION 7 — Phase 3: End-of-day shutdown
+# SECTION 7 — Phase 3: End-of-day shutdown + session summary
 # ===========================================================================
+
+async def _write_session_summary(
+    db_pool: asyncpg.Pool,
+    shared_state: dict,
+    config: dict,
+) -> None:
+    """
+    Write a single session summary row to the sessions table.
+
+    Queries signal/trade counts from DB, reads regime + kill_switch_max from
+    shared_state. Uses ON CONFLICT to handle re-runs safely.
+    """
+    session_date = shared_state.get("session_date") or today_ist()
+    capital = float(config.get("capital", {}).get("total", 0))
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Signal counts
+            sig_row = await conn.fetchrow(
+                """
+                SELECT
+                    count(*) AS total,
+                    count(*) FILTER (WHERE status = 'FILLED') AS accepted,
+                    count(*) FILTER (WHERE status IN ('REJECTED','IGNORED','KILL_SWITCHED')) AS rejected
+                FROM signals WHERE session_date = $1
+                """,
+                session_date,
+            )
+            # Trade rollup
+            trade_row = await conn.fetchrow(
+                """
+                SELECT
+                    count(*) AS total,
+                    count(*) FILTER (WHERE net_pnl > 0) AS won,
+                    count(*) FILTER (WHERE net_pnl <= 0) AS lost,
+                    COALESCE(sum(gross_pnl), 0) AS gross_pnl,
+                    COALESCE(sum(charges), 0) AS total_charges,
+                    COALESCE(sum(net_pnl), 0) AS net_pnl
+                FROM trades WHERE session_date = $1
+                """,
+                session_date,
+            )
+
+        sig_total = sig_row["total"] if sig_row else 0
+        sig_accepted = sig_row["accepted"] if sig_row else 0
+        sig_rejected = sig_row["rejected"] if sig_row else 0
+        t_total = trade_row["total"] if trade_row else 0
+        t_won = trade_row["won"] if trade_row else 0
+        t_lost = trade_row["lost"] if trade_row else 0
+        gross_pnl = float(trade_row["gross_pnl"]) if trade_row else 0.0
+        total_charges = float(trade_row["total_charges"]) if trade_row else 0.0
+        net_pnl = float(trade_row["net_pnl"]) if trade_row else 0.0
+        net_pnl_pct = net_pnl / capital if capital > 0 else 0.0
+
+        regime = str(shared_state.get("market_regime") or "unknown")
+        ks_max = shared_state.get("kill_switch_max", 0)
+        health = "PASS" if ks_max < 2 else "FAIL"
+
+        start_time = shared_state.get("session_start_time") or now_ist()
+        end_time = now_ist()
+
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO sessions (
+                    session_date, start_time, end_time, regime,
+                    signals_total, signals_accepted, signals_rejected,
+                    trades_total, trades_won, trades_lost,
+                    gross_pnl, total_charges, net_pnl, net_pnl_pct,
+                    capital, kill_switch_max, health_status
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                ON CONFLICT (session_date) DO UPDATE SET
+                    end_time = EXCLUDED.end_time,
+                    regime = EXCLUDED.regime,
+                    signals_total = EXCLUDED.signals_total,
+                    signals_accepted = EXCLUDED.signals_accepted,
+                    signals_rejected = EXCLUDED.signals_rejected,
+                    trades_total = EXCLUDED.trades_total,
+                    trades_won = EXCLUDED.trades_won,
+                    trades_lost = EXCLUDED.trades_lost,
+                    gross_pnl = EXCLUDED.gross_pnl,
+                    total_charges = EXCLUDED.total_charges,
+                    net_pnl = EXCLUDED.net_pnl,
+                    net_pnl_pct = EXCLUDED.net_pnl_pct,
+                    capital = EXCLUDED.capital,
+                    kill_switch_max = EXCLUDED.kill_switch_max,
+                    health_status = EXCLUDED.health_status
+                """,
+                session_date, start_time, end_time, regime,
+                sig_total, sig_accepted, sig_rejected,
+                t_total, t_won, t_lost,
+                gross_pnl, total_charges, net_pnl, round(net_pnl_pct, 4),
+                capital, ks_max, health,
+            )
+
+        log.info(
+            "session_summary_written",
+            session_date=str(session_date),
+            trades=t_total,
+            net_pnl=round(net_pnl, 2),
+            health=health,
+        )
+    except Exception as exc:
+        log.error("session_summary_write_failed", error=str(exc))
 
 async def end_of_day_shutdown(
     exec_engine: ExecutionEngine,
@@ -970,6 +1078,9 @@ async def end_of_day_shutdown(
                 await exit_manager.emergency_exit_all("hard_exit_1500")
             except Exception as exc:
                 log.error("eod_emergency_exit_failed", error=str(exc))
+
+    # Session summary — AFTER all positions closed, PnlTracker has final numbers
+    await _write_session_summary(db_pool, shared_state, config)
 
     # 15:20 — final reconciliation event
     try:
