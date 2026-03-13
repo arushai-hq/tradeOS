@@ -201,7 +201,9 @@ async def test_b1_risk_watchdog_calls_emergency_exit_all_at_1500_with_positions(
                 regime_detector=None,
             )
 
-    mock_exit_manager.emergency_exit_all.assert_called_once_with("hard_exit_1500")
+    mock_exit_manager.emergency_exit_all.assert_called_once_with(
+        "hard_exit_1500", exit_type="HARD_EXIT",
+    )
     assert shared_state["accepting_signals"] is False
 
 

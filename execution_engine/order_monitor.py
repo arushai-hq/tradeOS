@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Optional
 
 import pytz
 
+from utils.position_helpers import resolve_position_fields
 from execution_engine.state_machine import (
     Order,
     OrderState,
@@ -314,13 +315,7 @@ class OrderMonitor:
 
         # Notify Telegram using snapshotted data (not deleted shared_state)
         if pos_info and getattr(self, "_notifier", None) is not None:
-            entry_price_float: float = float(
-                pos_info.get("avg_price", pos_info.get("entry_price", 0.0))
-            )
-            direction = pos_info.get("direction")
-            if direction is None:
-                side = pos_info.get("side", "BUY")
-                direction = "LONG" if side == "BUY" else "SHORT"
+            entry_price_float, direction, _qty = resolve_position_fields(pos_info)
             fill_price_float: float = float(fill_price)
             pnl_points = (
                 fill_price_float - entry_price_float

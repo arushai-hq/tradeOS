@@ -228,33 +228,50 @@ class ExitManager:
             await self._place_exit_and_remove(symbol, "STOP", qty, stop_loss)
             return
 
-    async def emergency_exit_all(self, reason: str) -> None:
+    async def emergency_exit_all(
+        self, reason: str, exit_type: str = "KILL_SWITCH",
+    ) -> None:
         """
-        Emergency exit ALL open positions. Called by Level 2 kill switch.
+        Emergency exit ALL open positions.
+
+        Called by Level 2 kill switch (exit_type="KILL_SWITCH") or
+        15:00 hard exit (exit_type="HARD_EXIT").
 
         Logs CRITICAL. Continues even if individual exits fail.
 
         Args:
-            reason: Kill switch trigger reason (for logging).
+            reason:    Trigger reason (for logging).
+            exit_type: Exit type for order state machine.
+                       "KILL_SWITCH" (default) or "HARD_EXIT".
         """
         symbols = list(self._positions.keys())
 
         log.critical(
             "emergency_exit_all",
             reason=reason,
+            exit_type=exit_type,
             positions=symbols,
         )
+
+        tick_prices = self._shared_state.get("last_tick_prices", {})
 
         for symbol in symbols:
             position = self._positions.get(symbol)
             if position is None:
                 continue
             qty = position["qty"]
-            # Use current open position price as exit price fallback
             entry_price = position.get("entry_price", Decimal("0"))
+            # B12 fix: use latest tick price for realistic P&L calculation.
+            # Fallback to entry_price only if no tick data available.
+            tick_price = tick_prices.get(symbol)
+            exit_price = (
+                Decimal(str(tick_price))
+                if tick_price is not None
+                else entry_price
+            )
             try:
                 await self._place_exit_and_remove(
-                    symbol, "KILL_SWITCH", qty, entry_price
+                    symbol, exit_type, qty, exit_price
                 )
             except Exception as exc:
                 log.error(

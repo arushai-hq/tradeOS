@@ -38,6 +38,7 @@ from risk_manager import RiskManager
 from strategy_engine import StrategyEngine
 from utils.db_events import write_system_event
 from utils.telegram import resolve_telegram_credentials, send_daily_summary, send_telegram
+from utils.position_helpers import resolve_position_fields
 from utils.telegram_notifier import TelegramNotifier
 from utils.time_utils import is_market_hours, now_ist, today_ist
 
@@ -624,12 +625,7 @@ def _compute_unrealized_pnl(open_positions: dict, tick_prices: dict) -> float:
             log.debug("pnl_skip_no_tick", symbol=symbol,
                       reason="no_tick_price_available")
             continue
-        entry_price = float(pos.get("entry_price", pos.get("avg_price", 0.0)))
-        qty = abs(int(pos.get("qty", 0)))
-        direction = pos.get("direction")
-        if direction is None:
-            side = pos.get("side", "BUY")
-            direction = "LONG" if side == "BUY" else "SHORT"
+        entry_price, direction, qty = resolve_position_fields(pos)
         if direction == "LONG":
             unrealized += (float(current_price) - entry_price) * qty
         else:  # SHORT
@@ -757,7 +753,9 @@ async def risk_watchdog(
                             _session_pnl = shared_state.get("daily_pnl_rs", 0.0)
                             notifier.notify_hard_exit(_pos_snap, _tick_snap, _session_pnl)
                         try:
-                            await exit_manager.emergency_exit_all("hard_exit_1500")
+                            await exit_manager.emergency_exit_all(
+                                "hard_exit_1500", exit_type="HARD_EXIT",
+                            )
                             log.info(
                                 "hard_exit_positions_closed",
                                 positions_closed=open_count,

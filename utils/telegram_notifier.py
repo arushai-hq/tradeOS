@@ -32,6 +32,7 @@ import pytz
 import structlog
 import yaml
 
+from utils.position_helpers import resolve_position_fields
 from utils.telegram import send_telegram
 
 log = structlog.get_logger()
@@ -59,9 +60,7 @@ def _unrealized_pnl(open_positions: dict, tick_prices: dict) -> float:
         current = tick_prices.get(symbol)
         if current is None:
             continue
-        entry = float(pos.get("entry_price", 0.0))
-        qty = int(pos.get("qty", 0))
-        direction = pos.get("direction", "LONG")
+        entry, direction, qty = resolve_position_fields(pos)
         if direction == "LONG":
             total += (float(current) - entry) * qty
         else:
@@ -393,10 +392,8 @@ class TelegramNotifier:
         rows = []
         total_unrealized = 0.0
         for sym, pos in positions_snapshot.items():
-            direction = pos.get("direction", "LONG")
-            entry = float(pos.get("entry_price", 0.0))
+            entry, direction, qty = resolve_position_fields(pos)
             current = float(tick_prices.get(sym, entry))
-            qty = int(pos.get("qty", 0))
             pnl = (current - entry) * qty if direction == "LONG" else (entry - current) * qty
             total_unrealized += pnl
             sign = "+" if pnl >= 0 else ""
@@ -435,10 +432,8 @@ class TelegramNotifier:
             sep = "-" * 52
             rows = []
             for sym, pos in open_pos.items():
-                direction = pos.get("direction", "LONG")
-                entry = float(pos.get("entry_price", 0.0))
+                entry, direction, qty = resolve_position_fields(pos)
                 current = float(tick_prices.get(sym, entry))
-                qty = int(pos.get("qty", 0))
                 unrl = (
                     (current - entry) * qty
                     if direction == "LONG"
