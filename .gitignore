@@ -31,6 +31,8 @@ data_engine/fallback/
 # Data files (backups, exports)
 *.sql
 tradeos_session*.sql
+# Allow migration SQL files
+!migrations/*.sql
 
 # IDE
 .vscode/
