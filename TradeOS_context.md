@@ -125,15 +125,18 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
 - **Futures paper trading** — NIFTY futures alongside S1. Gated on: 10 completed S1 trades + 3 clean sessions + verified P&L + 1 winner. Infrastructure needed: lot-aware position sizer, expiry management, margin monitoring. Design (Nemawashi) can begin during S1 validation phase — no code until gates clear.
 - **Commodities** — Deferred until futures infrastructure built and validated.
+- **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. See session notes for detail.
 
 ---
 
 ## 8. Immediate Next Actions
 
-1. **Session 08** tomorrow — verify B12-B14 fixes (correct P&L, Telegram display, exit reason).
-2. HAWK Day 3 consensus done (8 unanimous SHORT picks). Eval after Session 08.
-3. Futures gate progress: 2/10 trades complete, 0/3 clean sessions (Session 07 had P&L bugs — doesn't count as clean).
-4. Review trailing stop data gate on **2026-03-16** (Sunday — review Monday).
+1. **Session 08** — Monday March 16. Verify B12-B14 fixes (correct P&L, Telegram display, exit reason).
+2. Trailing stop data gate review — March 16 (likely defer, only 2 trades, neither hit 2R).
+3. DB trade history — Nemawashi design: TimescaleDB tables (trades, signals, daily_sessions). Dual-write alongside logs. Use existing TimescaleDB + asyncpg infrastructure.
+4. Token semi-automation — Telegram-triggered login flow: cron sends login URL to Telegram, user taps + TOTP, callback server captures token, confirms via Telegram, starts main.py.
+5. HAWK Day 3 eval Monday after Session 08: `python tools/hawk_eval.py --date 2026-03-13`
+6. Futures gate: 2/10 trades, 0/3 clean sessions.
 
 ---
 
@@ -146,6 +149,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-12 | Session 06 + HAWK | Config tuning: volume_ratio_min 1.5→1.2 (`26d840e`), no_entry_after 14:30→14:45 (`42fd4d5`). HAWK evaluator built (`e4fd409`). Bhavcopy embed fix (`41886c2`). Day 1 eval: 73.3% direction (11/15), HIGH 100% (4/4). Tests: 361 (main), 407 (feature/hawk). | Config tuned. HAWK eval pipeline complete. |
 | 2026-03-12 | Merge + Consensus | feature/hawk merged into main (`094e04a`). 439 tests. HAWK multi-model consensus built (Claude+Gemini+GPT-5.4+Kimi). Day 2: 12 unanimous picks, $0.23/run. Model comparison completed. | Unified codebase. Session 07 ready. |
 | 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
+| 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
 
 ---
 
@@ -167,4 +171,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-13** — Session 07 — first trades, +₹1,390 net. B12-B14 fixed. HAWK SHORT picks 100% across 2 days. 453 tests. 2/10 toward futures gate.
+**2026-03-13** — Session 07 milestone (first trades +₹1,390). B12-B14 fixed. Weekend: DB design + token automation. New session starting.
