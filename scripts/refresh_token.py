@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-TradeOS — Daily Zerodha Token Refresh
+TradeOS — Daily Zerodha Token Refresh (Manual Fallback)
+
+NOTE: For automated daily flow, use token_cron.py + token_server.py instead.
+This script remains available as a manual fallback.
+
 Run every morning before starting TradeOS.
 Usage: python scripts/refresh_token.py
 Time: ~90 seconds
