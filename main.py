@@ -45,29 +45,81 @@ from utils.time_utils import is_market_hours, now_ist, today_ist
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")
 
+_CURRENT_LOG_PATH: str = ""
 
-def _configure_structlog(dev_mode: bool = False) -> None:
-    """Configure structlog: JSON to logs/tradeos.log + console in dev mode."""
-    os.makedirs("logs", exist_ok=True)
 
-    shared_processors = [
+def get_current_log_path() -> str:
+    """Return the absolute path to the current session log file.
+
+    Set during _configure_structlog(). Empty string if not yet configured.
+    """
+    return _CURRENT_LOG_PATH
+
+
+def _configure_structlog(
+    dev_mode: bool = False,
+    log_subdir: str = "tradeos",
+    log_prefix: str = "tradeos",
+) -> None:
+    """Configure structlog: dual output to dated file + console.
+
+    File output: logs/{log_subdir}/{log_prefix}_{YYYY-MM-DD}.log
+      Format: ConsoleRenderer(colors=False) — compatible with session_report.py
+    Console output: ConsoleRenderer(colors=True)
+    """
+    global _CURRENT_LOG_PATH
+
+    log_dir = os.path.join("logs", log_subdir)
+    os.makedirs(log_dir, exist_ok=True)
+
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    log_filename = f"{log_prefix}_{today_str}.log"
+    _CURRENT_LOG_PATH = os.path.abspath(os.path.join(log_dir, log_filename))
+
+    # Pre-chain: processors that run before stdlib formatting
+    pre_chain = [
         structlog.stdlib.add_log_level,
-        # add_logger_name requires stdlib logging.Logger (.name attr) — incompatible with PrintLoggerFactory
         structlog.processors.TimeStamper(fmt="iso", utc=False),
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
 
-    if dev_mode:
-        shared_processors.append(structlog.dev.ConsoleRenderer())
-    else:
-        shared_processors.append(structlog.processors.JSONRenderer())
+    # File handler — ConsoleRenderer WITHOUT colors (session_report.py compatible)
+    file_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.dev.ConsoleRenderer(colors=False),
+        ],
+    )
+    file_handler = logging.FileHandler(_CURRENT_LOG_PATH, encoding="utf-8")
+    file_handler.setFormatter(file_formatter)
 
+    # Console handler — ConsoleRenderer WITH colors
+    console_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.dev.ConsoleRenderer(colors=True),
+        ],
+    )
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(console_formatter)
+
+    # Configure stdlib root logger with dual handlers
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    root_logger.setLevel(logging.DEBUG)
+
+    # Configure structlog to use stdlib integration
     structlog.configure(
-        processors=shared_processors,  # type: ignore[arg-type]
-        wrapper_class=structlog.BoundLogger,
+        processors=[
+            *pre_chain,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
@@ -526,7 +578,8 @@ def run_pre_market_gate(shared_state: dict) -> tuple[KiteConnect, dict, dict]:
     log.info("pre_market_gate_passed", date=today_str)
     _send_startup_alert_sync(
         secrets,
-        f"🟢 TradeOS {today_str}: Pre-market gate passed. Starting up.",
+        f"🟢 TradeOS {today_str}: Pre-market gate passed. Starting up.\n"
+        f"📄 Log: {get_current_log_path()}",
     )
 
     return kite, config, secrets
@@ -1300,7 +1353,7 @@ if __name__ == "__main__":
     os.environ["TZ"] = "Asia/Kolkata"
 
     # Configure structlog before any log calls
-    _configure_structlog(dev_mode=True)
+    _configure_structlog(dev_mode=True, log_subdir="tradeos", log_prefix="tradeos")
 
     # Register SIGTERM and SIGINT handlers for graceful shutdown
     signal.signal(signal.SIGTERM, _handle_sigterm)

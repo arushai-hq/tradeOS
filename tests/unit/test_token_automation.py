@@ -11,13 +11,14 @@ Covers:
 
 import io
 import os
+import subprocess
 import tempfile
 import threading
 import time
 from datetime import datetime
 from http.server import HTTPServer
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch, PropertyMock, call
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
@@ -330,6 +331,198 @@ class TestTokenCronEscalation:
         # Verify message content
         assert "Daily Authentication" in telegram_messages[0]
         assert "Reminder" in telegram_messages[1]
-        assert "1 hour to market open" in telegram_messages[2]
+        assert "Reminder" in telegram_messages[2]
         assert "FINAL WARNING" in telegram_messages[3]
         assert "expired" in telegram_messages[4]
+
+
+# ---------------------------------------------------------------------------
+# (f) Auto-start main.py on weekday
+# ---------------------------------------------------------------------------
+
+class TestAutoStartWeekday:
+    """Test auto-start fires on weekdays."""
+
+    def test_auto_start_weekday(self):
+        """Monday → tmux new-session called with correct args."""
+        # Monday 2026-03-16
+        monday = datetime(2026, 3, 16, 7, 30, tzinfo=IST)
+
+        mock_run = MagicMock()
+        # has-session returns 1 (no existing session)
+        mock_run.return_value = MagicMock(returncode=1)
+        mock_popen = MagicMock()
+
+        with (
+            patch("scripts.token_server.datetime") as mock_dt,
+            patch("scripts.token_server.subprocess.run", mock_run),
+            patch("scripts.token_server.subprocess.Popen", mock_popen),
+            patch("scripts.token_server.time.sleep"),
+            patch("scripts.token_server._send_telegram") as mock_tg,
+        ):
+            mock_dt.now.return_value = monday
+            # After Popen, has-session returns 0 (session exists)
+            mock_run.side_effect = [
+                MagicMock(returncode=1),  # first has-session check
+                MagicMock(returncode=0),  # verify after start
+            ]
+
+            from scripts.token_server import _auto_start_main
+            _auto_start_main({"telegram": {}}, "TestUser")
+
+        # Verify tmux new-session called
+        popen_args = mock_popen.call_args[0][0]
+        assert "tmux" in popen_args
+        assert "new-session" in popen_args
+        assert "tradeos" in popen_args
+        assert "main.py" in popen_args
+
+        # Verify success Telegram
+        tg_msg = mock_tg.call_args[0][1]
+        assert "main.py started" in tg_msg
+
+
+# ---------------------------------------------------------------------------
+# (g) Auto-start skipped on weekend
+# ---------------------------------------------------------------------------
+
+class TestAutoStartWeekend:
+    """Test auto-start is skipped on weekends."""
+
+    def test_auto_start_weekend(self):
+        """Saturday → subprocess NOT called, Telegram says Weekend."""
+        saturday = datetime(2026, 3, 14, 7, 30, tzinfo=IST)
+
+        mock_popen = MagicMock()
+
+        with (
+            patch("scripts.token_server.datetime") as mock_dt,
+            patch("scripts.token_server.subprocess.Popen", mock_popen),
+            patch("scripts.token_server._send_telegram") as mock_tg,
+        ):
+            mock_dt.now.return_value = saturday
+
+            from scripts.token_server import _auto_start_main
+            _auto_start_main({"telegram": {}}, "TestUser")
+
+        # subprocess.Popen should NOT be called
+        mock_popen.assert_not_called()
+
+        # Telegram should mention "Weekend"
+        tg_msg = mock_tg.call_args[0][1]
+        assert "Weekend" in tg_msg
+
+
+# ---------------------------------------------------------------------------
+# (h) Auto-start kills stale tmux session
+# ---------------------------------------------------------------------------
+
+class TestAutoStartStaleSession:
+    """Test stale tmux session is killed before starting new one."""
+
+    def test_auto_start_stale_session(self):
+        """Existing tmux session → kill-session called before new-session."""
+        monday = datetime(2026, 3, 16, 7, 30, tzinfo=IST)
+
+        run_calls = []
+        def mock_run(cmd, **kwargs):
+            run_calls.append(cmd)
+            # has-session returns 0 (session exists) for both calls
+            return MagicMock(returncode=0)
+
+        with (
+            patch("scripts.token_server.datetime") as mock_dt,
+            patch("scripts.token_server.subprocess.run", side_effect=mock_run),
+            patch("scripts.token_server.subprocess.Popen"),
+            patch("scripts.token_server.time.sleep"),
+            patch("scripts.token_server._send_telegram"),
+        ):
+            mock_dt.now.return_value = monday
+
+            from scripts.token_server import _auto_start_main
+            _auto_start_main({"telegram": {}}, "TestUser")
+
+        # Should have: has-session, kill-session, has-session (verify)
+        assert any("kill-session" in cmd for cmd in run_calls)
+        # kill-session should come before the verify has-session
+        kill_idx = next(i for i, c in enumerate(run_calls) if "kill-session" in c)
+        assert kill_idx == 1  # after first has-session
+
+
+# ---------------------------------------------------------------------------
+# (i) Auto-start failure doesn't crash
+# ---------------------------------------------------------------------------
+
+class TestAutoStartFailure:
+    """Test auto-start failure sends Telegram but doesn't crash."""
+
+    def test_auto_start_failure(self):
+        """subprocess.Popen raises → Telegram failure message, no crash."""
+        monday = datetime(2026, 3, 16, 7, 30, tzinfo=IST)
+
+        with (
+            patch("scripts.token_server.datetime") as mock_dt,
+            patch("scripts.token_server.subprocess.run", MagicMock(returncode=1)),
+            patch("scripts.token_server.subprocess.Popen", side_effect=OSError("tmux not found")),
+            patch("scripts.token_server._send_telegram") as mock_tg,
+        ):
+            mock_dt.now.return_value = monday
+
+            from scripts.token_server import _auto_start_main
+            # Should not raise
+            _auto_start_main({"telegram": {}}, "TestUser")
+
+        # Verify failure Telegram
+        tg_msg = mock_tg.call_args[0][1]
+        assert "failed to auto-start" in tg_msg
+
+
+# ---------------------------------------------------------------------------
+# (j) Config missing fallback — defaults used
+# ---------------------------------------------------------------------------
+
+class TestConfigMissingFallback:
+    """Test that both scripts work with missing token_automation config."""
+
+    def test_server_defaults_when_config_missing(self, tmp_path):
+        """Missing settings.yaml → server uses default port/timeout."""
+        fake_settings = tmp_path / "settings.yaml"
+        # Write settings without token_automation section
+        with open(fake_settings, "w") as f:
+            yaml.dump({"system": {"mode": "paper"}}, f)
+
+        with patch("scripts.token_server.SETTINGS_FILE", fake_settings):
+            from scripts.token_server import _load_token_config, _DEFAULTS
+
+            config = _load_token_config()
+            server_cfg = config.get("server", _DEFAULTS["server"])
+            auto_cfg = config.get("auto_start", _DEFAULTS["auto_start"])
+
+            assert server_cfg.get("port", 7291) == 7291
+            assert server_cfg.get("timeout_hours", 2) == 2
+            assert auto_cfg.get("enabled", True) is True
+            assert auto_cfg.get("weekdays_only", True) is True
+
+    def test_cron_defaults_when_config_missing(self, tmp_path):
+        """Missing settings.yaml → cron uses default timing."""
+        fake_settings = tmp_path / "settings.yaml"
+        # Write settings without token_automation section
+        with open(fake_settings, "w") as f:
+            yaml.dump({"system": {"mode": "paper"}}, f)
+
+        with patch("scripts.token_cron.SETTINGS_FILE", fake_settings):
+            from scripts.token_cron import _load_token_config, _parse_time, _DEFAULTS
+
+            config = _load_token_config()
+            cron_cfg = config.get("cron", _DEFAULTS["cron"])
+
+            reminders = [_parse_time(t) for t in cron_cfg.get("reminders", ["07:30", "08:00"])]
+            assert reminders == [(7, 30), (8, 0)]
+
+            final = _parse_time(cron_cfg.get("final_warning", "08:30"))
+            assert final == (8, 30)
+
+            deadline = _parse_time(cron_cfg.get("deadline", "08:45"))
+            assert deadline == (8, 45)
+
+            assert cron_cfg.get("check_interval_seconds", 30) == 30

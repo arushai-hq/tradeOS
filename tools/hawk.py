@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from datetime import date, datetime
@@ -27,18 +28,63 @@ sys.path.insert(0, ROOT)
 import pytz
 import structlog
 
-# Configure structlog for HAWK CLI output
-structlog.configure(
-    processors=[
+IST = pytz.timezone("Asia/Kolkata")
+
+
+def _configure_hawk_logging() -> None:
+    """Configure structlog for HAWK: dual output to file + console."""
+    log_dir = os.path.join(ROOT, "logs", "hawk")
+    os.makedirs(log_dir, exist_ok=True)
+
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    log_path = os.path.join(log_dir, f"hawk_{today_str}.log")
+
+    pre_chain = [
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.add_log_level,
-        structlog.dev.ConsoleRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(0),
-)
+    ]
+
+    # File handler — no colors
+    file_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.dev.ConsoleRenderer(colors=False),
+        ],
+    )
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(file_formatter)
+
+    # Console handler — with colors
+    console_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.dev.ConsoleRenderer(colors=True),
+        ],
+    )
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(console_formatter)
+
+    # Named logger for hawk (avoid root logger conflicts)
+    hawk_logger = logging.getLogger("hawk")
+    hawk_logger.handlers.clear()
+    hawk_logger.addHandler(file_handler)
+    hawk_logger.addHandler(console_handler)
+    hawk_logger.setLevel(logging.DEBUG)
+    hawk_logger.propagate = False
+
+    structlog.configure(
+        processors=[
+            *pre_chain,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory("hawk"),
+        cache_logger_on_first_use=True,
+    )
+
 
 log = structlog.get_logger()
-IST = pytz.timezone("Asia/Kolkata")
 
 
 def _print_summary(result: dict) -> None:
@@ -418,6 +464,8 @@ def _print_consensus_summary(result: dict) -> None:
 
 
 def main() -> int:
+    _configure_hawk_logging()
+
     parser = argparse.ArgumentParser(
         prog="hawk",
         description="HAWK — AI Market Intelligence Engine",

@@ -37,6 +37,7 @@ from kiteconnect import KiteConnect
 
 ROOT = Path(__file__).parent.parent
 SECRETS_FILE = ROOT / "config" / "secrets.yaml"
+SETTINGS_FILE = ROOT / "config" / "settings.yaml"
 TOKEN_SERVER_SCRIPT = ROOT / "scripts" / "token_server.py"
 SIGNAL_FILE = Path("/tmp/tradeos_token_ready")
 PID_FILE = Path("/tmp/tradeos_token_server.pid")
@@ -105,15 +106,48 @@ def _is_token_captured() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Escalation schedule
+# Config defaults (used if token_automation section missing)
 # ---------------------------------------------------------------------------
 
-# (hour, minute) thresholds in IST
-_REMINDER_0730 = (7, 30)
-_WARNING_0800 = (8, 0)
-_FINAL_0830 = (8, 30)
-_EXPIRED_0845 = (8, 45)
+_DEFAULTS = {
+    "cron": {
+        "reminders": ["07:30", "08:00"],
+        "final_warning": "08:30",
+        "deadline": "08:45",
+        "check_interval_seconds": 30,
+    },
+}
 
+
+def _load_token_config() -> dict:
+    """Load token_automation config from settings.yaml with defaults fallback."""
+    try:
+        with open(SETTINGS_FILE) as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("token_automation", _DEFAULTS)
+    except Exception:
+        return _DEFAULTS
+
+
+def _parse_time(time_str: str) -> tuple[int, int]:
+    """Parse 'HH:MM' string to (hour, minute) tuple."""
+    parts = time_str.split(":")
+    return (int(parts[0]), int(parts[1]))
+
+
+# Load config at module level
+_config = _load_token_config()
+_cron_cfg = _config.get("cron", _DEFAULTS["cron"])
+
+_REMINDERS = [_parse_time(t) for t in _cron_cfg.get("reminders", ["07:30", "08:00"])]
+_FINAL_WARNING = _parse_time(_cron_cfg.get("final_warning", "08:30"))
+_DEADLINE = _parse_time(_cron_cfg.get("deadline", "08:45"))
+CHECK_INTERVAL = _cron_cfg.get("check_interval_seconds", 30)
+
+
+# ---------------------------------------------------------------------------
+# Escalation schedule
+# ---------------------------------------------------------------------------
 
 def _past_threshold(now: datetime, threshold: tuple[int, int]) -> bool:
     h, m = threshold
@@ -165,17 +199,16 @@ def main() -> None:
         "🔑 TradeOS Daily Authentication\n"
         f"Tap to login → {login_url}\n"
         "After login + TOTP, token is captured automatically.\n"
-        "⏰ Window: 07:00 - 08:45 IST"
+        "⏰ Window: 07:00 - 08:45 IST | Auto-starts main.py after auth"
     ))
     print(f"Login URL sent to Telegram: {login_url}")
 
-    # Escalation loop
-    sent_0730 = False
-    sent_0800 = False
-    sent_0830 = False
+    # Escalation loop — track which reminders have been sent
+    sent_reminders = [False] * len(_REMINDERS)
+    sent_final = False
 
     while True:
-        time.sleep(30)
+        time.sleep(CHECK_INTERVAL)
 
         if _is_token_captured():
             _send_telegram(secrets, "✅ Token captured. Authentication complete.")
@@ -184,41 +217,35 @@ def main() -> None:
 
         now = _ist_now()
 
-        # 08:45 — expired
-        if _past_threshold(now, _EXPIRED_0845):
+        # Deadline — expired
+        if _past_threshold(now, _DEADLINE):
             _send_telegram(
                 secrets,
                 "❌ Token refresh window expired. No trading today.",
             )
             _kill_stale_server()
-            print("Token window expired (08:45 IST). Exiting.")
+            print(f"Token window expired ({_DEADLINE[0]:02d}:{_DEADLINE[1]:02d} IST). Exiting.")
             return
 
-        # 08:30 — final warning
-        if not sent_0830 and _past_threshold(now, _FINAL_0830):
+        # Final warning
+        if not sent_final and _past_threshold(now, _FINAL_WARNING):
             _send_telegram(secrets, (
                 "🚨 FINAL WARNING: Token not refreshed!\n"
                 "Market opens in 45 minutes.\n"
                 f"Tap NOW → {login_url}"
             ))
-            sent_0830 = True
+            sent_final = True
 
-        # 08:00 — warning
-        elif not sent_0800 and _past_threshold(now, _WARNING_0800):
-            _send_telegram(secrets, (
-                "⚠️ TradeOS: 1 hour to market open.\n"
-                "Token still not refreshed!\n"
-                f"Tap to login → {login_url}"
-            ))
-            sent_0800 = True
-
-        # 07:30 — reminder
-        elif not sent_0730 and _past_threshold(now, _REMINDER_0730):
-            _send_telegram(secrets, (
-                "⏰ Reminder: Token not yet refreshed.\n"
-                f"Tap to login → {login_url}"
-            ))
-            sent_0730 = True
+        # Reminders (in reverse order so latest fires first via elif)
+        else:
+            for i in range(len(_REMINDERS) - 1, -1, -1):
+                if not sent_reminders[i] and _past_threshold(now, _REMINDERS[i]):
+                    _send_telegram(secrets, (
+                        "⏰ Reminder: Token not yet refreshed.\n"
+                        f"Tap to login → {login_url}"
+                    ))
+                    sent_reminders[i] = True
+                    break
 
 
 if __name__ == "__main__":

@@ -247,6 +247,7 @@ def test_cli_consensus_flag_activates_consensus(tmp_path):
              "output_dir": str(tmp_path),
          }), \
          patch("tools.hawk_engine.config.load_secrets", return_value={}), \
+         patch("tools.hawk._configure_hawk_logging"), \
          patch("sys.argv", ["hawk", "--run", "evening", "--consensus"]):
         from tools.hawk import main
         main()
@@ -273,6 +274,7 @@ def test_cli_single_overrides_config(tmp_path):
              "output_dir": str(tmp_path),
          }), \
          patch("tools.hawk_engine.config.load_secrets", return_value={}), \
+         patch("tools.hawk._configure_hawk_logging"), \
          patch("sys.argv", ["hawk", "--run", "evening", "--single"]):
         from tools.hawk import main
         main()

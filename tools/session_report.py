@@ -10,12 +10,15 @@ Supports both pre-B5 event names:
 and post-B5 event names (commit ca7ddc9):
   signal_accepted, signal_rejected, order_filled, position_closed
 
-Usage:
+Usage (date-based log files):
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export csv
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export xlsx
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export all
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --verbose
+
+Legacy format (pre-date-logging):
     python tools/session_report.py logs/paper_session_03.log
-    python tools/session_report.py logs/paper_session_03.log --export csv
-    python tools/session_report.py logs/paper_session_03.log --export xlsx
-    python tools/session_report.py logs/paper_session_03.log --export all
-    python tools/session_report.py logs/paper_session_03.log --verbose
 """
 from __future__ import annotations
 
