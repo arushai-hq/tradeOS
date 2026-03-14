@@ -35,7 +35,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | `scripts/token_cron.py` | Daily cron orchestrator. Starts token_server, sends login URL to Telegram, 4-stage escalation (07:00, 07:30, 08:00, 08:30 IST), kills server at 08:45 if no auth. |
 | `scripts/log_rotation.py` | Log rotation: compress after 30 days, delete after 90 days. Runs daily via cron at 02:00 IST. Configurable via settings.yaml `log_rotation` section. |
 | `docker/nginx/` | Nginx reverse proxy (SSL on port 11443). Proxies /callback to token_server. Let's Encrypt cert via certbot. Port 80 for cert renewal only. |
-| `bin/tradeos` | Unified CLI entry point. Bash shim dispatching to all Python scripts/tools. Subcommands: auth, start/stop/restart, status, report, hawk, logs, db, docker, config, cron, test, version. Symlinked to `/usr/local/bin/tradeos` via `scripts/install_tradeos_cli.sh`. |
+| `bin/tradeos` | Unified CLI entry point (v0.2.0). Bash shim with color-coded output. 25+ subcommands: auth, start/stop/restart, status, preflight, report (+ auto), hawk, logs, db, docker, config, cron, test, version. Symlinked to `/usr/local/bin/tradeos` via `scripts/install_tradeos_cli.sh`. |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
 **Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
@@ -63,6 +63,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Slot-based position sizing | 3-layer calculation implemented (`361876e`). No-entry window at 14:30 IST (`c60648f`). Min slot capital ₹40K startup validation + pending order cancellation at hard_exit (`c862313`). |
 | DB trade history | D1 signal status updates (FILLED/REJECTED) wired. D3 sessions table created with EOD write. D4 backfill script ready. D5 dead code removed from storage.py. On feature/db-trade-history — pending VPS deploy + merge. |
 | Token automation | Token automation complete. Nginx + Let's Encrypt (port 11443). Callback server captures token, auto-starts main.py in tmux (weekdays). 4-stage Telegram escalation. Config-driven timing. Date-based production logging: `logs/tradeos/tradeos_{date}.log`, `logs/hawk/hawk_{date}.log`, `logs/token/token_{date}.log`. Log rotation: 30-day compress, 90-day delete. |
+| tradeos CLI | v0.2.0 — 25+ subcommands, color-coded output, preflight check, auto-report. Installed at `/usr/local/bin/tradeos`. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -162,7 +163,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
 | 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
 | 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
-| 2026-03-14 | Token Automation + Infra | Nginx + Let's Encrypt (port 11443), token_server.py callback with auto-start main.py (tmux), token_cron.py with 4-stage configurable Telegram escalation, date-based production logging (tradeos/hawk/token subdirs), log rotation (30d compress + 90d delete). DB trade history deployed + backfilled. Session report DB mode + verify cross-check. `tradeos` unified CLI (bin/tradeos + installer). Tests: 453→489. | Weekend goals exceeded. Phase 1 production readiness: nearly complete. |
+| 2026-03-14 | Token Automation + Infra | Nginx + Let's Encrypt (port 11443), token_server.py callback with auto-start main.py (tmux), token_cron.py with 4-stage configurable Telegram escalation, date-based production logging (tradeos/hawk/token subdirs), log rotation (30d compress + 90d delete). DB trade history deployed + backfilled. Session report DB mode + verify cross-check. `tradeos` unified CLI v0.2.0 (colors, preflight, auto-report). README.md + CLAUDE.md updated. Tests: 453→489. | Weekend goals exceeded. Phase 1 production readiness: nearly complete. |
 
 ---
 
@@ -181,9 +182,10 @@ These rules apply to every TradeOS session regardless of context window or sessi
 9. **SHORT Position Accounting** — Negative qty for shorts. Field names: `avg_price` (not `entry_price`), `side` (not `direction`). This mismatch caused B7 (false kill switch with -₹199,679 phantom P&L). Always verify field names when accessing position data.
 10. **Log File Convention** — All modules write date-based log files: `logs/{module}/{module}_{YYYY-MM-DD}.log`. Subdirectories: `tradeos/` (main trading), `hawk/` (AI engine), `token/` (auth). Log rotation compresses files >30 days, deletes >90 days. session_report.py accepts any log file path. Never use `paper_session_NN.log` naming — always date-based.
 11. **CLI Convention** — All operations go through `tradeos <command>` in production. Never call Python scripts directly. New scripts must be registered as tradeos subcommands before deployment.
+12. **Documentation Convention** — README.md and CLAUDE.md must be updated with every feature addition. Every CC prompt must include README.md update requirements. CLAUDE.md contains all session rules and CC conventions for project continuity.
 
 ---
 
 ## 11. Last Updated
 
-**2026-03-14** — Token automation + auto-start + production logging + log rotation + session report DB mode + `tradeos` unified CLI. Feature branch merged. Phase 1 production readiness nearly complete. 489 tests.
+**2026-03-14** — tradeos CLI polished (v0.2.0: colors, preflight, auto-report). README.md + CLAUDE.md created. Phase 1 production readiness nearly complete. 489 tests.
