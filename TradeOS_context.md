@@ -31,6 +31,9 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | `hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect + nsetools. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
 | `migrations/` | SQL migration files. `001_create_sessions_table.sql`. Auto-created at startup if missing. |
 | `tools/db_backfill_session07.py` | One-time data fix for Session 07 trades (incorrect P&L + exit_reason from pre-B12 code). |
+| `scripts/token_server.py` | HTTP callback server (0.0.0.0:7291). Captures Zerodha request_token, exchanges for access_token, writes to secrets.yaml, confirms via Telegram, auto-shuts down. |
+| `scripts/token_cron.py` | Daily cron orchestrator. Starts token_server, sends login URL to Telegram, 4-stage escalation (07:00, 07:30, 08:00, 08:30 IST), kills server at 08:45 if no auth. |
+| `docker/nginx/` | Nginx reverse proxy (SSL on port 11443). Proxies /callback to token_server. Let's Encrypt cert via certbot. Port 80 for cert renewal only. |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
 **Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
@@ -42,7 +45,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **464 passing, 0 failures, 12 skipped as of commit 01d1ab6** |
+| Tests | **470 passing, 0 failures, 12 skipped as of commit 056420a** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -57,6 +60,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | Bear regime signal insight | Session 03 re-analysis: all 3 accepted signals were oversold SHORTs (now blocked by B3 fix). In bear_trend, LONGs blocked by Gate 7 + SHORTs blocked by B3 RSI filter = potential zero-signal sessions. Monitor in Session 04. |
 | Slot-based position sizing | 3-layer calculation implemented (`361876e`). No-entry window at 14:30 IST (`c60648f`). Min slot capital ₹40K startup validation + pending order cancellation at hard_exit (`c862313`). |
 | DB trade history | D1 signal status updates (FILLED/REJECTED) wired. D3 sessions table created with EOD write. D4 backfill script ready. D5 dead code removed from storage.py. On feature/db-trade-history — pending VPS deploy + merge. |
+| Token automation | Fully tested end-to-end. Nginx + Let's Encrypt on port 11443. Callback server captures Zerodha token via phone tap. 4-stage Telegram escalation. Cron installed Mon-Fri 07:00 IST. Redirect URL: https://srv1332119.hstgr.cloud:11443/callback |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -128,7 +132,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
 - **Futures paper trading** — NIFTY futures alongside S1. Gated on: 10 completed S1 trades + 3 clean sessions + verified P&L + 1 winner. Infrastructure needed: lot-aware position sizer, expiry management, margin monitoring. Design (Nemawashi) can begin during S1 validation phase — no code until gates clear.
 - **Commodities** — Deferred until futures infrastructure built and validated.
-- **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. Phase 1 progress — DB trade history (D1+D3) complete. Token automation next. Remaining Phase 1: log rotation + systemd.
+- **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. Phase 1 progress — DB trade history (D1+D3) complete, token automation complete. Remaining Phase 1: log rotation + systemd.
 
 ---
 
@@ -137,9 +141,10 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 1. **Session 08** — Monday March 16. Verify B12-B14 fixes (correct P&L, Telegram display, exit reason).
 2. Trailing stop data gate review — March 16 (likely defer, only 2 trades, neither hit 2R).
 3. DB trade history — Nemawashi design: TimescaleDB tables (trades, signals, daily_sessions). Dual-write alongside logs. Use existing TimescaleDB + asyncpg infrastructure.
-4. Token semi-automation — Telegram-triggered login flow: cron sends login URL to Telegram, user taps + TOTP, callback server captures token, confirms via Telegram, starts main.py.
-5. HAWK Day 3 eval Monday after Session 08: `python tools/hawk_eval.py --date 2026-03-13`
-6. Futures gate: 2/10 trades, 0/3 clean sessions.
+4. ~~Token semi-automation~~ — **DONE**. Tested 2026-03-14.
+5. Install certbot renewal cron on VPS (setup_ssl.sh handles this).
+6. HAWK Day 3 eval Monday after Session 08: `python tools/hawk_eval.py --date 2026-03-13`
+7. Futures gate: 2/10 trades, 0/3 clean sessions.
 
 ---
 
@@ -154,6 +159,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
 | 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
 | 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
+| 2026-03-14 | Token Automation + Infra | Nginx + Let's Encrypt (port 11443), token_server.py callback, token_cron.py with 4-stage Telegram escalation. Tested end-to-end: phone tap → token captured → secrets.yaml updated → Telegram confirmed. Also: DB trade history deployed + backfilled on VPS. Tests: 464→470. | Weekend goals complete. Phase 1 production readiness: 2/4 items done. |
 
 ---
 
@@ -175,4 +181,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-13** — DB trade history feature complete (feature/db-trade-history). Signal status updates, sessions table, backfill script. Weekend token automation next.
+**2026-03-14** — Token automation complete + tested. Nginx/SSL infra on port 11443. DB trade history deployed on VPS. Weekend plan delivered.
