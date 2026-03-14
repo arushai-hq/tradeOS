@@ -1,4 +1,5 @@
-# CLAUDE.md — TradeOS Operating Instructions
+# CLAUDE.md -- TradeOS Operating Instructions
+
 > This file is auto-read by Claude Code on every session start.
 > Do not modify without syncing with the Web UI brainstorm session.
 
@@ -6,34 +7,33 @@
 
 ## Project Identity
 
-**TradeOS** — AI-powered systematic trading system, Indian markets (NSE/BSE).
-**Owner:** Irfan — Arushai Systems Private Limited, Doha, Qatar.
-**Stack:** Python | Zerodha KiteConnect | asyncio | pandas-ta | backtesting.py
-**Current Phase:** Phase 1 — Data Engine + S1 Intraday Momentum + Paper Trade only.
+**TradeOS** -- AI-powered systematic trading system, Indian markets (NSE/BSE).
+**Owner:** Irfan -- Arushai Systems Private Limited, Doha, Qatar.
+**Stack:** Python 3.11 | Zerodha KiteConnect | asyncio | TimescaleDB | structlog
+**Current Phase:** Phase 1 -- S1 Intraday Momentum + Paper Trade only.
+**Repo:** `arushai-hq/tradeOS` | **Branch:** `main` (production)
 
 ---
 
 ## Read These Files First
 
-Before writing any code, read the relevant context file for the task:
-
 | What you're building | Read this first |
 |----------------------|----------------|
-| Anything | `START.md` — full project state + build queue |
-| Any component | `docs/diagrams/reliability/README.md` — 8 disciplines |
-| Data Engine | `docs/brainstorm/session_002_research_findings.md` |
+| Anything | `TradeOS_context.md` -- living document, current state + decisions |
+| Any component | `docs/diagrams/reliability/README.md` -- 9 disciplines (D1-D9) |
 | S1 Strategy | `docs/strategy_specs/S1_intraday_momentum.md` |
-| Risk / Kill Switch | `docs/diagrams/reliability/README.md` → D1 + D7 |
+| Risk / Kill Switch | `docs/diagrams/reliability/README.md` -> D1 + D7 |
 | Config / secrets | `config/settings.yaml` + `config/secrets.yaml.template` |
 | Architecture | `docs/brainstorm/session_001_architecture.md` |
+| HAWK AI | `docs/hawk_spec.md` |
 
 ---
 
 ## How This Project Is Run
 
 **Two-role workflow:**
-- **Claude.ai Web UI** → brainstorming, architecture, decisions, diagram generation
-- **Claude Code (you)** → receives precise prompts from Web UI, writes code, runs tests, pushes to GitHub
+- **Claude.ai Web UI** -> brainstorming, architecture, decisions, diagram generation
+- **Claude Code (you)** -> receives precise prompts from Web UI, writes code, runs tests
 
 You will receive prompts from the Web UI session that look like:
 ```
@@ -51,123 +51,125 @@ Execute them exactly as specified. Do not invent scope.
 mode: paper    # NEVER change to 'live' without explicit instruction
 ```
 Do not write any code that switches `mode: live` automatically.
-Live deployment is a manual, deliberate act after all test gates pass.
 
 ### 2. Secrets
 - Never write API keys, tokens, or passwords in any file
-- Secrets go in `config/secrets.yaml` which is gitignored
+- Secrets go in `config/secrets.yaml` (gitignored)
 - Use `config/secrets.yaml.template` as the reference template
-- Load secrets via: `os.environ` or `yaml.safe_load(open('config/secrets.yaml'))`
 
-### 3. Every Component Must Implement These (Non-Negotiable)
+### 3. Reliability Disciplines (D1-D9)
 
-**D1 — Kill Switch:** Every order path must check kill switch state before executing.
-Use `pybreaker`. Three levels: Trade Stop → Position Stop → System Stop.
-Triggers: 3 consecutive losses | daily loss > 3% | WS down > 60s | API errors > 5/5min.
-
-**D2 — Order State Machine:** Never treat order as FILLED until broker confirms.
-Track all 8 states. On restart: query Zerodha open orders before placing anything.
-Use `python-statemachine`.
-
-**D3 — WebSocket Resilience:** Auto-reconnect with exponential backoff (2→4→8→16→30s cap).
-Discard signals older than 5 min after reconnect. Heartbeat: 30s.
-
-**D5 — Data Validation:** Every tick through 5-gate `TickValidator` before strategy logic.
-Gates: price > 0 | within ±20% close | volume >= 0 | timestamp < 5s | not duplicate.
-Never halt on bad tick — discard, log, continue.
-
-**D6 — Async Architecture:** All I/O is non-blocking.
-Use `asyncio.to_thread()` for any blocking call. Five concurrent tasks minimum.
-
-**D7 — Reconciliation:** Run at startup + every 30 min + after any disruption.
-Mismatch → lock instrument → log → Telegram alert. Zerodha is always source of truth.
+**D1 -- Kill Switch:** 3-level kill switch. Every order path checks kill switch state.
+**D2 -- Order State Machine:** 8 states. Never treat order as FILLED until broker confirms.
+**D3 -- WebSocket Resilience:** Auto-reconnect with exponential backoff (2->30s cap).
+**D5 -- Data Validation:** 5-gate TickValidator before any strategy logic.
+**D6 -- Async Architecture:** All I/O non-blocking. 5 concurrent asyncio tasks.
+**D7 -- Reconciliation:** Startup + every 30 min. Zerodha is always source of truth.
+**D9 -- Session Guardian:** Pre-market gate -> startup -> trading -> EOD lifecycle.
 
 ### 4. Logging
-Every significant event must produce a structured JSON log line:
 ```python
 log.info("order_placed", order_id=order_id, strategy="s1", symbol=symbol, qty=qty)
-log.error("kill_switch_triggered", level=2, reason="daily_loss_exceeded", pnl=pnl)
 ```
-Use `structlog`. Output to `logs/tradeos.log`. No bare `print()` statements in production code.
+Use `structlog`. Date-based files: `logs/{module}/{module}_{YYYY-MM-DD}.log`.
+No bare `print()` statements in production code.
 
 ### 5. Tests Are Mandatory
-Every new module gets a corresponding test file:
-```
-data_engine/websocket_listener.py  →  tests/test_websocket_listener.py
-risk_manager/kill_switch.py        →  tests/test_kill_switch.py
-```
-Minimum test coverage per module:
+Every new module gets a corresponding test file. Minimum coverage:
 - Happy path works
 - Kill switch blocks when active
 - Bad input is rejected gracefully
-- No test = code is not done
+- All tests must pass before commit
 
-### 6. Risk Rules Are Hardcoded Constants
+### 6. Risk Rules Are Constants
 ```python
-# Never accept these as runtime parameters — they are constants
 MAX_LOSS_PER_TRADE_PCT = 0.015   # 1.5%
 MAX_DAILY_LOSS_PCT     = 0.030   # 3.0%
-MAX_OPEN_POSITIONS     = 3
+MAX_OPEN_POSITIONS     = 4
 HARD_EXIT_TIME         = "15:00"  # IST
 ```
 
 ---
 
-## Folder Conventions
+## File Structure
 
 ```
-data_engine/          WebSocket listener, tick validation, historical data fetch
-risk_manager/         Kill switch, position sizing, reconciliation, drawdown tracking
-strategies/s1_intraday/  Signal generation, entry/exit logic for S1
-strategies/s2_swing/     (Phase 2 — do not touch)
-backtester/           backtesting.py integration, historical run harness
-paper_trader/         Paper mode order simulator
-execution_engine/     Live order placement via pykiteconnect (Phase 1 last)
-tests/                All pytest test files — mirror the module structure
-logs/                 Log output — gitignored, never commit log files
-config/               settings.yaml (safe to commit) + secrets.yaml (gitignored)
-docs/                 Specs, diagrams, brainstorm notes — read-only from code
+bin/tradeos               Unified CLI entry point (bash shim)
+main.py                   D9 session lifecycle
+config/                   settings.yaml (committed) + secrets.yaml (gitignored)
+data_engine/              WebSocket feed, tick validator, tick storage
+strategy_engine/          CandleBuilder, indicators, S1 signal generator, risk gates
+risk_manager/             Kill switch, position sizer, PnL tracker
+execution_engine/         Order state machine, paper order placement
+regime_detector/          4-regime classifier
+hawk_engine/              HAWK AI market intelligence
+utils/                    telegram_notifier, time_utils, db_events
+tools/                    session_report, hawk CLI, hawk_eval, db_backfill
+scripts/                  token_cron, token_server, log_rotation, setup scripts
+docker/                   docker-compose.yml, nginx config, SSL
+migrations/               SQL migration files
+tests/                    All pytest tests (mirrors module structure)
+logs/                     Log output (gitignored)
+docs/                     Strategy specs, architecture, brainstorm notes
 ```
 
 ---
 
-## Git Commit Convention
+## Key Patterns
 
+| Pattern | Implementation |
+|---------|---------------|
+| Logging | `structlog` with JSON output |
+| Database | `asyncpg` (async PostgreSQL) with TimescaleDB |
+| Broker API | `pykiteconnect` v5 (Zerodha KiteConnect) |
+| Config | `config/settings.yaml` (yaml.safe_load) |
+| Credentials | `config/secrets.yaml` (gitignored) |
+| Time zones | `pytz.timezone("Asia/Kolkata")` -- never `datetime.now()` |
+| CLI | `bin/tradeos` bash shim -- all ops go through this in production |
+| Telegram | `utils/telegram_notifier.py` -- config-driven, hot-reload |
+
+---
+
+## Git Conventions
+
+### Branching
+- `main` = production (deployed on VPS, always deployable)
+- `feature/*` = new features (created from main)
+- `fix/*` = bug fixes
+- Merge to main only when all tests pass
+
+### Commit Messages
 ```
 feat: add TickValidator with 5-gate filter
-feat: implement kill switch Level 1 and Level 2
-feat: websocket listener with exponential backoff reconnect
 test: add unit tests for RiskManager daily loss trigger
 fix: order state machine not handling PARTIALLY_FILLED
-docs: update START.md build status after data_engine complete
+docs: update TradeOS_context.md with session results
 refactor: extract VWAP calculation to indicators module
 ```
 
-Always push to `main` on task completion unless told otherwise.
+### Testing
+```bash
+tradeos test -x -q                    # Quick test run
+python -m pytest tests/ -x -q         # Direct pytest
+```
+Current: 489 passing, 12 skipped.
 
 ---
 
-## Build Order (Do Not Skip Ahead)
+## Session Rules
 
-```
-1. data_engine/          ← CURRENT — build first
-2. risk_manager/         ← Kill Switch (D1) + Reconciliation (D7)
-3. strategies/s1_intraday/
-4. backtester/
-5. paper_trader/
-6. execution_engine/     ← Last — only after paper test gates pass
-```
-
----
-
-## Key External References
-
-- Zerodha KiteConnect docs: https://kite.trade/docs/connect/v3/
-- Kite MCP server (official): https://github.com/zerodha/kite-mcp-server
-- Hosted MCP endpoint: `https://mcp.kite.trade/mcp`
-- pykiteconnect: `pip install kiteconnect`
-- pandas-ta docs: https://github.com/twopirllc/pandas-ta
-- backtesting.py docs: https://kernc.github.io/backtesting.py/
+1. **Nemawashi First** -- 70-80% planning, 20-30% implementation. No rushing to code.
+2. **Living Document Protocol** -- Every decision captured in `TradeOS_context.md` via delta.
+3. **Context Handoff** -- If session approaches limits, update `TradeOS_context.md` with resume point.
+4. **Allocation Sum Rule** -- Strategy allocations in settings.yaml must sum to 1.00.
+5. **Position Sizing Parameters** -- All configured in settings.yaml, startup-validated.
+6. **Context Hygiene** -- `TradeOS_context.md` is a rolling window. Archive old items.
+7. **Telegram Channel Separation** -- Each module gets its own channel. Never mix streams.
+8. **Git Branching** -- feature/* from main, merge only when fully tested.
+9. **SHORT Position Accounting** -- Negative qty for shorts. Verify field names always.
+10. **Log File Convention** -- Date-based: `logs/{module}/{module}_{YYYY-MM-DD}.log`.
+11. **CLI Convention** -- All operations via `tradeos <command>`. Never call Python scripts directly.
+12. **Documentation Convention** -- README.md and CLAUDE.md updated with every feature addition.
 
 ---
 
@@ -175,32 +177,16 @@ Always push to `main` on task completion unless told otherwise.
 
 - Do not write blocking I/O in the asyncio event loop
 - Do not place live orders in paper mode
-- Do not commit `config/secrets.yaml`
-- Do not commit files in `logs/`
+- Do not commit `config/secrets.yaml` or files in `logs/`
 - Do not skip writing tests for a module
 - Do not change `mode: live` in settings.yaml
-- Do not build Phase 2+ components until Phase 1 is tested and green
-- Do not use bare `except:` — always catch specific exceptions and log them
-- Do not use `time.sleep()` in async code — use `await asyncio.sleep()`
-- Do not invent risk parameters — use constants from `config/settings.yaml`
+- Do not build Phase 2+ components until Phase 1 is tested
+- Do not use bare `except:` -- always catch specific exceptions
+- Do not use `time.sleep()` in async code -- use `await asyncio.sleep()`
+- Do not call Python scripts directly in production -- use `tradeos` CLI
+- Do not invent risk parameters -- use constants from `config/settings.yaml`
 
 ---
 
-## Git Branching Rules
-
-- main = production. Always deployable. Runs on VPS.
-- feature/* = new features (e.g., feature/hawk, feature/trailing-stop)
-- fix/* = bug fixes (e.g., fix/pnl-short-direction)
-- Create feature branches from main: `git checkout -b feature/name main`
-- Keep in sync: `git rebase main` regularly
-- Merge to main only when ALL tests pass and feature is complete
-- Never commit new feature code directly to main
-- Track active branches:
-  - main: S1 trading engine (production)
-  - (future) feature/hawk: AI watchlist engine
-
----
-
-*Arushai Systems Private Limited — TradeOS*
-*Web UI brainstorm session → Claude Code execution pipeline*
-*Context last updated: Session 3 — Post reliability engineering design*
+*Arushai Systems Private Limited -- TradeOS*
+*Web UI brainstorm session -> Claude Code execution pipeline*
