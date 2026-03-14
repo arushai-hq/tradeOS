@@ -234,7 +234,7 @@ class OrderMonitor:
             symbol=order.symbol,
             direction=order.direction,
             fill_price=float(fill_price),
-            quantity=order.qty,
+            qty=order.qty,
             position_id=order.order_id,
             mode=self._mode,
         )

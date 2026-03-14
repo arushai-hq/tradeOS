@@ -177,9 +177,9 @@ async def test_signal_rejected_logged_on_gate_fail_max_positions():
     assert len(rejected) == 1, f"Expected signal_rejected, got: {[e['event'] for e in cap_logs]}"
 
     evt = rejected[0]
-    assert evt["gate_number"] == 4
+    assert evt["gate"] == 4
     assert evt["gate_name"] == "max_positions"
-    assert evt["rejection_reason"] == "MAX_POSITIONS_REACHED"
+    assert evt["reason"] == "MAX_POSITIONS_REACHED"
     assert "rsi" in evt
     assert "volume_ratio" in evt
 
@@ -217,7 +217,7 @@ async def test_signal_rejected_gate_number_matches_reason(
 
     rejected = [e for e in cap_logs if e.get("event") == "signal_rejected"]
     assert len(rejected) == 1
-    assert rejected[0]["gate_number"] == expected_gate
+    assert rejected[0]["gate"] == expected_gate
     assert rejected[0]["gate_name"] == expected_name
 
 
@@ -263,7 +263,7 @@ async def test_order_filled_logged_on_entry_fill():
     assert evt["symbol"] == "RELIANCE"
     assert evt["direction"] == "LONG"
     assert evt["fill_price"] == 2450.0
-    assert evt["quantity"] == 5
+    assert evt["qty"] == 5
     assert evt["position_id"] == "PAPER-ABCD1234"
     assert evt["mode"] == "paper"
 

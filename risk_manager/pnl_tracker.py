@@ -178,6 +178,7 @@ class PnlTracker:
             symbol=symbol,
             direction=direction,
             qty=qty,
+            exit_price=float(exit_price),
             exit_reason=exit_reason,
             gross_pnl=float(gross_pnl),
             charges=float(charges),
