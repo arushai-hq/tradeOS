@@ -5,7 +5,7 @@ TradeOS — Token Callback Server
 Lightweight HTTP server that captures Zerodha OAuth request_token,
 exchanges it for an access_token, and writes to secrets.yaml.
 
-Binds to 127.0.0.1:7291 (localhost only — Nginx proxies external traffic).
+Binds to 0.0.0.0:7291 (port not exposed externally — Docker bridge needs non-localhost bind).
 Auto-shuts down after successful capture or 2-hour safety timeout.
 
 Flow:
@@ -284,8 +284,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     try:
-        _server = HTTPServer(("127.0.0.1", 7291), CallbackHandler)
-        print(f"TradeOS token server listening on 127.0.0.1:7291")
+        _server = HTTPServer(("0.0.0.0", 7291), CallbackHandler)
+        print(f"TradeOS token server listening on 0.0.0.0:7291")
         print(f"Waiting for Zerodha callback... (auto-shutdown in 2h)")
         _server.serve_forever()
     except KeyboardInterrupt:
