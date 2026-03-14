@@ -179,6 +179,18 @@ Subdirectories: `tradeos/` (trading), `hawk/` (AI engine), `token/` (auth)
 
 ---
 
+## Development Tools
+
+### context-mode (Claude Code plugin)
+
+[context-mode](https://github.com/mksglu/context-mode) is installed as a Claude Code MCP plugin to optimize context window usage during extended build sessions. It sandboxes raw command output and web fetches into a SQLite + FTS5 index, reducing context consumption by ~98%.
+
+- **Resume sessions:** Use `--continue` flag when resuming Claude Code to carry forward indexed context.
+- **Hooks:** `curl`/`wget` and large Bash output are automatically routed through sandbox tools (`ctx_execute`, `ctx_fetch_and_index`).
+- **Existing MCP servers** (KiteConnect, TimescaleDB) are unaffected.
+
+---
+
 ## Testing
 
 ```bash

@@ -64,6 +64,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | DB trade history | D1 signal status updates (FILLED/REJECTED) wired. D3 sessions table created with EOD write. D4 backfill script ready. D5 dead code removed from storage.py. On feature/db-trade-history — pending VPS deploy + merge. |
 | Token automation | Token automation complete. Nginx + Let's Encrypt (port 11443). Callback server captures token, auto-starts main.py in tmux (weekdays). 4-stage Telegram escalation. Config-driven timing. Date-based production logging: `logs/tradeos/tradeos_{date}.log`, `logs/hawk/hawk_{date}.log`, `logs/token/token_{date}.log`. Log rotation: 30-day compress, 90-day delete. |
 | tradeos CLI | v0.2.0 — 25+ subcommands, color-coded output, preflight check, auto-report. Installed at `/usr/local/bin/tradeos`. |
+| context-mode | MCP plugin (mksglu/context-mode v1.0.22) for context window optimization and session continuity. Sandboxes raw data out of context via SQLite + FTS5/BM25 indexing. Use `--continue` flag when resuming sessions to carry forward indexed context. Hooks intercept curl/wget and route through `ctx_execute`/`ctx_fetch_and_index`. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
