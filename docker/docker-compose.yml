@@ -26,7 +26,7 @@ services:
     restart: always
     ports:
       - "80:80"
-      - "443:443"
+      - "11443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./certbot/www:/var/www/certbot:ro

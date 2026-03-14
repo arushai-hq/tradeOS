@@ -1,5 +1,6 @@
 # Rename to tradeos.conf for initial certbot verification.
 # Replace with tradeos.conf after cert is obtained.
+# Note: HTTPS runs on port 11443 (not 443) for security.
 
 server {
     listen 80;

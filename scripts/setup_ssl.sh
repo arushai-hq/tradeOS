@@ -64,7 +64,7 @@ echo "✅ Nginx reloaded with SSL"
 # Step 6: Verify HTTPS
 echo ""
 echo "Step 5: Verifying HTTPS..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN" 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN:11443" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "000" ] || [ "$HTTP_CODE" = "444" ]; then
     echo "✅ HTTPS working (returned $HTTP_CODE — expected, / is blocked)"
 else
@@ -85,7 +85,7 @@ fi
 echo ""
 echo "=========================================="
 echo "  SSL Setup Complete"
-echo "  Domain: https://$DOMAIN"
+echo "  Domain: https://$DOMAIN:11443"
 echo "  Next: Update Zerodha redirect URL to:"
-echo "  https://$DOMAIN/callback"
+echo "  https://$DOMAIN:11443/callback"
 echo "=========================================="
