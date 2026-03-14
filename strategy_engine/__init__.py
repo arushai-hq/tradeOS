@@ -271,7 +271,9 @@ class StrategyEngine:
         )
 
         # Step 6: write signal to DB (always — for the audit trail)
-        await self._write_signal(signal, allowed, reason)
+        signal_db_id = await self._write_signal(signal, allowed, reason)
+        if signal_db_id is not None:
+            signal.db_id = signal_db_id
 
         # Step 7: enqueue if allowed — notification deferred to execution engine
         # (signal_accepted Telegram fires AFTER position sizer check in EE)
@@ -313,9 +315,12 @@ class StrategyEngine:
                 "signal_rejected",
                 symbol=signal.symbol,
                 direction=signal.direction,
+                entry=float(signal.theoretical_entry),
+                stop=float(signal.stop_loss),
+                target=float(signal.target),
+                gate=_gate_number,
                 gate_name=_gate_name,
-                gate_number=_gate_number,
-                rejection_reason=reason,
+                reason=reason,
                 rsi=float(signal.rsi),
                 volume_ratio=float(signal.volume_ratio),
             )
@@ -370,9 +375,9 @@ class StrategyEngine:
         signal: Signal,
         allowed: bool,
         reason: str,
-    ) -> None:
+    ) -> Optional[int]:
         """
-        Persist signal to signals table.
+        Persist signal to signals table. Returns the auto-generated DB id.
 
         Status mapping (matches signals.status CHECK constraint):
           allowed      → status='PENDING'
@@ -391,7 +396,7 @@ class StrategyEngine:
 
         try:
             async with self._db_pool.acquire() as conn:
-                await conn.execute(
+                row_id: int = await conn.fetchval(
                     """
                     INSERT INTO signals (
                         session_date, symbol, instrument_token, direction,
@@ -400,6 +405,7 @@ class StrategyEngine:
                         theoretical_entry, stop_loss, target,
                         status, reject_reason
                     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                    RETURNING id
                     """,
                     self._session_date,
                     signal.symbol, signal.instrument_token, signal.direction,
@@ -411,8 +417,10 @@ class StrategyEngine:
                     float(signal.stop_loss), float(signal.target),
                     status, reject_reason,
                 )
+                return row_id
         except Exception as exc:
             log.error("signal_write_failed", symbol=signal.symbol, error=str(exc))
+            return None
 
     # ------------------------------------------------------------------
     # Instrument resolution

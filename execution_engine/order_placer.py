@@ -164,7 +164,7 @@ class OrderPlacer:
                 order_type="ENTRY",
                 qty=qty,
                 price=signal.theoretical_entry,
-                signal_id=0,
+                signal_id=signal.db_id or 0,
                 stop_loss=signal.stop_loss,
                 target=signal.target,
             )
@@ -194,7 +194,7 @@ class OrderPlacer:
             direction=signal.direction,
             order_type="MARKET",
             price=float(signal.theoretical_entry),
-            quantity=qty,
+            qty=qty,
             mode="paper",
         )
         log.info(
@@ -325,7 +325,7 @@ class OrderPlacer:
             order_type="ENTRY",
             qty=qty,
             price=signal.theoretical_entry,
-            signal_id=0,
+            signal_id=signal.db_id or 0,
             stop_loss=signal.stop_loss,
             target=signal.target,
         )
@@ -337,7 +337,7 @@ class OrderPlacer:
             direction=signal.direction,
             order_type="MARKET",
             price=float(signal.theoretical_entry),
-            quantity=qty,
+            qty=qty,
             mode="live",
         )
         log.info(

@@ -34,7 +34,7 @@ Prevents re-entry after a stop-out on the same instrument.
 from __future__ import annotations
 
 import structlog
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -75,6 +75,7 @@ class Signal:
     rsi: Decimal
     vwap: Decimal
     volume_ratio: Decimal
+    db_id: Optional[int] = field(default=None, repr=False)
 
 
 class SignalGenerator:
