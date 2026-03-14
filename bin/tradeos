@@ -1,0 +1,670 @@
+#!/usr/bin/env bash
+# tradeos — Unified CLI for TradeOS trading system
+# Usage: tradeos <command> [args...]
+# See:   tradeos help
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+TRADEOS_DIR="${TRADEOS_DIR:-/opt/tradeOS}"
+PYTHON="$TRADEOS_DIR/.venv/bin/python"
+COMPOSE_FILE="$TRADEOS_DIR/docker/docker-compose.yml"
+SETTINGS="$TRADEOS_DIR/config/settings.yaml"
+SECRETS="$TRADEOS_DIR/config/secrets.yaml"
+VERSION="0.1.0"
+
+# tmux session name — read from settings.yaml if available, fallback to "tradeos"
+_read_tmux_session() {
+    if command -v "$PYTHON" &>/dev/null && [ -f "$SETTINGS" ]; then
+        local name
+        name=$("$PYTHON" -c "
+import yaml, sys
+try:
+    cfg = yaml.safe_load(open('$SETTINGS'))
+    print(cfg.get('token_automation',{}).get('auto_start',{}).get('tmux_session_name','tradeos'))
+except Exception:
+    print('tradeos')
+" 2>/dev/null)
+        echo "${name:-tradeos}"
+    else
+        echo "tradeos"
+    fi
+}
+
+TMUX_SESSION="$(_read_tmux_session)"
+
+# IST date helper
+_ist_date() {
+    TZ="Asia/Kolkata" date "+%Y-%m-%d"
+}
+
+_ist_today() {
+    _ist_date
+}
+
+# Today's log file
+_today_log() {
+    echo "$TRADEOS_DIR/logs/tradeos/tradeos_$(_ist_today).log"
+}
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+
+_require_venv() {
+    if [ ! -x "$PYTHON" ]; then
+        echo "ERROR: Python venv not found at $PYTHON"
+        echo "Run: python -m venv $TRADEOS_DIR/.venv && pip install -r requirements.txt"
+        exit 1
+    fi
+}
+
+_require_tmux() {
+    if ! command -v tmux &>/dev/null; then
+        echo "ERROR: tmux is not installed"
+        echo "Install: sudo dnf install tmux  (Rocky) or brew install tmux (macOS)"
+        exit 1
+    fi
+}
+
+_require_docker() {
+    if ! command -v docker &>/dev/null; then
+        echo "ERROR: docker is not installed"
+        exit 1
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Trading commands
+# ---------------------------------------------------------------------------
+
+cmd_auth() {
+    _require_venv
+    echo "Running daily token authentication..."
+    cd "$TRADEOS_DIR"
+    "$PYTHON" scripts/token_cron.py "$@"
+}
+
+cmd_auth_server() {
+    _require_venv
+    echo "Starting token callback server..."
+    cd "$TRADEOS_DIR"
+    "$PYTHON" scripts/token_server.py "$@"
+}
+
+cmd_start() {
+    _require_venv
+    _require_tmux
+
+    if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        echo "ERROR: tmux session '$TMUX_SESSION' already running"
+        echo "Use: tradeos status  to check, or  tradeos stop  to stop first"
+        exit 1
+    fi
+
+    cd "$TRADEOS_DIR"
+    local logfile
+    logfile="$(_today_log)"
+
+    echo "Starting TradeOS in tmux session '$TMUX_SESSION'..."
+    tmux new-session -d -s "$TMUX_SESSION" -c "$TRADEOS_DIR" "$PYTHON main.py"
+
+    # Verify it started (wait up to 2s)
+    local tries=0
+    while [ $tries -lt 4 ]; do
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            echo "Started successfully."
+            echo "  Session:  $TMUX_SESSION"
+            echo "  Log:      $logfile"
+            echo "  Attach:   tmux attach -t $TMUX_SESSION"
+            return 0
+        fi
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+
+    echo "WARNING: tmux session may not have started — check logs"
+    echo "  Log: $logfile"
+    return 1
+}
+
+cmd_stop() {
+    _require_tmux
+
+    if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        echo "No tmux session '$TMUX_SESSION' running."
+        return 0
+    fi
+
+    echo "Sending Ctrl+C to tmux session '$TMUX_SESSION'..."
+    tmux send-keys -t "$TMUX_SESSION" C-c
+
+    # Wait up to 3s for graceful shutdown
+    local tries=0
+    while [ $tries -lt 6 ]; do
+        if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            echo "Stopped gracefully."
+            return 0
+        fi
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+
+    # Force kill
+    echo "Graceful stop timed out — killing session..."
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+    echo "Stopped (forced)."
+}
+
+cmd_restart() {
+    cmd_stop
+    sleep 1
+    cmd_start
+}
+
+cmd_status() {
+    echo "=== TradeOS Status ==="
+    echo ""
+
+    # Trading process
+    if command -v tmux &>/dev/null && tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+        echo "Trading:   RUNNING (tmux session '$TMUX_SESSION')"
+    else
+        echo "Trading:   STOPPED"
+    fi
+
+    # Token validity
+    if [ -f "$SECRETS" ] && command -v "$PYTHON" &>/dev/null; then
+        local token_date
+        token_date=$("$PYTHON" -c "
+import yaml, sys
+try:
+    s = yaml.safe_load(open('$SECRETS'))
+    td = s.get('zerodha',{}).get('token_date','unknown')
+    print(td)
+except Exception:
+    print('unknown')
+" 2>/dev/null)
+        local today
+        today=$(_ist_today)
+        if [ "$token_date" = "$today" ]; then
+            echo "Token:     VALID (date: $token_date)"
+        else
+            echo "Token:     EXPIRED (date: $token_date, today: $today)"
+        fi
+    else
+        echo "Token:     UNKNOWN (secrets.yaml not found)"
+    fi
+
+    # Database health
+    if command -v docker &>/dev/null; then
+        local db_status
+        db_status=$(docker inspect --format='{{.State.Health.Status}}' tradeos-db 2>/dev/null || echo "not running")
+        echo "Database:  $db_status"
+    else
+        echo "Database:  UNKNOWN (docker not installed)"
+    fi
+
+    # Nginx
+    if command -v docker &>/dev/null; then
+        local nginx_status
+        nginx_status=$(docker inspect --format='{{.State.Status}}' tradeos-nginx 2>/dev/null || echo "not running")
+        echo "Nginx:     $nginx_status"
+    else
+        echo "Nginx:     UNKNOWN (docker not installed)"
+    fi
+
+    # Today's log
+    local logfile
+    logfile="$(_today_log)"
+    if [ -f "$logfile" ]; then
+        local size
+        size=$(du -h "$logfile" | cut -f1)
+        local lines
+        lines=$(wc -l < "$logfile")
+        echo "Log:       $logfile ($size, $lines lines)"
+    else
+        echo "Log:       $logfile (not created yet)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Report commands
+# ---------------------------------------------------------------------------
+
+cmd_report() {
+    _require_venv
+    cd "$TRADEOS_DIR"
+    "$PYTHON" tools/session_report.py "$@"
+}
+
+# ---------------------------------------------------------------------------
+# HAWK commands
+# ---------------------------------------------------------------------------
+
+cmd_hawk() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos hawk <run|eval> [args...]"
+        exit 1
+    fi
+    shift
+
+    _require_venv
+    cd "$TRADEOS_DIR"
+
+    case "$subcmd" in
+        run)
+            "$PYTHON" tools/hawk.py "$@"
+            ;;
+        eval)
+            "$PYTHON" tools/hawk_eval.py "$@"
+            ;;
+        *)
+            echo "Unknown hawk command: $subcmd"
+            echo "Usage: tradeos hawk <run|eval> [args...]"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Logs commands
+# ---------------------------------------------------------------------------
+
+cmd_logs() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos logs <tail|list|rotate>"
+        exit 1
+    fi
+    shift
+
+    case "$subcmd" in
+        tail)
+            local logfile
+            logfile="$(_today_log)"
+            if [ ! -f "$logfile" ]; then
+                echo "No log file for today: $logfile"
+                exit 1
+            fi
+            echo "Tailing $logfile (Ctrl+C to stop)..."
+            tail -f "$logfile"
+            ;;
+        list)
+            echo "Recent log files:"
+            echo ""
+            echo "--- tradeos ---"
+            ls -lhrt "$TRADEOS_DIR/logs/tradeos/" 2>/dev/null | tail -10 || echo "  (none)"
+            echo ""
+            echo "--- hawk ---"
+            ls -lhrt "$TRADEOS_DIR/logs/hawk/" 2>/dev/null | tail -10 || echo "  (none)"
+            echo ""
+            echo "--- token ---"
+            ls -lhrt "$TRADEOS_DIR/logs/token/" 2>/dev/null | tail -10 || echo "  (none)"
+            ;;
+        rotate)
+            _require_venv
+            cd "$TRADEOS_DIR"
+            "$PYTHON" scripts/log_rotation.py "$@"
+            ;;
+        *)
+            echo "Unknown logs command: $subcmd"
+            echo "Usage: tradeos logs <tail|list|rotate>"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# DB commands
+# ---------------------------------------------------------------------------
+
+cmd_db() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos db <shell|migrate>"
+        exit 1
+    fi
+    shift
+
+    case "$subcmd" in
+        shell)
+            _require_docker
+            echo "Connecting to TimescaleDB..."
+            docker exec -it tradeos-db psql -U tradeos -d tradeos "$@"
+            ;;
+        migrate)
+            _require_docker
+            local migration_dir="$TRADEOS_DIR/migrations"
+            if [ ! -d "$migration_dir" ]; then
+                echo "No migrations/ directory found"
+                exit 1
+            fi
+            echo "Running migrations..."
+            for sql_file in "$migration_dir"/*.sql; do
+                [ -f "$sql_file" ] || continue
+                local fname
+                fname=$(basename "$sql_file")
+                echo "  Applying: $fname"
+                docker exec -i tradeos-db psql -U tradeos -d tradeos < "$sql_file"
+            done
+            echo "Done."
+            ;;
+        *)
+            echo "Unknown db command: $subcmd"
+            echo "Usage: tradeos db <shell|migrate>"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Docker commands
+# ---------------------------------------------------------------------------
+
+cmd_docker() {
+    _require_docker
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos docker <up|down|ps|logs> [args...]"
+        exit 1
+    fi
+    shift
+
+    case "$subcmd" in
+        up)
+            docker compose -f "$COMPOSE_FILE" up -d "$@"
+            ;;
+        down)
+            docker compose -f "$COMPOSE_FILE" down "$@"
+            ;;
+        ps)
+            docker compose -f "$COMPOSE_FILE" ps "$@"
+            ;;
+        logs)
+            docker compose -f "$COMPOSE_FILE" logs "$@"
+            ;;
+        *)
+            echo "Unknown docker command: $subcmd"
+            echo "Usage: tradeos docker <up|down|ps|logs> [args...]"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Config commands
+# ---------------------------------------------------------------------------
+
+cmd_config() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos config <show|validate|secrets>"
+        exit 1
+    fi
+    shift
+
+    case "$subcmd" in
+        show)
+            if [ ! -f "$SETTINGS" ]; then
+                echo "ERROR: $SETTINGS not found"
+                exit 1
+            fi
+            cat "$SETTINGS"
+            ;;
+        validate)
+            _require_venv
+            echo "Validating config/settings.yaml..."
+            "$PYTHON" -c "
+import yaml, sys
+
+cfg = yaml.safe_load(open('$SETTINGS'))
+
+errors = []
+
+# Check required sections
+for section in ['system', 'capital', 'risk', 'strategy', 'trading_hours', 'watchlist']:
+    if section not in cfg:
+        errors.append(f'Missing required section: {section}')
+
+# Check mode is paper
+mode = cfg.get('system', {}).get('mode', 'unknown')
+if mode != 'paper':
+    errors.append(f'Mode is \"{mode}\" — must be \"paper\"')
+
+# Check allocation sums to 1.0
+alloc = cfg.get('capital', {}).get('allocation', {})
+if alloc:
+    total = sum(alloc.values())
+    if abs(total - 1.0) > 0.001:
+        errors.append(f'Allocation sums to {total} — must be 1.0')
+
+if errors:
+    print('ERRORS:')
+    for e in errors:
+        print(f'  - {e}')
+    sys.exit(1)
+else:
+    print('Mode:        {}'.format(mode))
+    print('Capital:     {}'.format(cfg.get('capital', {}).get('total', '?')))
+    if alloc:
+        print('Allocation:  {} (sum={})'.format(alloc, sum(alloc.values())))
+    print('Watchlist:   {} symbols'.format(len(cfg.get('watchlist', []))))
+    print()
+    print('OK — all checks passed.')
+"
+            ;;
+        secrets)
+            if [ ! -f "$SECRETS" ]; then
+                echo "ERROR: $SECRETS not found"
+                echo "Copy from template: cp config/secrets.yaml.template config/secrets.yaml"
+                exit 1
+            fi
+            # Redact values — show keys, mask values
+            _require_venv
+            "$PYTHON" -c "
+import yaml
+
+def redact(obj, depth=0):
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if isinstance(v, dict):
+                result[k] = redact(v, depth+1)
+            elif isinstance(v, str) and len(v) > 4:
+                result[k] = v[:2] + '*' * (len(v) - 4) + v[-2:]
+            elif isinstance(v, str):
+                result[k] = '****'
+            else:
+                result[k] = v
+        return result
+    return obj
+
+cfg = yaml.safe_load(open('$SECRETS'))
+print(yaml.dump(redact(cfg), default_flow_style=False))
+"
+            ;;
+        *)
+            echo "Unknown config command: $subcmd"
+            echo "Usage: tradeos config <show|validate|secrets>"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Cron commands
+# ---------------------------------------------------------------------------
+
+cmd_cron() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos cron <install|status>"
+        exit 1
+    fi
+    shift
+
+    case "$subcmd" in
+        install)
+            if [ ! -f "$TRADEOS_DIR/scripts/setup_cron.sh" ]; then
+                echo "ERROR: scripts/setup_cron.sh not found"
+                exit 1
+            fi
+            bash "$TRADEOS_DIR/scripts/setup_cron.sh"
+            ;;
+        status)
+            echo "TradeOS cron entries:"
+            crontab -l 2>/dev/null | grep -i "tradeos\|trade_os\|token_cron\|log_rotation" || echo "  (none found)"
+            ;;
+        *)
+            echo "Unknown cron command: $subcmd"
+            echo "Usage: tradeos cron <install|status>"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Test command
+# ---------------------------------------------------------------------------
+
+cmd_test() {
+    _require_venv
+    cd "$TRADEOS_DIR"
+    "$PYTHON" -m pytest tests/ "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+
+cmd_version() {
+    local py_version
+    if [ -x "$PYTHON" ]; then
+        py_version=$("$PYTHON" --version 2>&1)
+    else
+        py_version="(venv not found)"
+    fi
+
+    echo "tradeos CLI  v$VERSION"
+    echo "Python:      $py_version"
+    echo "Platform:    $(uname -s) $(uname -m)"
+    echo "TRADEOS_DIR: $TRADEOS_DIR"
+}
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+cmd_help() {
+    cat <<'HELP'
+tradeos — Unified CLI for TradeOS trading system
+
+TRADING
+  tradeos auth                  Run daily token authentication (token_cron.py)
+  tradeos auth-server           Start token callback server (token_server.py)
+  tradeos start                 Start main.py in tmux session
+  tradeos stop                  Graceful stop (Ctrl+C → force kill after 3s)
+  tradeos restart               Stop then start
+  tradeos status                Show trading process, token, DB, nginx status
+
+REPORTS
+  tradeos report <logfile>                  Session report from log file
+  tradeos report --source db --date DATE    Session report from database
+  tradeos report --verify <logfile>         Cross-check log vs DB
+  tradeos report <logfile> --export csv     Export to CSV
+
+HAWK (AI Market Intelligence)
+  tradeos hawk run --run evening            Run HAWK evening analysis
+  tradeos hawk run --run morning            Run HAWK morning update
+  tradeos hawk eval                         Evaluate yesterday's picks
+  tradeos hawk eval --date 2026-03-13       Evaluate specific date
+
+LOGS
+  tradeos logs tail             Tail today's trading log
+  tradeos logs list             List recent log files
+  tradeos logs rotate           Run log rotation (compress/delete)
+
+DATABASE
+  tradeos db shell              Open psql shell in TimescaleDB container
+  tradeos db migrate            Run SQL migrations from migrations/
+
+DOCKER
+  tradeos docker up             Start all containers
+  tradeos docker down           Stop all containers
+  tradeos docker ps             Show container status
+  tradeos docker logs [svc]     Show container logs
+
+CONFIG
+  tradeos config show           Print settings.yaml
+  tradeos config validate       Check required sections, allocation sum, mode
+  tradeos config secrets        Print secrets.yaml with values redacted
+
+CRON
+  tradeos cron install          Install cron entries (setup_cron.sh)
+  tradeos cron status           Show tradeos-related cron entries
+
+SYSTEM
+  tradeos test [args]           Run pytest (pass-through args)
+  tradeos version               Show version, python, platform
+  tradeos help                  Show this help
+
+ENVIRONMENT
+  TRADEOS_DIR    Base directory (default: /opt/tradeOS)
+
+EXAMPLES
+  tradeos start                                        # Start trading
+  tradeos status                                       # Quick health check
+  tradeos report logs/tradeos/tradeos_2026-03-16.log   # Session report
+  tradeos hawk run --run evening --dry-run              # HAWK dry run
+  tradeos test -x -q                                   # Run tests (stop on first failure)
+  tradeos db shell                                     # Connect to database
+  TRADEOS_DIR=. tradeos test -x -q                     # Run from dev checkout
+HELP
+}
+
+# ---------------------------------------------------------------------------
+# Main dispatch
+# ---------------------------------------------------------------------------
+
+main() {
+    local cmd="${1:-}"
+
+    if [ -z "$cmd" ]; then
+        cmd_help
+        exit 0
+    fi
+
+    shift
+
+    case "$cmd" in
+        auth)         cmd_auth "$@" ;;
+        auth-server)  cmd_auth_server "$@" ;;
+        start)        cmd_start "$@" ;;
+        stop)         cmd_stop "$@" ;;
+        restart)      cmd_restart "$@" ;;
+        status)       cmd_status "$@" ;;
+        report)       cmd_report "$@" ;;
+        hawk)         cmd_hawk "$@" ;;
+        logs)         cmd_logs "$@" ;;
+        db)           cmd_db "$@" ;;
+        docker)       cmd_docker "$@" ;;
+        config)       cmd_config "$@" ;;
+        cron)         cmd_cron "$@" ;;
+        test)         cmd_test "$@" ;;
+        version)      cmd_version "$@" ;;
+        help|--help|-h)  cmd_help ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo ""
+            echo "Run 'tradeos help' for available commands."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
