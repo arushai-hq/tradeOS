@@ -2,23 +2,26 @@
 """
 TradeOS — Session Report Tool
 
-Parses ANSI-colored structlog key=value session logs and prints a
-6-section terminal report. Supports optional CSV and Excel export.
+Parses structlog session logs or queries the DB, prints a terminal report.
+Supports optional CSV and Excel export.
 
-Supports both pre-B5 event names:
-  s1_signal_generated, signal_queued, entry_filled, position_registered
-and post-B5 event names (commit ca7ddc9):
-  signal_accepted, signal_rejected, order_filled, position_closed
+Three modes:
+  1. Log (default): parse a log file
+  2. DB:            query PostgreSQL directly
+  3. Verify:        cross-check log vs DB
 
-Usage (date-based log files):
-    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log
-    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export csv
-    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export xlsx
-    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --export all
-    python tools/session_report.py logs/tradeos/tradeos_2026-03-14.log --verbose
+Usage:
+    # Log mode (default — backward compatible)
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-16.log
+    python tools/session_report.py logs/tradeos/tradeos_2026-03-16.log --export csv
 
-Legacy format (pre-date-logging):
-    python tools/session_report.py logs/paper_session_03.log
+    # DB mode (no log file needed)
+    python tools/session_report.py --source db --date 2026-03-16
+    python tools/session_report.py --source db --date 2026-03-16 --export xlsx
+
+    # Verify mode (cross-check log vs DB)
+    python tools/session_report.py --verify logs/tradeos/tradeos_2026-03-16.log
+    python tools/session_report.py --verify logs/tradeos/tradeos_2026-03-16.log --date 2026-03-16
 """
 from __future__ import annotations
 
@@ -126,6 +129,8 @@ class TradeRecord:
     exit_time: Optional[str] = None
     exit_reason: str = ""
     pnl_rs: Optional[float] = None
+    charges: float = 0.0
+    net_pnl: Optional[float] = None
 
     @property
     def status(self) -> str:
@@ -174,6 +179,24 @@ class SessionData:
     warnings: list = field(default_factory=list)
     hard_exit_triggered: bool = False
     hard_exit_ts: str = ""
+
+
+@dataclass
+class SessionReport:
+    """Normalized report from either log or DB source."""
+    source: str              # "log" or "db"
+    session_date: str        # YYYY-MM-DD
+    signals: list = field(default_factory=list)    # [SignalRecord]
+    trades: list = field(default_factory=list)     # [TradeRecord]
+    total_signals: int = 0
+    signals_accepted: int = 0
+    signals_rejected: int = 0
+    total_trades: int = 0
+    trades_won: int = 0
+    trades_lost: int = 0
+    gross_pnl: float = 0.0
+    total_charges: float = 0.0
+    net_pnl: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -781,16 +804,399 @@ def export_xlsx(data: SessionData, out_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Log → SessionReport converter
+# ---------------------------------------------------------------------------
+
+def generate_log_report(data: SessionData) -> SessionReport:
+    """Convert parsed SessionData into a normalized SessionReport."""
+    closed = [t for t in data.trades if t.exit_price is not None]
+    wins = [t for t in closed if t.pnl_rs and t.pnl_rs > 0]
+    losses = [t for t in closed if t.pnl_rs is not None and t.pnl_rs <= 0]
+    gross_pnl = sum(t.pnl_rs for t in closed if t.pnl_rs is not None)
+    accepted = sum(1 for s in data.signals if s.status == "ACCEPTED")
+    blocked = sum(1 for s in data.signals if s.status in ("BLOCKED", "DEDUP"))
+
+    return SessionReport(
+        source="log",
+        session_date=data.date or "unknown",
+        signals=data.signals,
+        trades=data.trades,
+        total_signals=len(data.signals),
+        signals_accepted=accepted,
+        signals_rejected=blocked,
+        total_trades=len(data.trades),
+        trades_won=len(wins),
+        trades_lost=len(losses),
+        gross_pnl=gross_pnl,
+        total_charges=0.0,
+        net_pnl=gross_pnl,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DB helpers
+# ---------------------------------------------------------------------------
+
+def _get_nested(d: dict, dotted_key: str) -> object:
+    """Traverse a nested dict by dot-separated key path."""
+    val: object = d
+    for part in dotted_key.split("."):
+        if not isinstance(val, dict):
+            return None
+        val = val.get(part)
+    return val
+
+
+def _load_dsn() -> str:
+    """Load DB DSN from config files, matching main.py pattern."""
+    import yaml
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    settings_path = os.path.join(root, "config", "settings.yaml")
+    secrets_path = os.path.join(root, "config", "secrets.yaml")
+    with open(settings_path) as f:
+        config = yaml.safe_load(f) or {}
+    try:
+        with open(secrets_path) as f:
+            secrets = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        secrets = {}
+    return str(
+        _get_nested(config, "database.dsn")
+        or _get_nested(config, "db.dsn")
+        or _get_nested(secrets, "database.dsn")
+        or ""
+    )
+
+
+_SIGNAL_STATUS_MAP = {
+    "FILLED": "ACCEPTED",
+    "REJECTED": "BLOCKED",
+    "KILL_SWITCHED": "BLOCKED",
+    "IGNORED": "BLOCKED",
+    "PENDING": "PENDING",
+}
+
+
+def _map_signal_status(db_status: str) -> str:
+    """Map DB signal status to report display status."""
+    return _SIGNAL_STATUS_MAP.get(db_status, db_status)
+
+
+# ---------------------------------------------------------------------------
+# DB → SessionReport
+# ---------------------------------------------------------------------------
+
+async def _generate_db_report_async(dsn: str, session_date: str) -> SessionReport:
+    """Query DB for signals, trades, and session summary."""
+    import asyncpg
+    from datetime import date as date_type
+
+    dt = date_type.fromisoformat(session_date)
+    conn = await asyncpg.connect(dsn)
+    try:
+        sig_rows = await conn.fetch(
+            "SELECT symbol, direction, status, reject_reason, "
+            "signal_time, theoretical_entry, stop_loss, target, "
+            "rsi, volume_ratio "
+            "FROM signals WHERE session_date = $1 ORDER BY signal_time",
+            dt,
+        )
+        trade_rows = await conn.fetch(
+            "SELECT t.symbol, t.direction, t.qty, "
+            "t.actual_entry, t.actual_exit, "
+            "t.entry_time, t.exit_time, t.exit_reason, "
+            "t.gross_pnl, t.charges, t.net_pnl, "
+            "s.stop_loss AS signal_stop, s.target AS signal_target "
+            "FROM trades t "
+            "LEFT JOIN signals s ON t.signal_id = s.id "
+            "WHERE t.session_date = $1 ORDER BY t.entry_time",
+            dt,
+        )
+        session_row = await conn.fetchrow(
+            "SELECT * FROM sessions WHERE session_date = $1",
+            dt,
+        )
+    finally:
+        await conn.close()
+
+    signals = []
+    for r in sig_rows:
+        signals.append(SignalRecord(
+            ts=str(r["signal_time"]),
+            symbol=r["symbol"],
+            direction=r["direction"],
+            entry=float(r["theoretical_entry"]),
+            stop=float(r["stop_loss"]),
+            target=float(r["target"]),
+            rsi=float(r["rsi"]),
+            volume_ratio=float(r["volume_ratio"]),
+            status=_map_signal_status(r["status"]),
+            block_reason=r["reject_reason"] or "",
+        ))
+
+    trades = []
+    for r in trade_rows:
+        gross = float(r["gross_pnl"]) if r["gross_pnl"] is not None else None
+        charges = float(r["charges"]) if r["charges"] is not None else 0.0
+        net = float(r["net_pnl"]) if r["net_pnl"] is not None else None
+        trades.append(TradeRecord(
+            symbol=r["symbol"],
+            direction=r["direction"],
+            entry_price=float(r["actual_entry"]),
+            qty=r["qty"],
+            stop_loss=float(r["signal_stop"]) if r["signal_stop"] is not None else 0.0,
+            target=float(r["signal_target"]) if r["signal_target"] is not None else 0.0,
+            opened_at=str(r["entry_time"]) if r["entry_time"] else "",
+            exit_price=float(r["actual_exit"]) if r["actual_exit"] is not None else None,
+            exit_time=str(r["exit_time"]) if r["exit_time"] else None,
+            exit_reason=r["exit_reason"] or "",
+            pnl_rs=gross,
+            charges=charges,
+            net_pnl=net,
+        ))
+
+    if session_row:
+        return SessionReport(
+            source="db",
+            session_date=session_date,
+            signals=signals,
+            trades=trades,
+            total_signals=session_row["signals_total"],
+            signals_accepted=session_row["signals_accepted"],
+            signals_rejected=session_row["signals_rejected"],
+            total_trades=session_row["trades_total"],
+            trades_won=session_row["trades_won"],
+            trades_lost=session_row["trades_lost"],
+            gross_pnl=float(session_row["gross_pnl"]),
+            total_charges=float(session_row["total_charges"]),
+            net_pnl=float(session_row["net_pnl"]),
+        )
+
+    # No sessions row — compute from individual records
+    closed = [t for t in trades if t.exit_price is not None]
+    sig_accepted = sum(1 for s in signals if s.status == "ACCEPTED")
+    sig_rejected = sum(1 for s in signals if s.status == "BLOCKED")
+    wins = sum(1 for t in closed if t.pnl_rs and t.pnl_rs > 0)
+    losses = sum(1 for t in closed if t.pnl_rs is not None and t.pnl_rs <= 0)
+    gross = sum(t.pnl_rs for t in closed if t.pnl_rs is not None)
+    tot_charges = sum(t.charges for t in trades)
+
+    return SessionReport(
+        source="db",
+        session_date=session_date,
+        signals=signals,
+        trades=trades,
+        total_signals=len(signals),
+        signals_accepted=sig_accepted,
+        signals_rejected=sig_rejected,
+        total_trades=len(trades),
+        trades_won=wins,
+        trades_lost=losses,
+        gross_pnl=gross,
+        total_charges=tot_charges,
+        net_pnl=gross - tot_charges,
+    )
+
+
+def generate_db_report(dsn: str, session_date: str) -> SessionReport:
+    """Sync wrapper for async DB query."""
+    import asyncio
+    return asyncio.run(_generate_db_report_async(dsn, session_date))
+
+
+# ---------------------------------------------------------------------------
+# SessionReport printer (reuses existing formatters via SessionData shim)
+# ---------------------------------------------------------------------------
+
+def _fmt_pnl_from_report(report: SessionReport) -> str:
+    """P&L summary from SessionReport — shows charges when available."""
+    lines = [
+        f"  Trades:       {report.total_trades} total",
+    ]
+    if report.trades_won or report.trades_lost:
+        total_closed = report.trades_won + report.trades_lost
+        win_rate = report.trades_won / total_closed * 100 if total_closed else 0.0
+        lines.append(f"  Result:       {report.trades_won} wins, {report.trades_lost} losses  ({win_rate:.1f}% win rate)")
+
+    lines.append(f"  Gross P&L:    \u20b9{report.gross_pnl:+.2f}")
+    if report.total_charges > 0:
+        lines.append(f"  Charges:      \u20b9{report.total_charges:-.2f}")
+    lines.append(f"  Net P&L:      \u20b9{report.net_pnl:+.2f}")
+    lines.extend([
+        "",
+        f"  Signals:      {report.total_signals} total",
+        f"  Accepted:     {report.signals_accepted}",
+        f"  Rejected:     {report.signals_rejected}",
+    ])
+    return "\n".join(lines)
+
+
+def print_session_report(report: SessionReport, verbose: bool = False) -> None:
+    """Print report from SessionReport (works for both log and DB sources)."""
+    shim = SessionData(
+        date=report.session_date,
+        signals=report.signals,
+        trades=report.trades,
+    )
+    BAR = "\u2550" * 72
+    DIV = "\u2500" * 72
+    print(f"\n{BAR}")
+    print(f"  TradeOS Session Report  [Source: {report.source.upper()}]")
+    print(BAR)
+    print(f"  Date:        {report.session_date}")
+
+    sections = [
+        ("2. Signals", fmt_signal_table(shim, verbose=verbose)),
+        ("3. Trades", fmt_trade_table(shim)),
+        ("4. P&L Summary", _fmt_pnl_from_report(report)),
+    ]
+    for title, content in sections:
+        print(f"\n{DIV}")
+        print(f"  {title}")
+        print(DIV)
+        print(content)
+
+    print(f"\n{BAR}\n")
+
+
+# ---------------------------------------------------------------------------
+# Verify mode — cross-check log vs DB
+# ---------------------------------------------------------------------------
+
+@dataclass
+class VerifyResult:
+    field: str
+    log_value: object
+    db_value: object
+    match: bool = True
+
+
+def verify_reports(log_report: SessionReport, db_report: SessionReport) -> list[VerifyResult]:
+    """Compare log-based and DB-based SessionReport objects field by field."""
+    results: list[VerifyResult] = []
+
+    # Summary-level exact checks
+    results.append(VerifyResult("signals", log_report.total_signals, db_report.total_signals,
+                                log_report.total_signals == db_report.total_signals))
+    results.append(VerifyResult("trades", log_report.total_trades, db_report.total_trades,
+                                log_report.total_trades == db_report.total_trades))
+
+    # Per-trade comparison — match by symbol+direction
+    log_trades = sorted(log_report.trades, key=lambda t: (t.symbol, t.direction))
+    db_trades = sorted(db_report.trades, key=lambda t: (t.symbol, t.direction))
+    min_len = min(len(log_trades), len(db_trades))
+
+    for i in range(min_len):
+        lt = log_trades[i]
+        dt = db_trades[i]
+        prefix = f"Trade #{i+1} {lt.symbol} {lt.direction}"
+
+        results.append(VerifyResult(f"{prefix} entry", lt.entry_price, dt.entry_price,
+                                    abs(lt.entry_price - dt.entry_price) <= 0.01))
+        if lt.exit_price is not None and dt.exit_price is not None:
+            results.append(VerifyResult(f"{prefix} exit", lt.exit_price, dt.exit_price,
+                                        abs(lt.exit_price - dt.exit_price) <= 0.01))
+        results.append(VerifyResult(f"{prefix} qty", lt.qty, dt.qty,
+                                    lt.qty == dt.qty))
+        if lt.pnl_rs is not None and dt.pnl_rs is not None:
+            results.append(VerifyResult(f"{prefix} gross", lt.pnl_rs, dt.pnl_rs,
+                                        abs(lt.pnl_rs - dt.pnl_rs) <= 1.0))
+        results.append(VerifyResult(f"{prefix} reason", lt.exit_reason, dt.exit_reason,
+                                    lt.exit_reason == dt.exit_reason))
+
+    # Extra trades mismatch
+    if len(log_trades) != len(db_trades):
+        results.append(VerifyResult("trade_count", len(log_trades), len(db_trades), False))
+
+    # Session P&L totals (tolerance ±2.0)
+    results.append(VerifyResult("session_pnl", log_report.net_pnl, db_report.net_pnl,
+                                abs(log_report.net_pnl - db_report.net_pnl) <= 2.0))
+
+    return results
+
+
+def _extract_date_from_filename(filepath: str) -> Optional[str]:
+    """Extract YYYY-MM-DD from filename like tradeos_2026-03-16.log."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(filepath))
+    return m.group(1) if m else None
+
+
+def print_verify_results(results: list[VerifyResult], session_date: str) -> int:
+    """Print verification output in the specified format. Returns exit code (0=pass, 1=fail)."""
+    print(f"\n=== VERIFICATION: {session_date} ===")
+
+    for r in results:
+        icon = "\u2705" if r.match else "\u274c MISMATCH"
+        if r.field in ("signals", "trades"):
+            print(f"{r.field.capitalize():10s} LOG={r.log_value}  DB={r.db_value}  {icon}")
+        elif r.field == "trade_count":
+            print(f"Trade count: LOG={r.log_value}  DB={r.db_value}  {icon}")
+        elif r.field == "session_pnl":
+            log_v = f"{r.log_value:.2f}" if isinstance(r.log_value, float) else str(r.log_value)
+            db_v = f"{r.db_value:.2f}" if isinstance(r.db_value, float) else str(r.db_value)
+            print(f"Session P&L: LOG={log_v}  DB={db_v}  {icon}")
+        elif r.field.startswith("Trade #"):
+            # Per-trade fields
+            field_parts = r.field.rsplit(" ", 1)
+            trade_label = field_parts[0]
+            field_name = field_parts[1] if len(field_parts) > 1 else ""
+            # Print trade header on first field
+            if field_name == "entry":
+                print(f"{trade_label}:")
+            label = field_name.capitalize().replace("_", " ")
+            if isinstance(r.log_value, float):
+                print(f"  {label + ':':<10s} LOG={r.log_value:<12.2f} DB={r.db_value:<12.2f} {icon}")
+            else:
+                print(f"  {label + ':':<10s} LOG={str(r.log_value):<12s} DB={str(r.db_value):<12s} {icon}")
+
+    mismatches = [r for r in results if not r.match]
+    if mismatches:
+        print(f"\nRESULT: \u274c {len(mismatches)} MISMATCH(ES) found \u2014 log and DB are inconsistent.")
+        return 1
+    else:
+        print(f"\nRESULT: \u2705 ALL MATCH \u2014 log and DB are consistent.")
+        return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+def _do_export(data: SessionData, args) -> None:
+    """Run CSV/XLSX export if requested."""
+    if args.export in ("csv", "all"):
+        print("  Exporting CSV...")
+        export_csv(data, args.out_dir)
+    if args.export in ("xlsx", "all"):
+        print("  Exporting XLSX...")
+        export_xlsx(data, args.out_dir)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="TradeOS session log parser and report generator.",
+        description="TradeOS session report — log parser, DB query, or verify.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("logfile", help="Path to session log file")
+    ap.add_argument(
+        "logfile", nargs="?", default=None,
+        help="Path to session log file (for log mode)",
+    )
+    ap.add_argument(
+        "--source",
+        choices=["log", "db"],
+        default="log",
+        help="Data source: log (default) or db",
+    )
+    ap.add_argument(
+        "--date",
+        help="Session date YYYY-MM-DD (required for DB mode, optional for verify)",
+    )
+    ap.add_argument(
+        "--verify",
+        metavar="LOGFILE",
+        help="Cross-check log file vs DB",
+    )
     ap.add_argument(
         "--export",
         choices=["csv", "xlsx", "all"],
@@ -808,6 +1214,59 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    # --- Mode 3: Verify (log vs DB) ---
+    if args.verify:
+        if not os.path.exists(args.verify):
+            print(f"ERROR: log file not found: {args.verify}", file=sys.stderr)
+            sys.exit(1)
+
+        parser = SessionParser()
+        data = parser.parse(args.verify)
+        log_report = generate_log_report(data)
+
+        session_date = args.date or _extract_date_from_filename(args.verify) or data.date
+        if not session_date:
+            print("ERROR: could not determine session date. Use --date YYYY-MM-DD", file=sys.stderr)
+            sys.exit(1)
+
+        dsn = _load_dsn()
+        if not dsn:
+            print("ERROR: no database.dsn found in config", file=sys.stderr)
+            sys.exit(1)
+
+        db_report = generate_db_report(dsn, session_date)
+        results = verify_reports(log_report, db_report)
+        exit_code = print_verify_results(results, session_date)
+
+        if args.export:
+            shim = SessionData(date=session_date, signals=log_report.signals, trades=log_report.trades)
+            _do_export(shim, args)
+
+        sys.exit(exit_code)
+
+    # --- Mode 2: DB report ---
+    if args.source == "db":
+        if not args.date:
+            print("ERROR: --source db requires --date YYYY-MM-DD", file=sys.stderr)
+            sys.exit(1)
+
+        dsn = _load_dsn()
+        if not dsn:
+            print("ERROR: no database.dsn found in config", file=sys.stderr)
+            sys.exit(1)
+
+        report = generate_db_report(dsn, args.date)
+        print_session_report(report, verbose=args.verbose)
+
+        if args.export:
+            shim = SessionData(date=report.session_date, signals=report.signals, trades=report.trades)
+            _do_export(shim, args)
+        return
+
+    # --- Mode 1: Log report (default — backward compatible) ---
+    if not args.logfile:
+        print("ERROR: logfile argument is required for log mode", file=sys.stderr)
+        sys.exit(1)
     if not os.path.exists(args.logfile):
         print(f"ERROR: log file not found: {args.logfile}", file=sys.stderr)
         sys.exit(1)
@@ -816,12 +1275,7 @@ def main() -> None:
     data = parser.parse(args.logfile)
     print_report(data, verbose=args.verbose)
 
-    if args.export in ("csv", "all"):
-        print("  Exporting CSV...")
-        export_csv(data, args.out_dir)
-    if args.export in ("xlsx", "all"):
-        print("  Exporting XLSX...")
-        export_xlsx(data, args.out_dir)
+    _do_export(data, args)
 
 
 if __name__ == "__main__":
