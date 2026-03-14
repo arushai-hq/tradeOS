@@ -20,6 +20,27 @@ services:
       timeout: 5s
       retries: 5
 
+  nginx:
+    image: nginx:alpine
+    container_name: tradeos-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  certbot:
+    image: certbot/certbot
+    container_name: tradeos-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+
   # Observer backend — uncomment when ready (V2.0)
   # observer_api:
   #   build: ./observer/backend
