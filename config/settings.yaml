@@ -137,3 +137,8 @@ token_automation:
     weekdays_only: true           # Skip auto-start on Sat/Sun
     tradeos_dir: "/opt/tradeOS"   # Base directory
     tmux_session_name: "tradeos"  # tmux session name
+
+# Log rotation — compress old files, delete archives
+log_rotation:
+  compress_after_days: 30    # .log files older than this → .gz
+  delete_after_days: 90      # .gz files older than this → delete

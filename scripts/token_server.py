@@ -19,6 +19,7 @@ NOTE: For automated daily flow, use token_cron.py to start this server.
       Can also be started manually: python scripts/token_server.py
 """
 
+import logging
 import os
 import signal
 import subprocess
@@ -44,6 +45,40 @@ SETTINGS_FILE = ROOT / "config" / "settings.yaml"
 SIGNAL_FILE = Path("/tmp/tradeos_token_ready")
 PID_FILE = Path("/tmp/tradeos_token_server.pid")
 IST = pytz.timezone("Asia/Kolkata")
+
+
+# ---------------------------------------------------------------------------
+# File + console logging (stdlib)
+# ---------------------------------------------------------------------------
+
+def _configure_token_logging() -> logging.Logger:
+    """Configure basic file + console logging for token server."""
+    log_dir = ROOT / "logs" / "token"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    log_path = log_dir / f"token_{today_str}.log"
+
+    fmt = "%(asctime)s [%(levelname)s] %(message)s"
+    datefmt = "%Y-%m-%dT%H:%M:%S"
+
+    file_handler = logging.FileHandler(str(log_path), encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+
+    logger = logging.getLogger("tradeos.token")
+    logger.handlers.clear()
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    return logger
+
+
+_token_log = _configure_token_logging()
 
 # ---------------------------------------------------------------------------
 # Config defaults (used if token_automation section missing from settings.yaml)
@@ -187,7 +222,7 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
     Never raises — auto-start failure must not crash the token server.
     """
     if not AUTO_START_ENABLED:
-        print("Auto-start disabled in config")
+        _token_log.info("Auto-start disabled in config")
         _send_telegram(
             secrets,
             f"✅ Token refreshed. User: {user_name}. TradeOS ready to boot.",
@@ -196,7 +231,7 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
 
     now = datetime.now(IST)
     if AUTO_START_WEEKDAYS_ONLY and now.weekday() >= 5:  # Saturday=5, Sunday=6
-        print("Weekend — skipping main.py auto-start")
+        _token_log.info("Weekend — skipping main.py auto-start")
         _send_telegram(
             secrets,
             f"✅ Token refreshed. User: {user_name}. Weekend — main.py not started.",
@@ -211,7 +246,7 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
         )
         if result.returncode == 0:
             subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION])
-            print("Killed stale tmux session.")
+            _token_log.info("Killed stale tmux session")
 
         # Start main.py in new tmux session
         subprocess.Popen([
@@ -227,21 +262,22 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
             capture_output=True,
         )
         if result.returncode == 0:
-            print(f"main.py started in tmux session '{TMUX_SESSION}'")
+            _token_log.info(f"main.py started in tmux session '{TMUX_SESSION}'")
             _send_telegram(
                 secrets,
                 f"✅ Token refreshed. User: {user_name}. "
-                f"main.py started (tmux: {TMUX_SESSION}).",
+                f"main.py started (tmux: {TMUX_SESSION}).\n"
+                f"📄 Log: logs/tradeos/tradeos_{_ist_today()}.log",
             )
         else:
-            print("WARNING: tmux session not found after start")
+            _token_log.warning("tmux session not found after start")
             _send_telegram(
                 secrets,
                 f"✅ Token refreshed. User: {user_name}. "
                 f"⚠️ main.py failed to auto-start.",
             )
     except Exception as exc:
-        print(f"Auto-start failed: {exc}")
+        _token_log.error(f"Auto-start failed: {exc}")
         _send_telegram(
             secrets,
             f"✅ Token refreshed. User: {user_name}. "
@@ -393,8 +429,8 @@ def main() -> None:
 
     try:
         _server = HTTPServer(("0.0.0.0", SERVER_PORT), CallbackHandler)
-        print(f"TradeOS token server listening on 0.0.0.0:{SERVER_PORT}")
-        print(f"Waiting for Zerodha callback... (auto-shutdown in 2h)")
+        _token_log.info(f"Token server listening on 0.0.0.0:{SERVER_PORT}")
+        _token_log.info("Waiting for Zerodha callback (auto-shutdown in 2h)")
         _server.serve_forever()
     except KeyboardInterrupt:
         pass
@@ -408,7 +444,7 @@ def main() -> None:
     finally:
         shutdown_timer.cancel()
         _cleanup()
-        print("Token server stopped.")
+        _token_log.info("Token server stopped")
 
 
 if __name__ == "__main__":
