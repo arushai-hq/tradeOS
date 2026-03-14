@@ -14,7 +14,40 @@ PYTHON="$TRADEOS_DIR/.venv/bin/python"
 COMPOSE_FILE="$TRADEOS_DIR/docker/docker-compose.yml"
 SETTINGS="$TRADEOS_DIR/config/settings.yaml"
 SECRETS="$TRADEOS_DIR/config/secrets.yaml"
-VERSION="0.1.0"
+VERSION="0.2.0"
+
+# ---------------------------------------------------------------------------
+# Color support — respects NO_COLOR and non-TTY
+# ---------------------------------------------------------------------------
+
+_setup_colors() {
+    if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+        C_RED="" C_GREEN="" C_YELLOW="" C_CYAN="" C_BOLD="" C_RESET=""
+    else
+        C_RED=$'\033[0;31m'
+        C_GREEN=$'\033[0;32m'
+        C_YELLOW=$'\033[0;33m'
+        C_CYAN=$'\033[0;36m'
+        C_BOLD=$'\033[1m'
+        C_RESET=$'\033[0m'
+    fi
+}
+_setup_colors
+
+_green()  { printf '%s%s%s' "$C_GREEN"  "$1" "$C_RESET"; }
+_red()    { printf '%s%s%s' "$C_RED"    "$1" "$C_RESET"; }
+_yellow() { printf '%s%s%s' "$C_YELLOW" "$1" "$C_RESET"; }
+_cyan()   { printf '%s%s%s' "$C_CYAN"   "$1" "$C_RESET"; }
+_bold()   { printf '%s%s%s' "$C_BOLD"   "$1" "$C_RESET"; }
+
+# Status indicators
+_ok()   { _green "OK"; }
+_fail() { _red "FAIL"; }
+_warn() { _yellow "WARN"; }
+
+# ---------------------------------------------------------------------------
+# Core helpers
+# ---------------------------------------------------------------------------
 
 # tmux session name — read from settings.yaml if available, fallback to "tradeos"
 _read_tmux_session() {
@@ -56,7 +89,7 @@ _today_log() {
 
 _require_venv() {
     if [ ! -x "$PYTHON" ]; then
-        echo "ERROR: Python venv not found at $PYTHON"
+        echo "$(_red "ERROR"): Python venv not found at $(_bold "$PYTHON")"
         echo "Run: python -m venv $TRADEOS_DIR/.venv && pip install -r requirements.txt"
         exit 1
     fi
@@ -64,7 +97,7 @@ _require_venv() {
 
 _require_tmux() {
     if ! command -v tmux &>/dev/null; then
-        echo "ERROR: tmux is not installed"
+        echo "$(_red "ERROR"): tmux is not installed"
         echo "Install: sudo dnf install tmux  (Rocky) or brew install tmux (macOS)"
         exit 1
     fi
@@ -72,7 +105,7 @@ _require_tmux() {
 
 _require_docker() {
     if ! command -v docker &>/dev/null; then
-        echo "ERROR: docker is not installed"
+        echo "$(_red "ERROR"): docker is not installed"
         exit 1
     fi
 }
@@ -100,7 +133,7 @@ cmd_start() {
     _require_tmux
 
     if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        echo "ERROR: tmux session '$TMUX_SESSION' already running"
+        echo "$(_red "ERROR"): tmux session '$(_bold "$TMUX_SESSION")' already running"
         echo "Use: tradeos status  to check, or  tradeos stop  to stop first"
         exit 1
     fi
@@ -109,16 +142,16 @@ cmd_start() {
     local logfile
     logfile="$(_today_log)"
 
-    echo "Starting TradeOS in tmux session '$TMUX_SESSION'..."
+    echo "Starting TradeOS in tmux session '$(_bold "$TMUX_SESSION")'..."
     tmux new-session -d -s "$TMUX_SESSION" -c "$TRADEOS_DIR" "$PYTHON main.py"
 
     # Verify it started (wait up to 2s)
     local tries=0
     while [ $tries -lt 4 ]; do
         if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-            echo "Started successfully."
-            echo "  Session:  $TMUX_SESSION"
-            echo "  Log:      $logfile"
+            echo "$(_green "Started successfully.")"
+            echo "  Session:  $(_bold "$TMUX_SESSION")"
+            echo "  Log:      $(_bold "$logfile")"
             echo "  Attach:   tmux attach -t $TMUX_SESSION"
             return 0
         fi
@@ -126,7 +159,7 @@ cmd_start() {
         tries=$((tries + 1))
     done
 
-    echo "WARNING: tmux session may not have started — check logs"
+    echo "$(_yellow "WARNING"): tmux session may not have started -- check logs"
     echo "  Log: $logfile"
     return 1
 }
@@ -135,18 +168,18 @@ cmd_stop() {
     _require_tmux
 
     if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        echo "No tmux session '$TMUX_SESSION' running."
+        echo "No tmux session '$(_bold "$TMUX_SESSION")' running."
         return 0
     fi
 
-    echo "Sending Ctrl+C to tmux session '$TMUX_SESSION'..."
+    echo "Sending Ctrl+C to tmux session '$(_bold "$TMUX_SESSION")'..."
     tmux send-keys -t "$TMUX_SESSION" C-c
 
     # Wait up to 3s for graceful shutdown
     local tries=0
     while [ $tries -lt 6 ]; do
         if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-            echo "Stopped gracefully."
+            echo "$(_green "Stopped gracefully.")"
             return 0
         fi
         sleep 0.5
@@ -154,9 +187,9 @@ cmd_stop() {
     done
 
     # Force kill
-    echo "Graceful stop timed out — killing session..."
+    echo "$(_yellow "Graceful stop timed out") -- killing session..."
     tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-    echo "Stopped (forced)."
+    echo "$(_green "Stopped") (forced)."
 }
 
 cmd_restart() {
@@ -166,14 +199,14 @@ cmd_restart() {
 }
 
 cmd_status() {
-    echo "=== TradeOS Status ==="
+    echo "$(_cyan "=== TradeOS Status ===")"
     echo ""
 
     # Trading process
     if command -v tmux &>/dev/null && tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        echo "Trading:   RUNNING (tmux session '$TMUX_SESSION')"
+        echo "Trading:   $(_green "RUNNING") (tmux session '$TMUX_SESSION')"
     else
-        echo "Trading:   STOPPED"
+        echo "Trading:   $(_red "STOPPED")"
     fi
 
     # Token validity
@@ -191,30 +224,44 @@ except Exception:
         local today
         today=$(_ist_today)
         if [ "$token_date" = "$today" ]; then
-            echo "Token:     VALID (date: $token_date)"
+            echo "Token:     $(_green "VALID") (date: $token_date)"
         else
-            echo "Token:     EXPIRED (date: $token_date, today: $today)"
+            echo "Token:     $(_red "EXPIRED") (date: $token_date, today: $today)"
         fi
     else
-        echo "Token:     UNKNOWN (secrets.yaml not found)"
+        echo "Token:     $(_yellow "UNKNOWN") (secrets.yaml not found)"
     fi
 
     # Database health
     if command -v docker &>/dev/null; then
         local db_status
-        db_status=$(docker inspect --format='{{.State.Health.Status}}' tradeos-db 2>/dev/null || echo "not running")
-        echo "Database:  $db_status"
+        db_status=$(docker inspect --format='{{.State.Health.Status}}' tradeos-db 2>&1) || db_status="not running"
+        db_status=$(echo "$db_status" | tr -d '[:space:]' | head -c 50)
+        [ -z "$db_status" ] && db_status="not running"
+        if [ "$db_status" = "healthy" ]; then
+            echo "Database:  $(_green "$db_status")"
+        elif [ "$db_status" = "notrunning" ] || [ "$db_status" = "not running" ]; then
+            echo "Database:  $(_red "not running")"
+        else
+            echo "Database:  $(_yellow "$db_status")"
+        fi
     else
-        echo "Database:  UNKNOWN (docker not installed)"
+        echo "Database:  $(_yellow "UNKNOWN") (docker not installed)"
     fi
 
     # Nginx
     if command -v docker &>/dev/null; then
         local nginx_status
-        nginx_status=$(docker inspect --format='{{.State.Status}}' tradeos-nginx 2>/dev/null || echo "not running")
-        echo "Nginx:     $nginx_status"
+        nginx_status=$(docker inspect --format='{{.State.Status}}' tradeos-nginx 2>&1) || nginx_status="not running"
+        nginx_status=$(echo "$nginx_status" | tr -d '\n' | head -c 50)
+        [ -z "$nginx_status" ] && nginx_status="not running"
+        if [ "$nginx_status" = "running" ]; then
+            echo "Nginx:     $(_green "$nginx_status")"
+        else
+            echo "Nginx:     $(_red "not running")"
+        fi
     else
-        echo "Nginx:     UNKNOWN (docker not installed)"
+        echo "Nginx:     $(_yellow "UNKNOWN") (docker not installed)"
     fi
 
     # Today's log
@@ -225,7 +272,7 @@ except Exception:
         size=$(du -h "$logfile" | cut -f1)
         local lines
         lines=$(wc -l < "$logfile")
-        echo "Log:       $logfile ($size, $lines lines)"
+        echo "Log:       $(_bold "$logfile") ($size, $lines lines)"
     else
         echo "Log:       $logfile (not created yet)"
     fi
@@ -236,9 +283,50 @@ except Exception:
 # ---------------------------------------------------------------------------
 
 cmd_report() {
+    local subcmd="${1:-}"
+
+    # Handle 'tradeos report auto'
+    if [ "$subcmd" = "auto" ]; then
+        shift
+        _cmd_report_auto "$@"
+        return
+    fi
+
     _require_venv
     cd "$TRADEOS_DIR"
     "$PYTHON" tools/session_report.py "$@"
+}
+
+_cmd_report_auto() {
+    _require_venv
+
+    local report_date="${1:-}"
+    # Parse --date flag
+    if [ "$report_date" = "--date" ] && [ -n "${2:-}" ]; then
+        report_date="$2"
+    elif [ -z "$report_date" ]; then
+        report_date=$(_ist_today)
+    fi
+
+    cd "$TRADEOS_DIR"
+
+    local logfile="$TRADEOS_DIR/logs/tradeos/tradeos_${report_date}.log"
+
+    echo "$(_cyan "=== TradeOS Auto-Report: $report_date ===")"
+    echo ""
+
+    # Step 1: DB report
+    echo "$(_bold "--- DB Report ---")"
+    "$PYTHON" tools/session_report.py --source db --date "$report_date" 2>&1 || true
+    echo ""
+
+    # Step 2: Verify (log vs DB) if log file exists
+    if [ -f "$logfile" ]; then
+        echo "$(_bold "--- Verify: Log vs DB ---")"
+        "$PYTHON" tools/session_report.py --verify "$logfile" --date "$report_date" 2>&1 || true
+    else
+        echo "$(_yellow "Skipping verify") -- no log file: $logfile"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -264,7 +352,7 @@ cmd_hawk() {
             "$PYTHON" tools/hawk_eval.py "$@"
             ;;
         *)
-            echo "Unknown hawk command: $subcmd"
+            echo "$(_red "Unknown hawk command"): $subcmd"
             echo "Usage: tradeos hawk <run|eval> [args...]"
             exit 1
             ;;
@@ -288,22 +376,22 @@ cmd_logs() {
             local logfile
             logfile="$(_today_log)"
             if [ ! -f "$logfile" ]; then
-                echo "No log file for today: $logfile"
+                echo "$(_red "No log file for today"): $logfile"
                 exit 1
             fi
-            echo "Tailing $logfile (Ctrl+C to stop)..."
+            echo "Tailing $(_bold "$logfile") (Ctrl+C to stop)..."
             tail -f "$logfile"
             ;;
         list)
-            echo "Recent log files:"
+            echo "$(_cyan "Recent log files:")"
             echo ""
-            echo "--- tradeos ---"
+            echo "$(_bold "--- tradeos ---")"
             ls -lhrt "$TRADEOS_DIR/logs/tradeos/" 2>/dev/null | tail -10 || echo "  (none)"
             echo ""
-            echo "--- hawk ---"
+            echo "$(_bold "--- hawk ---")"
             ls -lhrt "$TRADEOS_DIR/logs/hawk/" 2>/dev/null | tail -10 || echo "  (none)"
             echo ""
-            echo "--- token ---"
+            echo "$(_bold "--- token ---")"
             ls -lhrt "$TRADEOS_DIR/logs/token/" 2>/dev/null | tail -10 || echo "  (none)"
             ;;
         rotate)
@@ -312,7 +400,7 @@ cmd_logs() {
             "$PYTHON" scripts/log_rotation.py "$@"
             ;;
         *)
-            echo "Unknown logs command: $subcmd"
+            echo "$(_red "Unknown logs command"): $subcmd"
             echo "Usage: tradeos logs <tail|list|rotate>"
             exit 1
             ;;
@@ -341,7 +429,7 @@ cmd_db() {
             _require_docker
             local migration_dir="$TRADEOS_DIR/migrations"
             if [ ! -d "$migration_dir" ]; then
-                echo "No migrations/ directory found"
+                echo "$(_red "No migrations/ directory found")"
                 exit 1
             fi
             echo "Running migrations..."
@@ -349,13 +437,13 @@ cmd_db() {
                 [ -f "$sql_file" ] || continue
                 local fname
                 fname=$(basename "$sql_file")
-                echo "  Applying: $fname"
+                echo "  Applying: $(_bold "$fname")"
                 docker exec -i tradeos-db psql -U tradeos -d tradeos < "$sql_file"
             done
-            echo "Done."
+            echo "$(_green "Done.")"
             ;;
         *)
-            echo "Unknown db command: $subcmd"
+            echo "$(_red "Unknown db command"): $subcmd"
             echo "Usage: tradeos db <shell|migrate>"
             exit 1
             ;;
@@ -389,7 +477,7 @@ cmd_docker() {
             docker compose -f "$COMPOSE_FILE" logs "$@"
             ;;
         *)
-            echo "Unknown docker command: $subcmd"
+            echo "$(_red "Unknown docker command"): $subcmd"
             echo "Usage: tradeos docker <up|down|ps|logs> [args...]"
             exit 1
             ;;
@@ -411,14 +499,14 @@ cmd_config() {
     case "$subcmd" in
         show)
             if [ ! -f "$SETTINGS" ]; then
-                echo "ERROR: $SETTINGS not found"
+                echo "$(_red "ERROR"): $SETTINGS not found"
                 exit 1
             fi
             cat "$SETTINGS"
             ;;
         validate)
             _require_venv
-            echo "Validating config/settings.yaml..."
+            echo "$(_cyan "Validating config/settings.yaml...")"
             "$PYTHON" -c "
 import yaml, sys
 
@@ -460,7 +548,7 @@ else:
             ;;
         secrets)
             if [ ! -f "$SECRETS" ]; then
-                echo "ERROR: $SECRETS not found"
+                echo "$(_red "ERROR"): $SECRETS not found"
                 echo "Copy from template: cp config/secrets.yaml.template config/secrets.yaml"
                 exit 1
             fi
@@ -489,7 +577,7 @@ print(yaml.dump(redact(cfg), default_flow_style=False))
 "
             ;;
         *)
-            echo "Unknown config command: $subcmd"
+            echo "$(_red "Unknown config command"): $subcmd"
             echo "Usage: tradeos config <show|validate|secrets>"
             exit 1
             ;;
@@ -511,21 +599,212 @@ cmd_cron() {
     case "$subcmd" in
         install)
             if [ ! -f "$TRADEOS_DIR/scripts/setup_cron.sh" ]; then
-                echo "ERROR: scripts/setup_cron.sh not found"
+                echo "$(_red "ERROR"): scripts/setup_cron.sh not found"
                 exit 1
             fi
             bash "$TRADEOS_DIR/scripts/setup_cron.sh"
             ;;
         status)
-            echo "TradeOS cron entries:"
-            crontab -l 2>/dev/null | grep -i "tradeos\|trade_os\|token_cron\|log_rotation" || echo "  (none found)"
+            echo "$(_cyan "=== TradeOS Cron Status ===")"
+
+            local crontab_content
+            crontab_content=$(crontab -l 2>/dev/null || true)
+
+            # Token auth cron
+            if echo "$crontab_content" | grep -q "token_cron"; then
+                local token_schedule
+                token_schedule=$(echo "$crontab_content" | grep "token_cron" | head -1)
+                echo "Token Auth:    $(_green "INSTALLED") -- Mon-Fri 07:00 IST"
+                echo "               $token_schedule"
+            else
+                echo "Token Auth:    $(_red "NOT INSTALLED")"
+            fi
+
+            # Log rotation cron
+            if echo "$crontab_content" | grep -q "log_rotation"; then
+                local rotation_schedule
+                rotation_schedule=$(echo "$crontab_content" | grep "log_rotation" | head -1)
+                echo "Log Rotation:  $(_green "INSTALLED") -- Saturday 02:00 IST"
+                echo "               $rotation_schedule"
+            else
+                echo "Log Rotation:  $(_red "NOT INSTALLED")"
+            fi
+
+            # Certbot renewal cron
+            if echo "$crontab_content" | grep -q "certbot"; then
+                local certbot_schedule
+                certbot_schedule=$(echo "$crontab_content" | grep "certbot" | head -1)
+                echo "Certbot:       $(_green "INSTALLED")"
+                echo "               $certbot_schedule"
+            else
+                echo "Certbot:       $(_red "NOT INSTALLED")"
+            fi
             ;;
         *)
-            echo "Unknown cron command: $subcmd"
+            echo "$(_red "Unknown cron command"): $subcmd"
             echo "Usage: tradeos cron <install|status>"
             exit 1
             ;;
     esac
+}
+
+# ---------------------------------------------------------------------------
+# Preflight check
+# ---------------------------------------------------------------------------
+
+cmd_preflight() {
+    echo "$(_cyan "=== TradeOS Preflight Check ===")"
+    echo ""
+
+    local failures=0
+
+    # 1. Python venv
+    if [ -x "$PYTHON" ]; then
+        echo "Python venv:   $(_green "OK") ($PYTHON)"
+    else
+        echo "Python venv:   $(_red "FAIL") (not found at $PYTHON)"
+        failures=$((failures + 1))
+    fi
+
+    # 2. Token validity
+    if [ -f "$SECRETS" ] && [ -x "$PYTHON" ]; then
+        local token_date
+        token_date=$("$PYTHON" -c "
+import yaml
+try:
+    s = yaml.safe_load(open('$SECRETS'))
+    print(s.get('zerodha',{}).get('token_date','unknown'))
+except Exception:
+    print('unknown')
+" 2>/dev/null)
+        local today
+        today=$(_ist_today)
+        if [ "$token_date" = "$today" ]; then
+            echo "Token:         $(_green "OK") (valid for $today)"
+        else
+            echo "Token:         $(_red "FAIL") (date: $token_date, today: $today)"
+            failures=$((failures + 1))
+        fi
+    else
+        echo "Token:         $(_red "FAIL") (secrets.yaml not found)"
+        failures=$((failures + 1))
+    fi
+
+    # 3. Database health
+    if command -v docker &>/dev/null; then
+        local db_status
+        db_status=$(docker inspect --format='{{.State.Health.Status}}' tradeos-db 2>&1) || db_status="not running"
+        db_status=$(echo "$db_status" | tr -d '[:space:]' | head -c 50)
+        [ -z "$db_status" ] && db_status="not running"
+        if [ "$db_status" = "healthy" ]; then
+            echo "Database:      $(_green "OK") (healthy)"
+        else
+            echo "Database:      $(_red "FAIL") (not running)"
+            failures=$((failures + 1))
+        fi
+    else
+        echo "Database:      $(_red "FAIL") (docker not installed)"
+        failures=$((failures + 1))
+    fi
+
+    # 4. Nginx
+    if command -v docker &>/dev/null; then
+        local nginx_status
+        nginx_status=$(docker inspect --format='{{.State.Status}}' tradeos-nginx 2>&1) || nginx_status="not running"
+        nginx_status=$(echo "$nginx_status" | tr -d '\n' | head -c 50)
+        [ -z "$nginx_status" ] && nginx_status="not running"
+        if [ "$nginx_status" = "running" ]; then
+            echo "Nginx:         $(_green "OK") (running)"
+        else
+            echo "Nginx:         $(_red "FAIL") (not running)"
+            failures=$((failures + 1))
+        fi
+    else
+        echo "Nginx:         $(_red "FAIL") (docker not installed)"
+        failures=$((failures + 1))
+    fi
+
+    # 5. Config validation
+    if [ -f "$SETTINGS" ] && [ -x "$PYTHON" ]; then
+        local config_ok
+        config_ok=$("$PYTHON" -c "
+import yaml, sys
+try:
+    cfg = yaml.safe_load(open('$SETTINGS'))
+    mode = cfg.get('system',{}).get('mode','')
+    alloc = cfg.get('capital',{}).get('allocation',{})
+    total = sum(alloc.values()) if alloc else 0
+    if mode != 'paper':
+        print('mode_not_paper')
+    elif abs(total - 1.0) > 0.001:
+        print('alloc_bad')
+    else:
+        print('ok')
+except Exception as e:
+    print(f'error:{e}')
+" 2>/dev/null)
+        if [ "$config_ok" = "ok" ]; then
+            echo "Config:        $(_green "OK") (mode=paper, allocation=1.0)"
+        else
+            echo "Config:        $(_red "FAIL") ($config_ok)"
+            failures=$((failures + 1))
+        fi
+    else
+        echo "Config:        $(_red "FAIL") (settings.yaml not found)"
+        failures=$((failures + 1))
+    fi
+
+    # 6. Disk space (check TRADEOS_DIR partition)
+    local avail_kb
+    avail_kb=$(df -k "$TRADEOS_DIR" 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -n "$avail_kb" ]; then
+        local avail_gb
+        avail_gb=$(echo "$avail_kb" | awk '{printf "%.1f", $1/1048576}')
+        if [ "$avail_kb" -gt 1048576 ]; then
+            echo "Disk:          $(_green "OK") (${avail_gb}GB free)"
+        elif [ "$avail_kb" -gt 524288 ]; then
+            echo "Disk:          $(_yellow "WARN") (${avail_gb}GB free -- low)"
+        else
+            echo "Disk:          $(_red "FAIL") (${avail_gb}GB free -- critical)"
+            failures=$((failures + 1))
+        fi
+    else
+        echo "Disk:          $(_yellow "WARN") (could not determine)"
+    fi
+
+    # 7. Stale tmux session
+    if command -v tmux &>/dev/null; then
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            echo "Tmux:          $(_yellow "WARN") (session '$TMUX_SESSION' already running)"
+        else
+            echo "Tmux:          $(_green "OK") (no stale session)"
+        fi
+    else
+        echo "Tmux:          $(_red "FAIL") (tmux not installed)"
+        failures=$((failures + 1))
+    fi
+
+    # 8. Log directory
+    local logdir="$TRADEOS_DIR/logs/tradeos"
+    if [ -d "$logdir" ] && [ -w "$logdir" ]; then
+        echo "Log dir:       $(_green "OK") ($logdir)"
+    elif [ -d "$logdir" ]; then
+        echo "Log dir:       $(_red "FAIL") ($logdir not writable)"
+        failures=$((failures + 1))
+    else
+        echo "Log dir:       $(_red "FAIL") ($logdir does not exist)"
+        failures=$((failures + 1))
+    fi
+
+    # Summary
+    echo ""
+    if [ $failures -eq 0 ]; then
+        echo "$(_green "PREFLIGHT: ALL PASS")"
+        return 0
+    else
+        echo "$(_red "PREFLIGHT: $failures FAILURE(S)")"
+        return 1
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -550,10 +829,10 @@ cmd_version() {
         py_version="(venv not found)"
     fi
 
-    echo "tradeos CLI  v$VERSION"
+    echo "$(_bold "tradeos CLI")  v$VERSION"
     echo "Python:      $py_version"
     echo "Platform:    $(uname -s) $(uname -m)"
-    echo "TRADEOS_DIR: $TRADEOS_DIR"
+    echo "TRADEOS_DIR: $(_bold "$TRADEOS_DIR")"
 }
 
 # ---------------------------------------------------------------------------
@@ -561,22 +840,24 @@ cmd_version() {
 # ---------------------------------------------------------------------------
 
 cmd_help() {
+    echo "$(_bold "tradeos") -- Unified CLI for TradeOS trading system"
     cat <<'HELP'
-tradeos — Unified CLI for TradeOS trading system
 
 TRADING
   tradeos auth                  Run daily token authentication (token_cron.py)
   tradeos auth-server           Start token callback server (token_server.py)
   tradeos start                 Start main.py in tmux session
-  tradeos stop                  Graceful stop (Ctrl+C → force kill after 3s)
+  tradeos stop                  Graceful stop (Ctrl+C -> force kill after 3s)
   tradeos restart               Stop then start
   tradeos status                Show trading process, token, DB, nginx status
+  tradeos preflight             Pre-market health check (all systems go/no-go)
 
 REPORTS
   tradeos report <logfile>                  Session report from log file
   tradeos report --source db --date DATE    Session report from database
   tradeos report --verify <logfile>         Cross-check log vs DB
   tradeos report <logfile> --export csv     Export to CSV
+  tradeos report auto [--date YYYY-MM-DD]   End-of-day auto-report + verify
 
 HAWK (AI Market Intelligence)
   tradeos hawk run --run evening            Run HAWK evening analysis
@@ -606,7 +887,7 @@ CONFIG
 
 CRON
   tradeos cron install          Install cron entries (setup_cron.sh)
-  tradeos cron status           Show tradeos-related cron entries
+  tradeos cron status           Show cron entries with install status
 
 SYSTEM
   tradeos test [args]           Run pytest (pass-through args)
@@ -615,14 +896,18 @@ SYSTEM
 
 ENVIRONMENT
   TRADEOS_DIR    Base directory (default: /opt/tradeOS)
+  NO_COLOR       Set to disable colored output
 
 EXAMPLES
   tradeos start                                        # Start trading
   tradeos status                                       # Quick health check
+  tradeos preflight                                    # Pre-market systems check
   tradeos report logs/tradeos/tradeos_2026-03-16.log   # Session report
+  tradeos report auto                                  # EOD auto-report + verify
   tradeos hawk run --run evening --dry-run              # HAWK dry run
   tradeos test -x -q                                   # Run tests (stop on first failure)
   tradeos db shell                                     # Connect to database
+  tradeos cron status                                  # Check cron entries
   TRADEOS_DIR=. tradeos test -x -q                     # Run from dev checkout
 HELP
 }
@@ -648,6 +933,7 @@ main() {
         stop)         cmd_stop "$@" ;;
         restart)      cmd_restart "$@" ;;
         status)       cmd_status "$@" ;;
+        preflight)    cmd_preflight "$@" ;;
         report)       cmd_report "$@" ;;
         hawk)         cmd_hawk "$@" ;;
         logs)         cmd_logs "$@" ;;
@@ -659,9 +945,9 @@ main() {
         version)      cmd_version "$@" ;;
         help|--help|-h)  cmd_help ;;
         *)
-            echo "Unknown command: $cmd"
+            echo "$(_red "Unknown command"): $cmd"
             echo ""
-            echo "Run 'tradeos help' for available commands."
+            echo "Run '$(_bold "tradeos help")' for available commands."
             exit 1
             ;;
     esac
