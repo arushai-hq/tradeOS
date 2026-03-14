@@ -433,10 +433,6 @@ class OrderStateMachine:
         """Return all orders including terminal states."""
         return list(self._orders.values())
 
-    def get_orders_for_symbol(self, symbol: str) -> list[Order]:
-        """Return all orders (including terminal) for a given symbol."""
-        return [o for o in self._orders.values() if o.symbol == symbol]
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

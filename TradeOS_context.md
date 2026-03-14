@@ -47,7 +47,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 | Item | Status |
 |------|--------|
-| Tests | **489 passing, 0 failures, 12 skipped** |
+| Tests | **499 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -164,6 +164,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
 | 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
 | 2026-03-14 | Token Automation + Infra | Nginx + Let's Encrypt (port 11443), token_server.py callback with auto-start main.py (tmux), token_cron.py with 4-stage configurable Telegram escalation, date-based production logging (tradeos/hawk/token subdirs), log rotation (30d compress + 90d delete). DB trade history deployed + backfilled. Session report DB mode + verify cross-check. `tradeos` unified CLI v0.2.0 (colors, preflight, auto-report). README.md + CLAUDE.md updated. Tests: 453→489. | Weekend goals exceeded. Phase 1 production readiness: nearly complete. |
+| 2026-03-14 | Audit Fix | 12-section pre-Monday audit found 2 criticals + 5 warnings. Fixed: (1) signal_id chain end-to-end (RETURNING id → Signal.db_id → OrderPlacer → trades table), (2) structlog field names aligned with session_report parser (qty, exit_price, reason, gate, entry/stop/target). Warnings: dead deps removed (python-statemachine, pybreaker), unused code cleaned, cron label fixed, token_server error sanitized, README path corrected. Tests: 489→499. | CLEAR FOR MONDAY — zero criticals remaining. |
 
 ---
 
@@ -188,4 +189,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-14** — tradeos CLI polished (v0.2.0: colors, preflight, auto-report). README.md + CLAUDE.md created. Phase 1 production readiness nearly complete. 489 tests.
+**2026-03-14** — Pre-Monday audit fixes: signal_id chain + structlog field names (2 criticals) + 5 warnings resolved. 499 tests. CLEAR FOR MONDAY.

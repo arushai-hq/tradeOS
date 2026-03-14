@@ -126,7 +126,7 @@ Data Engine  ->  Strategy Engine  ->  Risk Manager  ->  Execution Engine
 | `risk_manager/` | Kill switch (3 levels), position sizer, P&L tracker |
 | `execution_engine/` | Order state machine (8 states), paper order placer |
 | `regime_detector/` | 4-regime classifier (BULL/BEAR/HIGH_VOL/CRASH) |
-| `hawk_engine/` | HAWK AI engine, multi-model consensus (4 LLMs) |
+| `tools/hawk_engine/` | HAWK AI engine, multi-model consensus (4 LLMs) |
 | `main.py` | D9 session lifecycle: pre-market gate -> startup -> trading -> EOD |
 | `bin/tradeos` | Unified CLI entry point (bash shim) |
 | `tools/` | session_report, hawk, hawk_eval, db_backfill |
@@ -187,7 +187,7 @@ tradeos test -x -q             # Stop on first failure, quiet
 tradeos test tests/unit/ -v    # Run unit tests, verbose
 ```
 
-Current: **489 passing**, 12 skipped, 0 failures.
+Current: **499 passing**, 12 skipped, 0 failures.
 
 ---
 
@@ -200,7 +200,7 @@ Current: **489 passing**, 12 skipped, 0 failures.
 | HAWK AI Engine | Active (evening + morning runs) |
 | CLI | v0.2.0 (25+ subcommands) |
 | Infrastructure | TimescaleDB + Docker + Nginx + SSL + cron |
-| Tests | 489 passing |
+| Tests | 499 passing |
 | VPS | Rocky Linux 9.7 |
 | Mode | `paper` (never auto-switched to live) |
 

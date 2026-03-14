@@ -20,7 +20,6 @@ open positions with exit_type='KILL_SWITCH'.
 """
 from __future__ import annotations
 
-import asyncio
 import copy
 import structlog
 from datetime import datetime, time

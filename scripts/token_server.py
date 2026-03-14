@@ -313,16 +313,18 @@ class CallbackHandler(BaseHTTPRequestHandler):
         try:
             self._handle_callback(request_token)
         except Exception as exc:
-            secrets = _load_secrets()
-            error_msg = str(exc)
-            _send_telegram(
-                secrets,
-                f"❌ Token exchange failed: {error_msg}",
-            )
+            _token_log.error(f"Token exchange failed: {exc}", exc_info=True)
+            try:
+                secrets = _load_secrets()
+                _send_telegram(
+                    secrets,
+                    f"❌ Token exchange failed: {exc}",
+                )
+            except Exception:
+                pass
             self._respond(500, _html(
-                "❌", "Token Exchange Failed",
-                f"Request token may be expired. Please re-login.<br>"
-                f"<small style='color:#666'>{error_msg}</small>",
+                "❌", "Authentication Failed",
+                "Authentication failed. Please retry.",
             ))
 
     def _handle_callback(self, request_token: str) -> None:
@@ -355,13 +357,14 @@ class CallbackHandler(BaseHTTPRequestHandler):
             profile = kite.profile()
             user_name = profile.get("user_name", "unknown")
         except Exception as exc:
+            _token_log.error(f"Token verification failed: {exc}", exc_info=True)
             _send_telegram(
                 secrets,
                 f"❌ Token verification failed: {exc}",
             )
             self._respond(500, _html(
                 "❌", "Verification Failed",
-                f"Token saved but verification failed: {exc}",
+                "Token saved but verification failed. Check server logs.",
             ))
             return
 

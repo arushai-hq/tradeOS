@@ -624,7 +624,7 @@ cmd_cron() {
             if echo "$crontab_content" | grep -q "log_rotation"; then
                 local rotation_schedule
                 rotation_schedule=$(echo "$crontab_content" | grep "log_rotation" | head -1)
-                echo "Log Rotation:  $(_green "INSTALLED") -- Saturday 02:00 IST"
+                echo "Log Rotation:  $(_green "INSTALLED") -- Sunday 02:00 IST"
                 echo "               $rotation_schedule"
             else
                 echo "Log Rotation:  $(_red "NOT INSTALLED")"
