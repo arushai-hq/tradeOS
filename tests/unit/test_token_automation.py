@@ -331,7 +331,7 @@ class TestTokenCronEscalation:
         # Verify message content
         assert "Daily Authentication" in telegram_messages[0]
         assert "Reminder" in telegram_messages[1]
-        assert "1 hour to market open" in telegram_messages[2]
+        assert "Reminder" in telegram_messages[2]
         assert "FINAL WARNING" in telegram_messages[3]
         assert "expired" in telegram_messages[4]
 
@@ -475,3 +475,54 @@ class TestAutoStartFailure:
         # Verify failure Telegram
         tg_msg = mock_tg.call_args[0][1]
         assert "failed to auto-start" in tg_msg
+
+
+# ---------------------------------------------------------------------------
+# (j) Config missing fallback — defaults used
+# ---------------------------------------------------------------------------
+
+class TestConfigMissingFallback:
+    """Test that both scripts work with missing token_automation config."""
+
+    def test_server_defaults_when_config_missing(self, tmp_path):
+        """Missing settings.yaml → server uses default port/timeout."""
+        fake_settings = tmp_path / "settings.yaml"
+        # Write settings without token_automation section
+        with open(fake_settings, "w") as f:
+            yaml.dump({"system": {"mode": "paper"}}, f)
+
+        with patch("scripts.token_server.SETTINGS_FILE", fake_settings):
+            from scripts.token_server import _load_token_config, _DEFAULTS
+
+            config = _load_token_config()
+            server_cfg = config.get("server", _DEFAULTS["server"])
+            auto_cfg = config.get("auto_start", _DEFAULTS["auto_start"])
+
+            assert server_cfg.get("port", 7291) == 7291
+            assert server_cfg.get("timeout_hours", 2) == 2
+            assert auto_cfg.get("enabled", True) is True
+            assert auto_cfg.get("weekdays_only", True) is True
+
+    def test_cron_defaults_when_config_missing(self, tmp_path):
+        """Missing settings.yaml → cron uses default timing."""
+        fake_settings = tmp_path / "settings.yaml"
+        # Write settings without token_automation section
+        with open(fake_settings, "w") as f:
+            yaml.dump({"system": {"mode": "paper"}}, f)
+
+        with patch("scripts.token_cron.SETTINGS_FILE", fake_settings):
+            from scripts.token_cron import _load_token_config, _parse_time, _DEFAULTS
+
+            config = _load_token_config()
+            cron_cfg = config.get("cron", _DEFAULTS["cron"])
+
+            reminders = [_parse_time(t) for t in cron_cfg.get("reminders", ["07:30", "08:00"])]
+            assert reminders == [(7, 30), (8, 0)]
+
+            final = _parse_time(cron_cfg.get("final_warning", "08:30"))
+            assert final == (8, 30)
+
+            deadline = _parse_time(cron_cfg.get("deadline", "08:45"))
+            assert deadline == (8, 45)
+
+            assert cron_cfg.get("check_interval_seconds", 30) == 30

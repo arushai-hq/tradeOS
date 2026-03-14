@@ -40,14 +40,48 @@ from kiteconnect import KiteConnect
 
 ROOT = Path(__file__).parent.parent
 SECRETS_FILE = ROOT / "config" / "secrets.yaml"
+SETTINGS_FILE = ROOT / "config" / "settings.yaml"
 SIGNAL_FILE = Path("/tmp/tradeos_token_ready")
 PID_FILE = Path("/tmp/tradeos_token_server.pid")
 IST = pytz.timezone("Asia/Kolkata")
-TRADEOS_DIR = os.environ.get("TRADEOS_DIR", "/opt/tradeOS")
-VENV_PYTHON = f"{TRADEOS_DIR}/.venv/bin/python"
 
-# Safety timeout: auto-shutdown after 2 hours
-AUTO_SHUTDOWN_SECONDS = 2 * 60 * 60
+# ---------------------------------------------------------------------------
+# Config defaults (used if token_automation section missing from settings.yaml)
+# ---------------------------------------------------------------------------
+
+_DEFAULTS = {
+    "server": {"port": 7291, "timeout_hours": 2},
+    "auto_start": {
+        "enabled": True,
+        "weekdays_only": True,
+        "tradeos_dir": "/opt/tradeOS",
+        "tmux_session_name": "tradeos",
+    },
+}
+
+
+def _load_token_config() -> dict:
+    """Load token_automation config from settings.yaml with defaults fallback."""
+    try:
+        with open(SETTINGS_FILE) as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("token_automation", _DEFAULTS)
+    except Exception:
+        return _DEFAULTS
+
+
+# Load config at module level
+_config = _load_token_config()
+_server_cfg = _config.get("server", _DEFAULTS["server"])
+_auto_cfg = _config.get("auto_start", _DEFAULTS["auto_start"])
+
+SERVER_PORT = _server_cfg.get("port", 7291)
+AUTO_SHUTDOWN_SECONDS = _server_cfg.get("timeout_hours", 2) * 60 * 60
+TRADEOS_DIR = _auto_cfg.get("tradeos_dir", "/opt/tradeOS")
+VENV_PYTHON = f"{TRADEOS_DIR}/.venv/bin/python"
+TMUX_SESSION = _auto_cfg.get("tmux_session_name", "tradeos")
+AUTO_START_ENABLED = _auto_cfg.get("enabled", True)
+AUTO_START_WEEKDAYS_ONLY = _auto_cfg.get("weekdays_only", True)
 
 # Server reference for shutdown
 _server: HTTPServer | None = None
@@ -149,11 +183,19 @@ def _send_telegram(secrets: dict, message: str) -> None:
 def _auto_start_main(secrets: dict, user_name: str) -> None:
     """Start main.py in a named tmux session after successful token refresh.
 
-    Skips on weekends. Kills stale tmux session if present.
+    Skips on weekends (if weekdays_only). Kills stale tmux session if present.
     Never raises — auto-start failure must not crash the token server.
     """
+    if not AUTO_START_ENABLED:
+        print("Auto-start disabled in config")
+        _send_telegram(
+            secrets,
+            f"✅ Token refreshed. User: {user_name}. TradeOS ready to boot.",
+        )
+        return
+
     now = datetime.now(IST)
-    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+    if AUTO_START_WEEKDAYS_ONLY and now.weekday() >= 5:  # Saturday=5, Sunday=6
         print("Weekend — skipping main.py auto-start")
         _send_telegram(
             secrets,
@@ -164,16 +206,16 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
     try:
         # Kill stale tmux session if exists
         result = subprocess.run(
-            ["tmux", "has-session", "-t", "tradeos"],
+            ["tmux", "has-session", "-t", TMUX_SESSION],
             capture_output=True,
         )
         if result.returncode == 0:
-            subprocess.run(["tmux", "kill-session", "-t", "tradeos"])
+            subprocess.run(["tmux", "kill-session", "-t", TMUX_SESSION])
             print("Killed stale tmux session.")
 
         # Start main.py in new tmux session
         subprocess.Popen([
-            "tmux", "new-session", "-d", "-s", "tradeos",
+            "tmux", "new-session", "-d", "-s", TMUX_SESSION,
             "-c", TRADEOS_DIR,
             VENV_PYTHON, "main.py",
         ])
@@ -181,15 +223,15 @@ def _auto_start_main(secrets: dict, user_name: str) -> None:
         # Verify after 5 seconds
         time.sleep(5)
         result = subprocess.run(
-            ["tmux", "has-session", "-t", "tradeos"],
+            ["tmux", "has-session", "-t", TMUX_SESSION],
             capture_output=True,
         )
         if result.returncode == 0:
-            print("main.py started in tmux session 'tradeos'")
+            print(f"main.py started in tmux session '{TMUX_SESSION}'")
             _send_telegram(
                 secrets,
                 f"✅ Token refreshed. User: {user_name}. "
-                f"main.py started (tmux: tradeos).",
+                f"main.py started (tmux: {TMUX_SESSION}).",
             )
         else:
             print("WARNING: tmux session not found after start")
@@ -350,8 +392,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     try:
-        _server = HTTPServer(("0.0.0.0", 7291), CallbackHandler)
-        print(f"TradeOS token server listening on 0.0.0.0:7291")
+        _server = HTTPServer(("0.0.0.0", SERVER_PORT), CallbackHandler)
+        print(f"TradeOS token server listening on 0.0.0.0:{SERVER_PORT}")
         print(f"Waiting for Zerodha callback... (auto-shutdown in 2h)")
         _server.serve_forever()
     except KeyboardInterrupt:

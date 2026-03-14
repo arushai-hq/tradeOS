@@ -118,3 +118,22 @@ trading:
       token: 2952193
     - symbol: NESTLEIND
       token: 4598529
+
+# Token automation — daily Zerodha token refresh
+token_automation:
+  server:
+    port: 7291
+    timeout_hours: 2              # Auto-shutdown if no callback
+  cron:
+    first_send: "07:00"           # IST — initial login link
+    reminders:                    # IST — escalation messages
+      - "07:30"
+      - "08:00"
+    final_warning: "08:30"        # IST — last warning
+    deadline: "08:45"             # IST — kill server, session missed
+    check_interval_seconds: 30    # Polling interval for signal file
+  auto_start:
+    enabled: true                 # Set false to disable main.py auto-start
+    weekdays_only: true           # Skip auto-start on Sat/Sun
+    tradeos_dir: "/opt/tradeOS"   # Base directory
+    tmux_session_name: "tradeos"  # tmux session name
