@@ -21,8 +21,10 @@ NOTE: For automated daily flow, use token_cron.py to start this server.
 
 import os
 import signal
+import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -41,6 +43,8 @@ SECRETS_FILE = ROOT / "config" / "secrets.yaml"
 SIGNAL_FILE = Path("/tmp/tradeos_token_ready")
 PID_FILE = Path("/tmp/tradeos_token_server.pid")
 IST = pytz.timezone("Asia/Kolkata")
+TRADEOS_DIR = os.environ.get("TRADEOS_DIR", "/opt/tradeOS")
+VENV_PYTHON = f"{TRADEOS_DIR}/.venv/bin/python"
 
 # Safety timeout: auto-shutdown after 2 hours
 AUTO_SHUTDOWN_SECONDS = 2 * 60 * 60
@@ -139,6 +143,71 @@ def _send_telegram(secrets: dict, message: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Auto-start main.py (weekdays only)
+# ---------------------------------------------------------------------------
+
+def _auto_start_main(secrets: dict, user_name: str) -> None:
+    """Start main.py in a named tmux session after successful token refresh.
+
+    Skips on weekends. Kills stale tmux session if present.
+    Never raises — auto-start failure must not crash the token server.
+    """
+    now = datetime.now(IST)
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        print("Weekend — skipping main.py auto-start")
+        _send_telegram(
+            secrets,
+            f"✅ Token refreshed. User: {user_name}. Weekend — main.py not started.",
+        )
+        return
+
+    try:
+        # Kill stale tmux session if exists
+        result = subprocess.run(
+            ["tmux", "has-session", "-t", "tradeos"],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            subprocess.run(["tmux", "kill-session", "-t", "tradeos"])
+            print("Killed stale tmux session.")
+
+        # Start main.py in new tmux session
+        subprocess.Popen([
+            "tmux", "new-session", "-d", "-s", "tradeos",
+            "-c", TRADEOS_DIR,
+            VENV_PYTHON, "main.py",
+        ])
+
+        # Verify after 5 seconds
+        time.sleep(5)
+        result = subprocess.run(
+            ["tmux", "has-session", "-t", "tradeos"],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            print("main.py started in tmux session 'tradeos'")
+            _send_telegram(
+                secrets,
+                f"✅ Token refreshed. User: {user_name}. "
+                f"main.py started (tmux: tradeos).",
+            )
+        else:
+            print("WARNING: tmux session not found after start")
+            _send_telegram(
+                secrets,
+                f"✅ Token refreshed. User: {user_name}. "
+                f"⚠️ main.py failed to auto-start.",
+            )
+    except Exception as exc:
+        print(f"Auto-start failed: {exc}")
+        _send_telegram(
+            secrets,
+            f"✅ Token refreshed. User: {user_name}. "
+            f"⚠️ main.py failed to auto-start.",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Request handler
 # ---------------------------------------------------------------------------
 
@@ -218,11 +287,8 @@ class CallbackHandler(BaseHTTPRequestHandler):
             ))
             return
 
-        # Success — notify + signal + respond + shutdown
-        _send_telegram(
-            secrets,
-            f"✅ Token refreshed. User: {user_name}. TradeOS ready to boot.",
-        )
+        # Success — auto-start main.py (sends Telegram with status)
+        _auto_start_main(secrets, user_name)
 
         # Write signal file
         SIGNAL_FILE.touch()

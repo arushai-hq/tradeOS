@@ -165,7 +165,7 @@ def main() -> None:
         "🔑 TradeOS Daily Authentication\n"
         f"Tap to login → {login_url}\n"
         "After login + TOTP, token is captured automatically.\n"
-        "⏰ Window: 07:00 - 08:45 IST"
+        "⏰ Window: 07:00 - 08:45 IST | Auto-starts main.py after auth"
     ))
     print(f"Login URL sent to Telegram: {login_url}")
 
