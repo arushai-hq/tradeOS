@@ -135,8 +135,10 @@ docs/                     Strategy specs, architecture, brainstorm notes
 ### Branching
 - `main` = production (deployed on VPS, always deployable)
 - `feature/*` = new features (created from main)
+- `feature/hawk` = HAWK AI engine development branch
 - `fix/*` = bug fixes
-- Merge to main only when all tests pass
+- **Never commit directly to main** -- always use feature/fix branches and merge after tests pass
+- Merge to main only when all tests pass (zero failures = quality gate)
 
 ### Commit Messages
 ```
@@ -185,6 +187,29 @@ Current: 489 passing, 12 skipped.
 - Do not use `time.sleep()` in async code -- use `await asyncio.sleep()`
 - Do not call Python scripts directly in production -- use `tradeos` CLI
 - Do not invent risk parameters -- use constants from `config/settings.yaml`
+- Do not deploy during market hours (9:15 AM - 3:30 PM IST) -- deployment window is before 09:00 or after 16:00 only
+
+---
+
+## Available Skills
+
+TradeOS-specific skills in `.claude/skills/`:
+
+| Skill | Discipline | Purpose |
+|-------|-----------|---------|
+| `tradeos-architecture` | — | System architecture, module map, data flow |
+| `tradeos-gotchas` | — | Bug catalogue (B1-B14), field name traps, P&L pitfalls |
+| `tradeos-testing` | — | Test standards, conventions, regression test rules |
+| `tradeos-operations` | — | VPS deployment, daily workflow, CLI reference |
+| `tradeos-kill-switch-guardian` | D1 | 3-level kill switch implementation |
+| `tradeos-order-state-machine` | D2 | 8-state order lifecycle |
+| `tradeos-websocket-resilience` | D3 | Auto-reconnect with exponential backoff |
+| `tradeos-observability` | D4 | structlog + Telegram + Prometheus |
+| `tradeos-tick-validator` | D5 | 5-gate tick validation pipeline |
+| `tradeos-async-architecture` | D6 | 5-task asyncio event loop |
+| `tradeos-position-reconciler` | D7 | Zerodha position reconciliation |
+| `tradeos-test-pyramid` | D8 | Three-layer testing gate |
+| `tradeos-session-guardian` | D9 | Session lifecycle management |
 
 ---
 

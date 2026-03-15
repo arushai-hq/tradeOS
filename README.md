@@ -189,6 +189,16 @@ Subdirectories: `tradeos/` (trading), `hawk/` (AI engine), `token/` (auth)
 - **Hooks:** `curl`/`wget` and large Bash output are automatically routed through sandbox tools (`ctx_execute`, `ctx_fetch_and_index`).
 - **Existing MCP servers** (KiteConnect, TimescaleDB) are unaffected.
 
+### Claude Code Skills
+
+13 TradeOS-specific skills in `.claude/skills/` enforce reliability disciplines and project conventions:
+
+- **tradeos-architecture** — System architecture, module map, data flow
+- **tradeos-gotchas** — Bug catalogue (B1-B14), field name traps, P&L pitfalls
+- **tradeos-testing** — Test standards, conventions, regression test rules
+- **tradeos-operations** — VPS deployment, daily workflow, CLI reference
+- **D1-D9 discipline skills** — Kill switch, order state machine, WebSocket resilience, observability, tick validator, async architecture, position reconciliation, test pyramid, session guardian
+
 ---
 
 ## Testing
