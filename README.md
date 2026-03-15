@@ -119,19 +119,23 @@ Data Engine  ->  Strategy Engine  ->  Risk Manager  ->  Execution Engine
 
 ### Module Overview
 
+Engine modules live under `core/` (ASPS Pattern B structure):
+
 | Module | Role |
 |--------|------|
-| `data_engine/` | WebSocket feed, 5-gate tick validator, tick storage |
-| `strategy_engine/` | CandleBuilder, indicators, S1 signal generator, risk gates |
-| `risk_manager/` | Kill switch (3 levels), position sizer, P&L tracker |
-| `execution_engine/` | Order state machine (8 states), paper order placer |
-| `regime_detector/` | 4-regime classifier (BULL/BEAR/HIGH_VOL/CRASH) |
+| `core/data_engine/` | WebSocket feed, 5-gate tick validator, tick storage |
+| `core/strategy_engine/` | CandleBuilder, indicators, S1 signal generator, risk gates |
+| `core/risk_manager/` | Kill switch (3 levels), position sizer, P&L tracker |
+| `core/execution_engine/` | Order state machine (8 states), paper order placer |
+| `core/regime_detector/` | 4-regime classifier (BULL/BEAR/HIGH_VOL/CRASH) |
 | `tools/hawk_engine/` | HAWK AI engine, multi-model consensus (4 LLMs) |
 | `main.py` | D9 session lifecycle: pre-market gate -> startup -> trading -> EOD |
 | `bin/tradeos` | Unified CLI entry point (bash shim) |
 | `tools/` | session_report, hawk, hawk_eval, db_backfill |
 | `scripts/` | token_cron, token_server, log_rotation, setup_cron, setup_ssl |
 | `docker/` | docker-compose (TimescaleDB + nginx + certbot) |
+| `docs/decisions/` | Architecture Decision Records ([ADRs](docs/decisions/)) |
+| `docs/runbooks/` | Operational procedures ([runbooks](docs/runbooks/)) |
 
 ---
 
@@ -238,6 +242,12 @@ Current: **499 passing**, 12 skipped, 0 failures.
 | Hard intraday exit | 15:00 IST |
 | Stop-loss | Mandatory on every order |
 | Mode | Paper only until all gates pass |
+
+---
+
+## Project Structure
+
+This project follows **ASPS v1.0.0** (ARUSHAI Standard Project Structure) — Pattern B (Engine + Tools), HEAVY tier. Engine modules are organized under `core/`, with subdirectory `CLAUDE.md` files for skill routing. See [docs/decisions/](docs/decisions/) for architecture decision records and [docs/runbooks/](docs/runbooks/) for operational procedures.
 
 ---
 
