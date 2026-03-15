@@ -13,8 +13,8 @@ import pytz
 from freezegun import freeze_time
 from unittest.mock import MagicMock
 
-from strategy_engine.risk_gate import RiskGate
-from strategy_engine.signal_generator import Signal
+from core.strategy_engine.risk_gate import RiskGate
+from core.strategy_engine.signal_generator import Signal
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -295,7 +295,7 @@ def test_regime_blocks_short_in_bull_trend():
 @freeze_time("2026-03-05 04:00:00")  # IST 09:30
 def test_regime_crash_blocks_short_with_low_volume():
     """Gate 7: CRASH + SHORT + volume_ratio <= 2.0 → blocked."""
-    from regime_detector.regime_detector import MarketRegime
+    from core.regime_detector.regime_detector import MarketRegime
 
     mock_regime = MagicMock()
     mock_regime.is_short_allowed.return_value = True
@@ -311,7 +311,7 @@ def test_regime_crash_blocks_short_with_low_volume():
 @freeze_time("2026-03-05 04:00:00")  # IST 09:30
 def test_regime_crash_allows_short_with_high_volume():
     """Gate 7: CRASH + SHORT + volume_ratio > 2.0 → allowed."""
-    from regime_detector.regime_detector import MarketRegime
+    from core.regime_detector.regime_detector import MarketRegime
 
     mock_regime = MagicMock()
     mock_regime.is_short_allowed.return_value = True
@@ -420,7 +420,7 @@ def test_no_entry_window_configurable_cutoff():
 
 def test_parse_gate_info_no_entry_window():
     """_parse_gate_info maps 'NO_ENTRY_WINDOW' to gate 5, 'no_entry_window'."""
-    from strategy_engine import _parse_gate_info
+    from core.strategy_engine import _parse_gate_info
 
     gate_number, gate_name = _parse_gate_info("NO_ENTRY_WINDOW")
     assert gate_number == 5
@@ -429,7 +429,7 @@ def test_parse_gate_info_no_entry_window():
 
 def test_parse_gate_info_hard_exit():
     """_parse_gate_info maps 'HARD_EXIT_TIME_REACHED' to gate 5, 'hard_exit_time'."""
-    from strategy_engine import _parse_gate_info
+    from core.strategy_engine import _parse_gate_info
 
     gate_number, gate_name = _parse_gate_info("HARD_EXIT_TIME_REACHED")
     assert gate_number == 5
@@ -438,7 +438,7 @@ def test_parse_gate_info_hard_exit():
 
 def test_parse_gate_info_unknown_falls_through():
     """_parse_gate_info returns (0, 'unknown') for unrecognised reason."""
-    from strategy_engine import _parse_gate_info
+    from core.strategy_engine import _parse_gate_info
 
     gate_number, gate_name = _parse_gate_info("SOME_WEIRD_REASON")
     assert gate_number == 0

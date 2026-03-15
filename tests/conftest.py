@@ -43,7 +43,7 @@ def valid_tick(ist_now: datetime) -> dict:
 @pytest.fixture
 def mock_prev_close_cache() -> MagicMock:
     """Mock PrevCloseCache returning 2000.0 for all instrument tokens."""
-    from data_engine.prev_close_cache import PrevCloseCache
+    from core.data_engine.prev_close_cache import PrevCloseCache
 
     cache = MagicMock(spec=PrevCloseCache)
     cache.get.return_value = 2000.0

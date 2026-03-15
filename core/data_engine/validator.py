@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import structlog
 
-from data_engine.prev_close_cache import PrevCloseCache
+from core.data_engine.prev_close_cache import PrevCloseCache
 
 log = structlog.get_logger()
 IST = ZoneInfo("Asia/Kolkata")

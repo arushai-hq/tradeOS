@@ -36,11 +36,11 @@ from typing import Optional
 import asyncpg
 import pytz
 
-from strategy_engine.candle_builder import Candle, CandleBuilder
-from strategy_engine.indicators import IndicatorEngine
-from strategy_engine.risk_gate import KillSwitchProtocol, RiskGate
-from strategy_engine.signal_generator import Signal, SignalGenerator
-from strategy_engine.warmup import WarmupLoader
+from core.strategy_engine.candle_builder import Candle, CandleBuilder
+from core.strategy_engine.indicators import IndicatorEngine
+from core.strategy_engine.risk_gate import KillSwitchProtocol, RiskGate
+from core.strategy_engine.signal_generator import Signal, SignalGenerator
+from core.strategy_engine.warmup import WarmupLoader
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

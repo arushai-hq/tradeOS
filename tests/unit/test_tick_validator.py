@@ -12,8 +12,8 @@ import pytest
 import pytz
 from freezegun import freeze_time
 
-from data_engine.prev_close_cache import PrevCloseCache
-from data_engine.validator import TickValidator
+from core.data_engine.prev_close_cache import PrevCloseCache
+from core.data_engine.validator import TickValidator
 
 IST = pytz.timezone("Asia/Kolkata")
 

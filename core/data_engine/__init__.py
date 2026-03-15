@@ -17,10 +17,10 @@ from typing import Optional
 import pytz
 import structlog
 
-from data_engine.feed import DataFeed
-from data_engine.prev_close_cache import PrevCloseCache
-from data_engine.storage import TickStorage
-from data_engine.validator import TickValidator
+from core.data_engine.feed import DataFeed
+from core.data_engine.prev_close_cache import PrevCloseCache
+from core.data_engine.storage import TickStorage
+from core.data_engine.validator import TickValidator
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

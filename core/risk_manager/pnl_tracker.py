@@ -27,7 +27,7 @@ from decimal import Decimal
 
 import pytz
 
-from risk_manager.charge_calculator import ChargeCalculator
+from core.risk_manager.charge_calculator import ChargeCalculator
 
 log = structlog.get_logger()
 

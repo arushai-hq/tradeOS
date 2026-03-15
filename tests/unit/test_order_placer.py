@@ -19,9 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from execution_engine.order_placer import OrderPlacer
-from execution_engine.state_machine import OrderState, OrderStateMachine
-from strategy_engine.signal_generator import Signal
+from core.execution_engine.order_placer import OrderPlacer
+from core.execution_engine.state_machine import OrderState, OrderStateMachine
+from core.strategy_engine.signal_generator import Signal
 from datetime import datetime
 import pytz
 

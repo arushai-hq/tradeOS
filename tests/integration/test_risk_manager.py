@@ -74,7 +74,7 @@ async def test_full_trade_lifecycle(db_pool, config, shared_state, session_date)
       - trades table has one row
       - shared_state updated correctly throughout
     """
-    from risk_manager import RiskManager
+    from core.risk_manager import RiskManager
 
     async with RiskManager(config=config, shared_state=shared_state, db_pool=db_pool) as rm:
         # Simulate a signal
@@ -137,7 +137,7 @@ async def test_two_consecutive_losses_then_win(db_pool, config, shared_state, se
     Two losses → consecutive_losses = 2
     One win   → consecutive_losses = 0
     """
-    from risk_manager import RiskManager
+    from core.risk_manager import RiskManager
 
     async with RiskManager(config=config, shared_state=shared_state, db_pool=db_pool) as rm:
         for i, (symbol, entry, exit_price, reason) in enumerate([
@@ -176,7 +176,7 @@ async def test_daily_loss_warning_event_written(db_pool, config, shared_state, s
     Force daily_pnl_pct below -2% threshold.
     Verify system_events table has a WARNING DAILY_LOSS_WARNING row.
     """
-    from risk_manager import RiskManager
+    from core.risk_manager import RiskManager
 
     # Use a large position size to force big losses quickly
     # capital=500000, entry=2500, stop=2450, qty=80 (capped at 40%)

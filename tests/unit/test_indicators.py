@@ -13,8 +13,8 @@ from decimal import Decimal
 import pytest
 import pytz
 
-from strategy_engine.candle_builder import Candle
-from strategy_engine.indicators import IndicatorEngine, MIN_CANDLES
+from core.strategy_engine.candle_builder import Candle
+from core.strategy_engine.indicators import IndicatorEngine, MIN_CANDLES
 
 IST = pytz.timezone("Asia/Kolkata")
 BASE_TIME = datetime(2026, 3, 5, 9, 15, tzinfo=IST)

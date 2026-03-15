@@ -26,7 +26,7 @@ import asyncio
 import pytest
 import structlog.testing
 
-from data_engine.feed import DataFeed
+from core.data_engine.feed import DataFeed
 
 
 def _make_feed(maxsize: int = 1) -> DataFeed:

@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Optional
 import pytz
 
 from utils.position_helpers import resolve_position_fields
-from execution_engine.state_machine import (
+from core.execution_engine.state_machine import (
     Order,
     OrderState,
     OrderStateMachine,
@@ -40,8 +40,8 @@ from execution_engine.state_machine import (
 )
 
 if TYPE_CHECKING:
-    from execution_engine.exit_manager import ExitManager
-    from risk_manager import RiskManager
+    from core.execution_engine.exit_manager import ExitManager
+    from core.risk_manager import RiskManager
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

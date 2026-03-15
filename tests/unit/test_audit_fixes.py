@@ -30,10 +30,10 @@ import pytz
 import structlog
 from structlog.testing import capture_logs
 
-from execution_engine.order_placer import OrderPlacer
-from execution_engine.state_machine import OrderStateMachine
-from risk_manager.pnl_tracker import PnlTracker, TradeResult
-from strategy_engine.signal_generator import Signal
+from core.execution_engine.order_placer import OrderPlacer
+from core.execution_engine.state_machine import OrderStateMachine
+from core.risk_manager.pnl_tracker import PnlTracker, TradeResult
+from core.strategy_engine.signal_generator import Signal
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -86,7 +86,7 @@ def _make_placer(mode: str = "paper") -> tuple[OrderPlacer, OrderStateMachine, d
 @pytest.mark.asyncio
 async def test_write_signal_returns_db_id():
     """_write_signal uses RETURNING id and returns the generated DB id."""
-    from strategy_engine import StrategyEngine
+    from core.strategy_engine import StrategyEngine
 
     # Mock pool with fetchval returning 42
     mock_conn = AsyncMock()
@@ -177,8 +177,8 @@ def test_signal_id_flows_through_pnl_tracker_to_trade_result():
 @pytest.mark.asyncio
 async def test_order_filled_emits_qty_field():
     """order_filled event must emit 'qty' (not 'quantity') to match session_report parser."""
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order, OrderState
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order, OrderState
 
     order = Order(
         order_id="PAPER-TEST123",
@@ -237,7 +237,7 @@ def test_position_closed_emits_exit_price_field():
 def test_signal_rejected_emits_parser_compatible_fields():
     """signal_rejected event must emit 'reason', 'gate', 'entry', 'stop', 'target'
     to match session_report parser field expectations."""
-    from strategy_engine import StrategyEngine, _parse_gate_info
+    from core.strategy_engine import StrategyEngine, _parse_gate_info
 
     # Verify the field names that _parse_gate_info produces
     gate_num, gate_name = _parse_gate_info("KILL_SWITCH:level_1")
@@ -294,7 +294,7 @@ def test_state_machine_no_get_orders_for_symbol():
 
 def test_exit_manager_no_asyncio_import():
     """exit_manager.py should not import asyncio (unused)."""
-    import execution_engine.exit_manager as em
+    import core.execution_engine.exit_manager as em
     source = inspect.getsource(em)
     # The module should not have 'import asyncio' as a standalone import
     # (async def keywords don't need the asyncio module)

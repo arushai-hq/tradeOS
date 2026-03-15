@@ -92,7 +92,7 @@ async def test_b12_short_gross_pnl_positive():
     SUNPHARMA SHORT: entry=1825.50, exit=1805.00, qty=71.
     gross_pnl = (1825.50 - 1805.00) × 71 = +₹1,455.50
     """
-    from risk_manager.pnl_tracker import PnlTracker
+    from core.risk_manager.pnl_tracker import PnlTracker
 
     shared_state = {"open_positions": {}, "daily_pnl_pct": 0.0, "daily_pnl_rs": 0.0}
     tracker = PnlTracker(
@@ -141,7 +141,7 @@ async def test_b12_long_gross_pnl_positive():
     HCLTECH LONG: entry=1370.60, exit=1421.40, qty=127.
     gross_pnl = (1421.40 - 1370.60) × 127 = +₹6,451.80
     """
-    from risk_manager.pnl_tracker import PnlTracker
+    from core.risk_manager.pnl_tracker import PnlTracker
 
     shared_state = {"open_positions": {}, "daily_pnl_pct": 0.0, "daily_pnl_rs": 0.0}
     tracker = PnlTracker(
@@ -181,7 +181,7 @@ async def test_b12_long_gross_pnl_positive():
 @pytest.mark.asyncio
 async def test_b14_hard_exit_uses_hard_exit_type():
     """emergency_exit_all called with exit_type='HARD_EXIT' uses HARD_EXIT, not KILL_SWITCH."""
-    from execution_engine.exit_manager import ExitManager
+    from core.execution_engine.exit_manager import ExitManager
 
     mock_placer = AsyncMock()
     mock_order = MagicMock()
@@ -227,7 +227,7 @@ async def test_b14_hard_exit_uses_hard_exit_type():
 @pytest.mark.asyncio
 async def test_b14_kill_switch_keeps_kill_switch_type():
     """emergency_exit_all with default exit_type keeps KILL_SWITCH."""
-    from execution_engine.exit_manager import ExitManager
+    from core.execution_engine.exit_manager import ExitManager
 
     mock_placer = AsyncMock()
     mock_order = MagicMock()

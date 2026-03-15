@@ -24,7 +24,7 @@ import pandas as pd
 import ta.trend
 import ta.momentum
 
-from strategy_engine.candle_builder import Candle
+from core.strategy_engine.candle_builder import Candle
 
 log = structlog.get_logger()
 

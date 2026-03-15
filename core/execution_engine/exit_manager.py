@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Optional
 import pytz
 
 if TYPE_CHECKING:
-    from execution_engine.order_placer import OrderPlacer
+    from core.execution_engine.order_placer import OrderPlacer
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

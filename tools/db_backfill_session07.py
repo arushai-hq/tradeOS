@@ -26,7 +26,7 @@ import yaml
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from risk_manager.charge_calculator import ChargeCalculator
+from core.risk_manager.charge_calculator import ChargeCalculator
 
 
 # -----------------------------------------------------------------------

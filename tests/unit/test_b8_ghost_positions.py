@@ -31,7 +31,7 @@ IST = pytz.timezone("Asia/Kolkata")
 
 def _make_monitor(shared_state: dict):
     """Create a minimal OrderMonitor for testing _on_exit_fill."""
-    from execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.order_monitor import OrderMonitor
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -43,7 +43,7 @@ def _make_monitor(shared_state: dict):
 
 def _make_exit_order(symbol: str, fill_price: float, exit_type: str = "KILL_SWITCH"):
     """Create a mock exit Order."""
-    from execution_engine.state_machine import Order
+    from core.execution_engine.state_machine import Order
 
     order = MagicMock(spec=Order)
     order.order_id = f"PAPER-EXIT-{symbol}"

@@ -35,10 +35,10 @@ from typing import Optional
 import asyncpg
 import pytz
 
-from risk_manager.charge_calculator import ChargeCalculator
-from risk_manager.loss_tracker import LossTracker
-from risk_manager.pnl_tracker import PnlTracker, TradeResult
-from risk_manager.position_sizer import PositionSizer
+from core.risk_manager.charge_calculator import ChargeCalculator
+from core.risk_manager.loss_tracker import LossTracker
+from core.risk_manager.pnl_tracker import PnlTracker, TradeResult
+from core.risk_manager.position_sizer import PositionSizer
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

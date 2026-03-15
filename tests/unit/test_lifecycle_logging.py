@@ -27,8 +27,8 @@ import pytest
 import pytz
 import structlog.testing
 
-from strategy_engine.candle_builder import Candle
-from strategy_engine.signal_generator import Signal
+from core.strategy_engine.candle_builder import Candle
+from core.strategy_engine.signal_generator import Signal
 
 IST = pytz.timezone("Asia/Kolkata")
 BASE_TIME = datetime(2026, 3, 9, 10, 30, tzinfo=IST)
@@ -63,8 +63,8 @@ def _make_signal(
 
 def _make_strategy_engine(gate_result: tuple[bool, str] = (True, "OK")):
     """Build a minimal StrategyEngine with all dependencies mocked."""
-    from strategy_engine import StrategyEngine
-    from strategy_engine.candle_builder import Candle
+    from core.strategy_engine import StrategyEngine
+    from core.strategy_engine.candle_builder import Candle
 
     engine = StrategyEngine.__new__(StrategyEngine)
 
@@ -231,8 +231,8 @@ async def test_order_filled_logged_on_entry_fill():
     (d) order_filled must fire in OrderMonitor._on_entry_fill with
     required fields: symbol, direction, fill_price, quantity, position_id, mode.
     """
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order, OrderState
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order, OrderState
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -278,8 +278,8 @@ async def test_exit_fill_calls_on_close_no_ghost():
     (e) B8 fix: _on_exit_fill must call risk_manager.on_close() and log
     exit_filled. It must NOT log its own position_closed (PnlTracker does that).
     """
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order, OrderState
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order, OrderState
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -328,8 +328,8 @@ async def test_exit_fill_long_calls_on_close():
     """
     (f) LONG position exit: on_close called with correct symbol and exit_price.
     """
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -372,8 +372,8 @@ async def test_exit_fill_short_calls_on_close():
     """
     (g) SHORT position exit: on_close called, no ghost position_closed.
     """
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"

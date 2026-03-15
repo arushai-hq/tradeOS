@@ -42,8 +42,8 @@ def _mock_db_pool(mock_conn):
 @pytest.mark.asyncio
 async def test_d1_sizer_rejection_updates_signal_status():
     """ExecutionEngine._handle_signal updates signal to REJECTED on sizer rejection."""
-    from execution_engine import ExecutionEngine
-    from strategy_engine.signal_generator import Signal
+    from core.execution_engine import ExecutionEngine
+    from core.strategy_engine.signal_generator import Signal
 
     ee = ExecutionEngine.__new__(ExecutionEngine)
     ee._order_placer = MagicMock()
@@ -82,8 +82,8 @@ async def test_d1_sizer_rejection_updates_signal_status():
 @pytest.mark.asyncio
 async def test_d1_entry_fill_updates_signal_status():
     """OrderMonitor._on_entry_fill updates signal to FILLED with order_id."""
-    from execution_engine.order_monitor import OrderMonitor
-    from execution_engine.state_machine import Order
+    from core.execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.state_machine import Order
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     monitor._mode = "paper"
@@ -215,7 +215,7 @@ def test_d4_backfill_trade_fixes_correct():
 
 def test_d5_storage_dead_code_removed():
     """TickStorage no longer has write_signal, write_trade, write_system_event."""
-    from data_engine.storage import TickStorage
+    from core.data_engine.storage import TickStorage
 
     assert not hasattr(TickStorage, "write_signal"), "write_signal should be removed"
     assert not hasattr(TickStorage, "write_trade"), "write_trade should be removed"
@@ -232,7 +232,7 @@ def test_d5_storage_dead_code_removed():
 @pytest.mark.asyncio
 async def test_order_monitor_no_db_pool():
     """OrderMonitor._update_signal_status is a no-op when db_pool is None."""
-    from execution_engine.order_monitor import OrderMonitor
+    from core.execution_engine.order_monitor import OrderMonitor
 
     monitor = OrderMonitor.__new__(OrderMonitor)
     # No _db_pool attribute set at all — should not crash
@@ -247,7 +247,7 @@ async def test_order_monitor_no_db_pool():
 @pytest.mark.asyncio
 async def test_ee_signal_update_db_error_no_crash():
     """DB error in _update_signal_status is logged but doesn't crash."""
-    from execution_engine import ExecutionEngine
+    from core.execution_engine import ExecutionEngine
 
     ee = ExecutionEngine.__new__(ExecutionEngine)
     ee._session_date = date(2026, 3, 13)

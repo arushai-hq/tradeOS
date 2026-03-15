@@ -32,13 +32,13 @@ from uuid import uuid4
 
 import pytz
 
-from execution_engine.state_machine import (
+from core.execution_engine.state_machine import (
     DuplicateOrderError,
     Order,
     OrderState,
     OrderStateMachine,
 )
-from strategy_engine.signal_generator import Signal
+from core.strategy_engine.signal_generator import Signal
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

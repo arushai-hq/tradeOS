@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from risk_manager.loss_tracker import LossTracker
+from core.risk_manager.loss_tracker import LossTracker
 
 
 # ---------------------------------------------------------------------------

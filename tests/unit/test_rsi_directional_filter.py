@@ -27,9 +27,9 @@ from decimal import Decimal
 import pytest
 import pytz
 
-from strategy_engine.candle_builder import Candle
-from strategy_engine.indicators import Indicators
-from strategy_engine.signal_generator import (
+from core.strategy_engine.candle_builder import Candle
+from core.strategy_engine.indicators import Indicators
+from core.strategy_engine.signal_generator import (
     SHORT_RSI_MAX,
     SignalGenerator,
 )

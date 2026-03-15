@@ -153,7 +153,7 @@ async def test_b10_nifty_unavailable_debug_before_market(tmp_path):
     """
     Before 9:15 IST, nifty_intraday_unavailable should log DEBUG not WARNING.
     """
-    from regime_detector.regime_detector import RegimeDetector
+    from core.regime_detector.regime_detector import RegimeDetector
 
     detector = RegimeDetector.__new__(RegimeDetector)
     detector._kite = MagicMock()
@@ -175,7 +175,7 @@ async def test_b10_nifty_unavailable_debug_before_market(tmp_path):
         return []
     detector._fetch_historical = mock_fetch
 
-    with patch("regime_detector.regime_detector.is_market_hours", return_value=False):
+    with patch("core.regime_detector.regime_detector.is_market_hours", return_value=False):
         with structlog.testing.capture_logs() as cap_logs:
             await detector._refresh_intraday_data()
 
@@ -190,7 +190,7 @@ async def test_b10_nifty_unavailable_warning_during_market(tmp_path):
     """
     During market hours (9:15–15:30), nifty_intraday_unavailable should log WARNING.
     """
-    from regime_detector.regime_detector import RegimeDetector
+    from core.regime_detector.regime_detector import RegimeDetector
 
     detector = RegimeDetector.__new__(RegimeDetector)
     detector._kite = MagicMock()
@@ -211,7 +211,7 @@ async def test_b10_nifty_unavailable_warning_during_market(tmp_path):
         return []
     detector._fetch_historical = mock_fetch
 
-    with patch("regime_detector.regime_detector.is_market_hours", return_value=True):
+    with patch("core.regime_detector.regime_detector.is_market_hours", return_value=True):
         with structlog.testing.capture_logs() as cap_logs:
             await detector._refresh_intraday_data()
 
@@ -251,7 +251,7 @@ def test_b10_prev_close_debug_before_market():
     """
     prev_close_load_failed should log DEBUG before 9:15 IST.
     """
-    with patch("data_engine.prev_close_cache.is_market_hours", return_value=False):
+    with patch("core.data_engine.prev_close_cache.is_market_hours", return_value=False):
         with structlog.testing.capture_logs() as cap_logs:
             _log = structlog.get_logger()
             # Simulate the prev_close_cache error path (is_market_hours() = False)
@@ -279,7 +279,7 @@ async def test_b11_regime_initializes_exactly_once():
     RegimeDetector.initialize() should run exactly once.
     Second call returns cached regime without re-fetching data.
     """
-    from regime_detector.regime_detector import MarketRegime, RegimeDetector
+    from core.regime_detector.regime_detector import MarketRegime, RegimeDetector
 
     detector = RegimeDetector.__new__(RegimeDetector)
     detector._kite = MagicMock()
@@ -341,7 +341,7 @@ async def test_b11_regime_skips_init_if_vix_zero():
     If VIX=0 at init time (invalid), regime_detector should use default 15.0.
     The _classify_and_update VIX validation (0 < vix < 100) guards against 0.
     """
-    from regime_detector.regime_detector import MarketRegime, RegimeDetector
+    from core.regime_detector.regime_detector import MarketRegime, RegimeDetector
 
     detector = RegimeDetector.__new__(RegimeDetector)
     detector._kite = MagicMock()
@@ -364,7 +364,7 @@ async def test_b11_regime_skips_init_if_vix_zero():
 
     detector._fetch_historical = mock_fetch
 
-    with patch("regime_detector.regime_detector.is_market_hours", return_value=False):
+    with patch("core.regime_detector.regime_detector.is_market_hours", return_value=False):
         regime = await detector.initialize()
 
     # VIX should have been set to neutral default 15.0 (not 0.0)

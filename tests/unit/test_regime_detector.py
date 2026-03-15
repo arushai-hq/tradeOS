@@ -5,7 +5,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from regime_detector.regime_detector import (
+from core.regime_detector.regime_detector import (
     MarketRegime,
     RegimeDetector,
     classify_regime,

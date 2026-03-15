@@ -41,7 +41,7 @@ def session_date() -> date:
 @pytest.fixture
 async def storage(session_date: date):
     """Create and connect TickStorage; disconnect after the test."""
-    from data_engine.storage import TickStorage
+    from core.data_engine.storage import TickStorage
 
     s = TickStorage(dsn=DB_DSN, session_date=session_date)
     await s.connect()
@@ -95,8 +95,8 @@ async def test_invalid_tick_not_written_to_storage(storage, session_date):
     A zero-price tick rejected by TickValidator must never reach the DB.
     Verify by counting rows before and after a rejected tick is processed.
     """
-    from data_engine.prev_close_cache import PrevCloseCache
-    from data_engine.validator import TickValidator
+    from core.data_engine.prev_close_cache import PrevCloseCache
+    from core.data_engine.validator import TickValidator
 
     cache = MagicMock(spec=PrevCloseCache)
     cache.get.return_value = 2000.0
@@ -168,7 +168,7 @@ async def test_storage_fallback_csv_on_db_error(tmp_path, session_date, fresh_ti
     When the DB connection is unreachable, ticks must be written to fallback CSV.
     No ticks must be lost.
     """
-    from data_engine.storage import TickStorage
+    from core.data_engine.storage import TickStorage
 
     bad_storage = TickStorage(
         dsn="postgresql://invalid:invalid@localhost:5999/nonexistent",

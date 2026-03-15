@@ -26,12 +26,12 @@ from freezegun import freeze_time
 import pytest
 import pytz
 
-from execution_engine import ExecutionEngine
-from execution_engine.exit_manager import ExitManager
-from execution_engine.order_monitor import OrderMonitor
-from execution_engine.order_placer import OrderPlacer
-from execution_engine.state_machine import OrderState, OrderStateMachine
-from strategy_engine.signal_generator import Signal
+from core.execution_engine import ExecutionEngine
+from core.execution_engine.exit_manager import ExitManager
+from core.execution_engine.order_monitor import OrderMonitor
+from core.execution_engine.order_placer import OrderPlacer
+from core.execution_engine.state_machine import OrderState, OrderStateMachine
+from core.strategy_engine.signal_generator import Signal
 
 IST = pytz.timezone("Asia/Kolkata")
 

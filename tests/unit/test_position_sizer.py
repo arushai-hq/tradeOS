@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from risk_manager.position_sizer import PositionSizer
+from core.risk_manager.position_sizer import PositionSizer
 
 
 # ---------------------------------------------------------------------------

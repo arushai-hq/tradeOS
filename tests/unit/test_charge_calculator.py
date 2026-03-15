@@ -16,7 +16,7 @@ from decimal import Decimal
 
 import pytest
 
-from risk_manager.charge_calculator import ChargeCalculator, ChargeBreakdown
+from core.risk_manager.charge_calculator import ChargeCalculator, ChargeBreakdown
 
 
 @pytest.fixture

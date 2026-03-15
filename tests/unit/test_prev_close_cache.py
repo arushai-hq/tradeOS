@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from data_engine.prev_close_cache import PrevCloseCache
+from core.data_engine.prev_close_cache import PrevCloseCache
 
 INSTRUMENTS = [
     {"instrument_token": 738561, "tradingsymbol": "RELIANCE"},

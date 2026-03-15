@@ -33,8 +33,8 @@ IST = pytz.timezone("Asia/Kolkata")
 
 def _make_engine(accepting_signals: bool):
     """Construct a StrategyEngine bypassing __init__, mocking all dependencies."""
-    from strategy_engine import StrategyEngine
-    from strategy_engine.candle_builder import Candle
+    from core.strategy_engine import StrategyEngine
+    from core.strategy_engine.candle_builder import Candle
 
     engine = StrategyEngine.__new__(StrategyEngine)
 
@@ -106,7 +106,7 @@ async def test_b2_order_queue_empty_after_hard_exit():
     B2-2: order_queue must remain empty when accepting_signals=False,
     even if signal_generator would have returned a signal.
     """
-    from strategy_engine.signal_generator import Signal
+    from core.strategy_engine.signal_generator import Signal
 
     engine = _make_engine(accepting_signals=False)
     # Make evaluate() return a signal — this must never reach order_queue

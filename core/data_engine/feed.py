@@ -15,7 +15,7 @@ import pytz
 import structlog
 from kiteconnect import KiteConnect, KiteTicker
 
-from data_engine.prev_close_cache import PrevCloseCache
+from core.data_engine.prev_close_cache import PrevCloseCache
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")

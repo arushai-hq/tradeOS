@@ -32,10 +32,10 @@ import structlog
 import yaml  # type: ignore[import-untyped]
 from kiteconnect import KiteConnect
 
-from data_engine import DataEngine
-from execution_engine import ExecutionEngine
-from risk_manager import RiskManager
-from strategy_engine import StrategyEngine
+from core.data_engine import DataEngine
+from core.execution_engine import ExecutionEngine
+from core.risk_manager import RiskManager
+from core.strategy_engine import StrategyEngine
 from utils.db_events import write_system_event
 from utils.telegram import resolve_telegram_credentials, send_daily_summary, send_telegram
 from utils.position_helpers import resolve_position_fields
@@ -776,7 +776,7 @@ async def risk_watchdog(
                 if exec_engine is not None:
                     osm = getattr(exec_engine, "_osm", None)
                     if osm is not None:
-                        from execution_engine.state_machine import (
+                        from core.execution_engine.state_machine import (
                             OrderState as _OSMState,
                         )
                         pending = [
@@ -1268,7 +1268,7 @@ async def main(
         await _ensure_sessions_table(db_pool)
 
         # Regime detector: initialize before engines start
-        from regime_detector import RegimeDetector
+        from core.regime_detector import RegimeDetector
         regime_detector = RegimeDetector(kite, config, shared_state, secrets)
         await regime_detector.initialize()
         # B11: regime_initialized already logged by RegimeDetector.initialize() with full context

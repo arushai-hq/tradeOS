@@ -23,7 +23,7 @@ from typing import Optional
 import asyncpg
 import pytz
 
-from strategy_engine.candle_builder import Candle
+from core.strategy_engine.candle_builder import Candle
 
 log = structlog.get_logger()
 

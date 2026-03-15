@@ -27,8 +27,8 @@ from typing import Optional, Protocol, runtime_checkable
 
 import pytz
 
-from regime_detector.regime_detector import MarketRegime
-from strategy_engine.signal_generator import Signal
+from core.regime_detector.regime_detector import MarketRegime
+from core.strategy_engine.signal_generator import Signal
 
 
 @runtime_checkable

@@ -12,9 +12,9 @@ from decimal import Decimal
 import pytest
 import pytz
 
-from strategy_engine.candle_builder import Candle
-from strategy_engine.indicators import Indicators
-from strategy_engine.signal_generator import (
+from core.strategy_engine.candle_builder import Candle
+from core.strategy_engine.indicators import Indicators
+from core.strategy_engine.signal_generator import (
     DEFAULT_MIN_STOP_PCT,
     LONG_RSI_MAX,
     LONG_RSI_MIN,
@@ -218,7 +218,7 @@ def test_signal_respects_kill_switch_gate():
     When kill_switch_level > 0, the RiskGate must block the signal.
     SignalGenerator generates a valid signal; RiskGate returns (False, reason).
     """
-    from strategy_engine.risk_gate import RiskGate
+    from core.strategy_engine.risk_gate import RiskGate
 
     gen = SignalGenerator()
     gate = RiskGate(kill_switch=None)  # fallback to shared_state

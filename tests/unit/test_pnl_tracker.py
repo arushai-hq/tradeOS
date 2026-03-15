@@ -16,7 +16,7 @@ from decimal import Decimal
 
 import pytest
 
-from risk_manager.pnl_tracker import PnlTracker, TradeResult
+from core.risk_manager.pnl_tracker import PnlTracker, TradeResult
 
 
 # ---------------------------------------------------------------------------

@@ -119,8 +119,8 @@ async def test_tick_to_signal_full_flow(db_pool, config, shared_state, mock_kite
       - Verify order_queue receives a LONG signal
       - Verify signals table has a PENDING row
     """
-    from strategy_engine import StrategyEngine
-    from strategy_engine.candle_builder import Candle
+    from core.strategy_engine import StrategyEngine
+    from core.strategy_engine.candle_builder import Candle
 
     tick_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
     order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
@@ -213,8 +213,8 @@ async def test_invalid_conditions_no_signal(db_pool, config, shared_state, mock_
     RSI > 70 must not generate a LONG signal.
     Verify order_queue remains empty when conditions are not met.
     """
-    from strategy_engine import StrategyEngine
-    from strategy_engine.candle_builder import Candle
+    from core.strategy_engine import StrategyEngine
+    from core.strategy_engine.candle_builder import Candle
 
     tick_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
     order_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
@@ -284,10 +284,10 @@ async def test_risk_gate_blocks_signal_at_max_positions(
       - be written to signals table with status='IGNORED' and reject_reason='MAX_POSITIONS_REACHED'
       - NOT appear in order_queue
     """
-    from strategy_engine import StrategyEngine
-    from strategy_engine.candle_builder import Candle
-    from strategy_engine.signal_generator import SignalGenerator, Signal
-    from strategy_engine.risk_gate import RiskGate
+    from core.strategy_engine import StrategyEngine
+    from core.strategy_engine.candle_builder import Candle
+    from core.strategy_engine.signal_generator import SignalGenerator, Signal
+    from core.strategy_engine.risk_gate import RiskGate
 
     # Simulate 3 open positions
     shared_state["open_positions"] = {
@@ -363,7 +363,7 @@ async def test_warmup_loads_from_candles_15m(db_pool, mock_kite, session_date):
     WarmupLoader must read from candles_15m without calling kite.historical_data()
     when the DB has >= 60 candles for the instrument.
     """
-    from strategy_engine.warmup import WarmupLoader, WARMUP_TARGET
+    from core.strategy_engine.warmup import WarmupLoader, WARMUP_TARGET
 
     token = 738561
     ref_date = session_date - timedelta(days=1)

@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from execution_engine.state_machine import (
+from core.execution_engine.state_machine import (
     DuplicateOrderError,
     InvalidStateTransition,
     Order,

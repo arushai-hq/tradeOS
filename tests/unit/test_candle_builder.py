@@ -12,7 +12,7 @@ from decimal import Decimal
 import pytz
 import pytest
 
-from strategy_engine.candle_builder import Candle, CandleBuilder
+from core.strategy_engine.candle_builder import Candle, CandleBuilder
 
 IST = pytz.timezone("Asia/Kolkata")
 
