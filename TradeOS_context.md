@@ -13,22 +13,24 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 
 ## 2. Architecture
 
+Engine modules live under `core/` (ASPS Pattern B structure):
+
 | Module | Role |
 |--------|------|
-| `data_engine/feed.py` | KiteTicker WebSocket → asyncio queue bridge |
-| `data_engine/validator.py` | 5-gate tick filter (price, circuit, volume, staleness, dedup) |
-| `strategy_engine/candle_builder.py` | Tick → 15-min OHLCV+VWAP candles, one instance per instrument |
-| `strategy_engine/indicators.py` | EMA9/21, RSI, VWAP, volume ratio, swing high/low |
-| `strategy_engine/signal_generator.py` | S1 signal evaluation (LONG/SHORT) + session dedup |
-| `strategy_engine/risk_gate.py` | Gates 1–7; Gate 7 = regime check (blocks counter-trend signals) |
-| `regime_detector/` | 4-regime classifier: BULL_TREND / BEAR_TREND / HIGH_VOLATILITY / CRASH |
-| `risk_manager/` | Kill switch (D1), position sizer, PnL tracker, loss tracker |
-| `execution_engine/` | Order state machine (8 states), paper order placer |
+| `core/data_engine/feed.py` | KiteTicker WebSocket → asyncio queue bridge |
+| `core/data_engine/validator.py` | 5-gate tick filter (price, circuit, volume, staleness, dedup) |
+| `core/strategy_engine/candle_builder.py` | Tick → 15-min OHLCV+VWAP candles, one instance per instrument |
+| `core/strategy_engine/indicators.py` | EMA9/21, RSI, VWAP, volume ratio, swing high/low |
+| `core/strategy_engine/signal_generator.py` | S1 signal evaluation (LONG/SHORT) + session dedup |
+| `core/strategy_engine/risk_gate.py` | Gates 1–7; Gate 7 = regime check (blocks counter-trend signals) |
+| `core/regime_detector/` | 4-regime classifier: BULL_TREND / BEAR_TREND / HIGH_VOLATILITY / CRASH |
+| `core/risk_manager/` | Kill switch (D1), position sizer, PnL tracker, loss tracker |
+| `core/execution_engine/` | Order state machine (8 states), paper order placer |
 | `main.py` | D9 session lifecycle: pre-market gate → startup → 5 concurrent tasks → EOD |
 | `utils/telegram_notifier.py` | Rich Telegram alerts — 6 event types + heartbeat summary. Config-driven via `config/telegram_alerts.yaml` (hot-reload, 60s TTL) |
 | `tools/session_report.py` | Standalone CLI session report — parses structlog, outputs signal/trade/P&L/regime/health tables. Supports `--export csv/xlsx/all` |
-| `risk_manager/position_sizer.py` | 3-layer slot-based sizing: risk-based → capital cap → viability floors (min_risk ₹1K, min_value ₹15K) |
-| `hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect + nsetools. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
+| `core/risk_manager/position_sizer.py` | 3-layer slot-based sizing: risk-based → capital cap → viability floors (min_risk ₹1K, min_value ₹15K) |
+| `tools/hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect + nsetools. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
 | `migrations/` | SQL migration files. `001_create_sessions_table.sql`. Auto-created at startup if missing. |
 | `tools/db_backfill_session07.py` | One-time data fix for Session 07 trades (incorrect P&L + exit_reason from pre-B12 code). |
 | `scripts/token_server.py` | HTTP callback server (0.0.0.0:7291). Captures Zerodha request_token, exchanges for access_token, writes to secrets.yaml, confirms via Telegram, auto-shuts down. Auto-starts main.py in named tmux session (weekdays only). |
@@ -36,6 +38,11 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | `scripts/log_rotation.py` | Log rotation: compress after 30 days, delete after 90 days. Runs daily via cron at 02:00 IST. Configurable via settings.yaml `log_rotation` section. |
 | `docker/nginx/` | Nginx reverse proxy (SSL on port 11443). Proxies /callback to token_server. Let's Encrypt cert via certbot. Port 80 for cert renewal only. |
 | `bin/tradeos` | Unified CLI entry point (v0.2.0). Bash shim with color-coded output. 25+ subcommands: auth, start/stop/restart, status, preflight, report (+ auto), hawk, logs, db, docker, config, cron, test, version. Symlinked to `/usr/local/bin/tradeos` via `scripts/install_tradeos_cli.sh`. |
+| `core/CLAUDE.md` | Engine skill router — D1-D9 disciplines, conventions, gotchas |
+| `tools/CLAUDE.md` | CLI tools and HAWK AI skill router |
+| `tests/CLAUDE.md` | Test suite conventions and commands |
+| `docs/decisions/` | Architecture Decision Records (ADR-001: position sizing, ADR-002: token automation) |
+| `docs/runbooks/` | Operational procedures (daily-trading.md) |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
 **Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
@@ -66,6 +73,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | tradeos CLI | v0.2.0 — 25+ subcommands, color-coded output, preflight check, auto-report. Installed at `/usr/local/bin/tradeos`. |
 | context-mode | MCP plugin (mksglu/context-mode v1.0.22) for context window optimization and session continuity. Sandboxes raw data out of context via SQLite + FTS5/BM25 indexing. Use `--continue` flag when resuming sessions to carry forward indexed context. Hooks intercept curl/wget and route through `ctx_execute`/`ctx_fetch_and_index`. |
 | OSD Compliance Audit | **2026-03-15** — Skills audited and enhanced. 4 new skills created (tradeos-architecture, tradeos-gotchas, tradeos-testing, tradeos-operations). CLAUDE.md verified against OSD Section 4.2 — deployment rule, branch discipline, and skills reference added. All 13 TradeOS skills operational. context-mode routing block verified intact. |
+| ASPS Restructure | **2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B (Engine + Tools), HEAVY tier. Engine modules moved to `core/` (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector). Subdirectory CLAUDE.md files for skill routing. Root CLAUDE.md rewritten (<200 lines). ADRs, runbooks, and specs directories created. Tests: 499 passed. Branch: `refactor/asps-restructure`. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -166,6 +174,7 @@ Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `p
 | 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
 | 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
 | 2026-03-14 | Token Automation + Infra + CLI + Audit | Nginx + Let's Encrypt (port 11443), token automation with auto-start, production logging, log rotation, session report DB+verify modes, tradeos CLI (25+ commands, color-coded), README.md + CLAUDE.md. Codebase audit: 2 criticals fixed (signal_id chain, structlog field names), 5 warnings resolved. Tests: 453→499. | Weekend complete. CLEAR FOR MONDAY. |
+| 2026-03-15 | ASPS Restructure | Full ASPS v1.0.0 compliance — engine modules moved to `core/`, subdirectory CLAUDE.md files (core/, tools/, docker/, scripts/, tests/), root CLAUDE.md rewritten (132 lines), ADRs (position sizing, token automation) + runbooks (daily trading) + specs directory created. Tests: 499 passed. | `refactor/asps-restructure` branch ready for review. |
 
 ---
 
@@ -190,4 +199,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-14** — Codebase audit complete. 2 criticals + 5 warnings fixed. 499 tests. Clear for Monday Session 08.
+**2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B / HEAVY tier. Engine modules under `core/`. 499 tests passing.
