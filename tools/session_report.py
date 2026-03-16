@@ -1293,12 +1293,16 @@ def print_verify_results(results: list[VerifyResult], session_date: str) -> int:
 
 def _do_export(data: SessionData, args) -> None:
     """Run CSV/XLSX export if requested."""
+    from utils.progress import spinner, step_done
+
     if args.export in ("csv", "all"):
-        print("  Exporting CSV...")
-        export_csv(data, args.out_dir)
+        with spinner("Exporting CSV..."):
+            export_csv(data, args.out_dir)
+        step_done("CSV exported")
     if args.export in ("xlsx", "all"):
-        print("  Exporting XLSX...")
-        export_xlsx(data, args.out_dir)
+        with spinner("Exporting XLSX..."):
+            export_xlsx(data, args.out_dir)
+        step_done("XLSX exported")
 
 
 def main() -> None:
@@ -1343,15 +1347,19 @@ def main() -> None:
     )
     args = ap.parse_args()
 
+    from utils.progress import spinner, step_done
+
     # --- Mode 3: Verify (log vs DB) ---
     if args.verify:
         if not os.path.exists(args.verify):
             print(f"ERROR: log file not found: {args.verify}", file=sys.stderr)
             sys.exit(1)
 
-        parser = SessionParser()
-        data = parser.parse(args.verify)
-        log_report = generate_log_report(data)
+        with spinner("Parsing log file..."):
+            parser = SessionParser()
+            data = parser.parse(args.verify)
+            log_report = generate_log_report(data)
+        step_done(f"Log parsed: {len(data.signals)} signals, {len(data.trades)} trades")
 
         session_date = args.date or _extract_date_from_filename(args.verify) or data.date
         if not session_date:
@@ -1363,8 +1371,12 @@ def main() -> None:
             print("ERROR: no database.dsn found in config", file=sys.stderr)
             sys.exit(1)
 
-        db_report = generate_db_report(dsn, session_date)
-        results = verify_reports(log_report, db_report)
+        with spinner("Querying database..."):
+            db_report = generate_db_report(dsn, session_date)
+        step_done(f"DB queried: {db_report.total_trades} trades")
+
+        with spinner("Cross-checking log vs DB..."):
+            results = verify_reports(log_report, db_report)
         exit_code = print_verify_results(results, session_date)
 
         if args.export:
@@ -1384,7 +1396,9 @@ def main() -> None:
             print("ERROR: no database.dsn found in config", file=sys.stderr)
             sys.exit(1)
 
-        report = generate_db_report(dsn, args.date)
+        with spinner("Querying database..."):
+            report = generate_db_report(dsn, args.date)
+        step_done(f"DB queried: {report.total_trades} trades, {report.total_signals} signals")
         print_session_report(report, verbose=args.verbose)
 
         if args.export:
@@ -1400,8 +1414,10 @@ def main() -> None:
         print(f"ERROR: log file not found: {args.logfile}", file=sys.stderr)
         sys.exit(1)
 
-    parser = SessionParser()
-    data = parser.parse(args.logfile)
+    with spinner("Parsing log file..."):
+        parser = SessionParser()
+        data = parser.parse(args.logfile)
+    step_done(f"Log parsed: {len(data.signals)} signals, {len(data.trades)} trades")
     print_report(data, verbose=args.verbose)
 
     _do_export(data, args)

@@ -149,10 +149,15 @@ def run_evening(target_date: date, dry_run: bool, hawk_config: dict, secrets: di
         send_hawk_telegram,
         write_json,
     )
+    from utils.progress import spinner, step_done, step_fail
 
     # Step 1: Collect data
     log.info("hawk_evening_start", date=target_date.isoformat(), dry_run=dry_run)
-    data = collect_evening_data(target_date, hawk_config)
+    with spinner("Collecting market data..."):
+        data = collect_evening_data(target_date, hawk_config)
+    bhav_count = len(data.get("bhavcopy", []))
+    sector_count = len(data.get("sectors", {}))
+    step_done(f"Market data: {bhav_count} stocks, {sector_count} sectors")
 
     if not data.get("bhavcopy"):
         log.warning("hawk_no_bhavcopy", note="No bhavcopy data — cannot generate picks")
@@ -212,10 +217,17 @@ def run_evening(target_date: date, dry_run: bool, hawk_config: dict, secrets: di
     watchlist_size = hawk_config.get("watchlist_size", 15)
     site_name = get_openrouter_site_name(secrets)
 
-    llm_result = analyze_evening(
-        data, api_key, model, max_tokens, watchlist_size,
-        provider=provider, site_name=site_name,
-    )
+    model_label = model.split("/")[-1] if "/" in model else model
+    with spinner(f"{model_label} analyzing..."):
+        llm_result = analyze_evening(
+            data, api_key, model, max_tokens, watchlist_size,
+            provider=provider, site_name=site_name,
+        )
+    picks = llm_result.get("watchlist", [])
+    if picks:
+        step_done(f"{model_label}: {len(picks)} picks")
+    else:
+        step_fail(f"{model_label}: no picks (check logs)")
 
     # Step 3: Assemble full result
     result = {
@@ -301,13 +313,19 @@ def run_evening_consensus(
         write_model_json,
     )
 
+    from utils.progress import spinner, step_done, step_fail
+
     # Step 1: Collect data (same as single mode)
     consensus_cfg = hawk_config.get("consensus", {})
     models = consensus_cfg.get("models", [])
 
     log.info("hawk_consensus_start", date=target_date.isoformat(),
              dry_run=dry_run, models=len(models))
-    data = collect_evening_data(target_date, hawk_config)
+    with spinner("Collecting market data..."):
+        data = collect_evening_data(target_date, hawk_config)
+    bhav_count = len(data.get("bhavcopy", []))
+    sector_count = len(data.get("sectors", {}))
+    step_done(f"Market data: {bhav_count} stocks, {sector_count} sectors")
 
     if not data.get("bhavcopy"):
         log.warning("hawk_no_bhavcopy", note="No bhavcopy data — cannot generate picks")
