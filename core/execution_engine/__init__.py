@@ -48,6 +48,7 @@ from core.execution_engine.order_monitor import OrderMonitor
 from core.execution_engine.order_placer import OrderPlacer
 from core.execution_engine.state_machine import OrderState, OrderStateMachine
 from core.strategy_engine.signal_generator import Signal
+from utils.position_helpers import resolve_position_fields
 
 log = structlog.get_logger()
 IST = pytz.timezone("Asia/Kolkata")
@@ -243,11 +244,99 @@ class ExecutionEngine:
             except asyncio.CancelledError:
                 raise  # D6 rule
 
+    def _decrement_pending(self) -> None:
+        """B15: safely decrement pending_signals counter (never negative)."""
+        self._shared_state["pending_signals"] = max(
+            0, self._shared_state.get("pending_signals", 0) - 1
+        )
+
     async def _handle_signal(self, signal: Signal) -> None:
-        """Size and place entry order for a single signal."""
+        """Size and place entry order for a single signal.
+
+        B15 defense-in-depth: three checks before order placement:
+          Layer 2 — hard max_positions gate (authoritative, sequential)
+          Layer 3 — capital ceiling gate (prevents capital overcommitment)
+          Sizer   — existing position sizing check
+        """
         assert self._order_placer is not None, "ExecutionEngine not initialised — _order_placer is None"
+
+        # ── Layer 2: Hard gate — max positions at execution (B15) ──────────
+        max_positions = self._shared_state.get("max_open_positions", 4)
+        open_count = len(self._shared_state.get("open_positions", {}))
+        if open_count >= max_positions:
+            self._decrement_pending()
+            log.warning(
+                "signal_rejected_at_execution",
+                symbol=signal.symbol,
+                direction=signal.direction,
+                reason="MAX_POSITIONS_AT_EXECUTION",
+                open_positions=open_count,
+                max_positions=max_positions,
+            )
+            self._shared_state["signals_rejected_today"] = (
+                self._shared_state.get("signals_rejected_today", 0) + 1
+            )
+            await self._update_signal_status(
+                signal.symbol, "REJECTED",
+                reject_reason="MAX_POSITIONS_AT_EXECUTION",
+            )
+            if self._notifier is not None:
+                self._notifier.notify_signal_rejected(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    gate_name="max_positions_execution",
+                    gate_number=4,
+                    reason="MAX_POSITIONS_AT_EXECUTION",
+                    rsi=float(signal.rsi),
+                )
+            return
+
+        # ── Layer 3: Capital ceiling gate (B15) ────────────────────────────
+        s1_alloc = float(
+            self._config.get("capital", {}).get("allocation", {}).get("s1_intraday", 0.70)
+        )
+        total_capital = float(self._config.get("capital", {}).get("total", 0))
+        s1_capital = total_capital * s1_alloc
+        # Sum capital already deployed in open positions (B7: use resolver)
+        deployed = 0.0
+        for pos in self._shared_state.get("open_positions", {}).values():
+            entry_price, _dir, qty = resolve_position_fields(pos)
+            deployed += entry_price * qty
+        # Rough estimate for this signal's capital need (slot-based)
+        slot_capital = s1_capital / max_positions if max_positions > 0 else s1_capital
+        estimated_capital = float(signal.theoretical_entry) * (slot_capital / float(signal.theoretical_entry))
+        if deployed + estimated_capital > s1_capital * 1.05:  # 5% tolerance
+            self._decrement_pending()
+            log.warning(
+                "signal_rejected_capital_ceiling",
+                symbol=signal.symbol,
+                direction=signal.direction,
+                deployed=round(deployed, 2),
+                estimated_new=round(estimated_capital, 2),
+                s1_capital=round(s1_capital, 2),
+            )
+            self._shared_state["signals_rejected_today"] = (
+                self._shared_state.get("signals_rejected_today", 0) + 1
+            )
+            await self._update_signal_status(
+                signal.symbol, "REJECTED",
+                reject_reason="CAPITAL_CEILING_EXCEEDED",
+            )
+            if self._notifier is not None:
+                self._notifier.notify_signal_rejected(
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    gate_name="capital_ceiling",
+                    gate_number=4,
+                    reason="CAPITAL_CEILING_EXCEEDED",
+                    rsi=float(signal.rsi),
+                )
+            return
+
+        # ── Sizer check (existing) ────────────────────────────────────────
         qty = self._risk_manager.size_position(signal)
         if qty is None:
+            self._decrement_pending()
             log.warning(
                 "signal_rejected_by_sizer",
                 symbol=signal.symbol,
@@ -255,7 +344,6 @@ class ExecutionEngine:
                 entry=float(signal.theoretical_entry),
                 stop=float(signal.stop_loss),
             )
-            # T2+T3: count sizer rejection in heartbeat + send notification
             self._shared_state["signals_rejected_today"] = (
                 self._shared_state.get("signals_rejected_today", 0) + 1
             )
@@ -273,8 +361,10 @@ class ExecutionEngine:
             )
             return
 
+        # ── Place order ───────────────────────────────────────────────────
         order = await self._order_placer.place_entry(signal, qty)
         if order:
+            self._decrement_pending()
             self._signals_consumed += 1
             # T2+T3: count accepted signal + send notification AFTER sizer passes
             self._shared_state["signals_generated_today"] = (
@@ -299,6 +389,9 @@ class ExecutionEngine:
                 qty=qty,
                 order_id=order.order_id,
             )
+        else:
+            # Order placement failed
+            self._decrement_pending()
 
     # ------------------------------------------------------------------
     # Candle close notification (called by StrategyEngine integration layer)

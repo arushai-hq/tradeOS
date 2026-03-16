@@ -197,6 +197,9 @@ def _init_shared_state() -> dict:
         # Regime detector
         "market_regime": None,
         "regime_position_multiplier": 1.0,
+        # B15: pending signals counter (race condition defense)
+        "pending_signals": 0,
+        "max_open_positions": 4,  # default, overwritten from config in main()
     }
 
 
@@ -1235,6 +1238,9 @@ async def main(
     mode = config.get("system", {}).get("mode", "paper")
     capital = config.get("capital", {}).get("total", 500000)
     shared_state["capital"] = float(capital)  # B4: expose capital for heartbeat unrealized P&L
+    shared_state["max_open_positions"] = int(
+        config.get("risk", {}).get("max_open_positions", 4)
+    )  # B15: expose for execution engine hard gate
 
     log.info(
         "startup_phase1_begin",

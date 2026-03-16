@@ -280,6 +280,10 @@ class StrategyEngine:
         if allowed:
             await self._order_queue.put(signal)
             self._signals_generated += 1
+            # B15: increment pending counter so Gate 4 accounts for in-flight signals
+            self._shared_state["pending_signals"] = (
+                self._shared_state.get("pending_signals", 0) + 1
+            )
             self._shared_state["last_signal"] = {
                 "symbol": signal.symbol,
                 "direction": signal.direction,
