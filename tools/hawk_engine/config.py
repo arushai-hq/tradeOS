@@ -85,16 +85,17 @@ def get_hawk_telegram_credentials(secrets: dict) -> tuple[str, str]:
     return ("", "")
 
 
-# NIFTY 50 hardcoded fallback list (as of March 2026)
+# NIFTY 50 hardcoded fallback list — Last refreshed: 2026-03-16
+# Note: TATAMOTORS demerged → TMPV (passenger vehicles) is the NIFTY 50 constituent
 NIFTY_50_STOCKS = [
     "ADANIENT", "ADANIPORTS", "APOLLOHOSP", "ASIANPAINT", "AXISBANK",
-    "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BEL", "BPCL",
-    "BHARTIARTL", "BRITANNIA", "CIPLA", "COALINDIA", "DRREDDY",
+    "BAJAJ-AUTO", "BAJAJFINSV", "BAJFINANCE", "BEL", "BHARTIARTL",
+    "BPCL", "BRITANNIA", "CIPLA", "COALINDIA", "DRREDDY",
     "EICHERMOT", "ETERNAL", "GRASIM", "HCLTECH", "HDFCBANK",
     "HDFCLIFE", "HEROMOTOCO", "HINDALCO", "HINDUNILVR", "ICICIBANK",
-    "ITC", "INDUSINDBK", "INFY", "JSWSTEEL", "KOTAKBANK",
+    "INDUSINDBK", "INFY", "ITC", "JSWSTEEL", "KOTAKBANK",
     "LT", "M&M", "MARUTI", "NESTLEIND", "NTPC",
     "ONGC", "POWERGRID", "RELIANCE", "SBILIFE", "SBIN",
-    "SUNPHARMA", "TCS", "TATACONSUM", "TATAMOTORS", "TATASTEEL",
-    "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO",
+    "SUNPHARMA", "TATACONSUM", "TATASTEEL", "TCS", "TECHM",
+    "TITAN", "TMPV", "TRENT", "ULTRACEMCO", "WIPRO",
 ]
