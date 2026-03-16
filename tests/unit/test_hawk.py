@@ -707,12 +707,20 @@ def test_bhavcopy_falls_back_to_nsepython():
 
 def test_all_sources_fail_returns_empty():
     """When KiteConnect, nsepython, and nsetools all fail, returns empty gracefully."""
-    from unittest.mock import patch
+    from unittest.mock import patch, MagicMock
     from datetime import date
     from tools.hawk_engine.data_collector import _fetch_bhavcopy
 
+    # Mock KiteConnect that raises on historical_data
+    mock_kite = MagicMock()
+    mock_kite.historical_data.side_effect = Exception("kite auth expired")
+    mock_token_map = {"RELIANCE": 738561}
+
     with patch.dict("sys.modules", {"nsepython": None}):
-        result, sources = _fetch_bhavcopy(date(2026, 3, 16), ["RELIANCE"])
+        result, sources = _fetch_bhavcopy(
+            date(2026, 3, 16), ["RELIANCE"],
+            kite=mock_kite, token_map=mock_token_map,
+        )
 
     assert result == []
     assert sources == []
