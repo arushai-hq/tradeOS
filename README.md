@@ -144,7 +144,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ### config/settings.yaml (committed)
 
-Key sections: `system` (mode), `capital` (total + allocation), `risk` (loss limits), `strategy.s1` (EMA/RSI/VWAP params), `trading_hours`, `watchlist` (20 NSE stocks), `token_automation`, `log_rotation`.
+Key sections: `system` (mode), `capital` (total + allocation), `risk` (loss limits), `strategy.s1` (EMA/RSI/VWAP params), `trading_hours`, `watchlist` (50 NIFTY 50 stocks), `trading.instruments` (token map), `token_automation`, `log_rotation`. HAWK data sources: KiteConnect (primary) → nsetools/nsepython (fallback). Run `python scripts/fetch_instrument_tokens.py --verify` to check token freshness.
 
 ### config/secrets.yaml (gitignored)
 
