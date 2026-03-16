@@ -175,6 +175,8 @@ def main() -> None:
         _send_telegram(secrets, msg)
         return
 
+    from utils.progress import spinner, step_done, step_fail, step_info
+
     # Kill stale server
     _kill_stale_server()
 
@@ -182,26 +184,28 @@ def main() -> None:
     SIGNAL_FILE.unlink(missing_ok=True)
 
     # Start token_server.py
-    print("Starting token_server.py...")
-    subprocess.Popen(
-        [sys.executable, str(TOKEN_SERVER_SCRIPT)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(2)
+    with spinner("Starting token server..."):
+        subprocess.Popen(
+            [sys.executable, str(TOKEN_SERVER_SCRIPT)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(2)
+    step_done("Token server started")
 
     # Generate login URL
     kite = KiteConnect(api_key=api_key)
     login_url = kite.login_url()
 
     # Send initial Telegram message
-    _send_telegram(secrets, (
-        "🔑 TradeOS Daily Authentication\n"
-        f"Tap to login → {login_url}\n"
-        "After login + TOTP, token is captured automatically.\n"
-        "⏰ Window: 07:00 - 08:45 IST | Auto-starts main.py after auth"
-    ))
-    print(f"Login URL sent to Telegram: {login_url}")
+    with spinner("Sending login URL to Telegram..."):
+        _send_telegram(secrets, (
+            "🔑 TradeOS Daily Authentication\n"
+            f"Tap to login → {login_url}\n"
+            "After login + TOTP, token is captured automatically.\n"
+            "⏰ Window: 07:00 - 08:45 IST | Auto-starts main.py after auth"
+        ))
+    step_done(f"Login URL sent to Telegram")
 
     # Escalation loop — track which reminders have been sent
     sent_reminders = [False] * len(_REMINDERS)
@@ -212,7 +216,7 @@ def main() -> None:
 
         if _is_token_captured():
             _send_telegram(secrets, "✅ Token captured. Authentication complete.")
-            print("Token captured. Done.")
+            step_done("Token captured — authentication complete")
             return
 
         now = _ist_now()
@@ -224,7 +228,7 @@ def main() -> None:
                 "❌ Token refresh window expired. No trading today.",
             )
             _kill_stale_server()
-            print(f"Token window expired ({_DEADLINE[0]:02d}:{_DEADLINE[1]:02d} IST). Exiting.")
+            step_fail(f"Token window expired ({_DEADLINE[0]:02d}:{_DEADLINE[1]:02d} IST)")
             return
 
         # Final warning

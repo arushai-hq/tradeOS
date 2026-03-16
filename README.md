@@ -133,6 +133,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `main.py` | D9 session lifecycle: pre-market gate -> startup -> trading -> EOD |
 | `bin/tradeos` | Unified CLI entry point (bash shim) |
 | `tools/` | session_report, hawk, hawk_eval, db_backfill |
+| `utils/progress.py` | CLI spinner/progress indicators (NO_COLOR, isatty aware) |
 | `scripts/` | token_cron, token_server, log_rotation, setup_cron, setup_ssl |
 | `docker/` | docker-compose (TimescaleDB + nginx + certbot) |
 | `docs/decisions/` | Architecture Decision Records ([ADRs](docs/decisions/)) |

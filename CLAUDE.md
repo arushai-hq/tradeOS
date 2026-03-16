@@ -22,7 +22,7 @@ main.py              D9 session lifecycle entry point
 core/                Trading engine (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector)
 tools/               CLI tools: session_report, HAWK AI engine, db_backfill
 scripts/             Automation: token_cron, token_server, log_rotation
-utils/               Shared: telegram_notifier, time_utils, position_helpers
+utils/               Shared: telegram_notifier, time_utils, position_helpers, progress spinner
 config/              settings.yaml (committed) + secrets.yaml (gitignored)
 bin/tradeos          Unified CLI entry point (bash shim)
 tests/               Unit + integration tests (mirrors module structure)

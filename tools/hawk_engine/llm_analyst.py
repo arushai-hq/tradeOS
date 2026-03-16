@@ -494,6 +494,7 @@ def analyze_evening_consensus(
         Full consensus structure from build_consensus().
     """
     from tools.hawk_engine.consensus import build_consensus
+    from utils.progress import spinner, step_done, step_fail
 
     model_results: list[dict] = []
     models_failed: list[str] = []
@@ -510,10 +511,11 @@ def analyze_evening_consensus(
             total=len(models),
         )
 
-        result = analyze_evening(
-            data, api_key, model_id, max_tokens, watchlist_size,
-            provider=provider, site_name=site_name,
-        )
+        with spinner(f"{model_name} analyzing ({i+1}/{len(models)})..."):
+            result = analyze_evening(
+                data, api_key, model_id, max_tokens, watchlist_size,
+                provider=provider, site_name=site_name,
+            )
 
         if result.get("watchlist"):
             model_results.append({
@@ -522,6 +524,7 @@ def analyze_evening_consensus(
                 "picks": result["watchlist"],
                 "metadata": result.get("metadata", {}),
             })
+            step_done(f"{model_name}: {len(result['watchlist'])} picks")
             log.info(
                 "hawk_consensus_model_done",
                 model=model_name,
@@ -531,6 +534,7 @@ def analyze_evening_consensus(
         else:
             models_failed.append(model_name)
             error = result.get("metadata", {}).get("error", "empty watchlist")
+            step_fail(f"{model_name}: failed ({error[:40]})")
             log.warning(
                 "hawk_consensus_model_failed",
                 model=model_name,
@@ -542,7 +546,9 @@ def analyze_evening_consensus(
         if i < len(models) - 1:
             time.sleep(1)
 
-    consensus = build_consensus(model_results, total_models=len(models))
+    with spinner("Building consensus..."):
+        consensus = build_consensus(model_results, total_models=len(models))
+    step_done(f"Consensus: {len(consensus.get('consensus_picks', []))} picks from {len(model_results)} models")
     consensus["models_failed"] = models_failed
 
     log.info(
