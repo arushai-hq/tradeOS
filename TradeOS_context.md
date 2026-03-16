@@ -54,7 +54,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **523 passing, 0 failures, 12 skipped** |
+| Tests | **524 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
 | S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -72,7 +72,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Token automation | Token automation complete. Nginx + Let's Encrypt (port 11443). Callback server captures token, auto-starts main.py in tmux (weekdays). 4-stage Telegram escalation. Config-driven timing. Date-based production logging: `logs/tradeos/tradeos_{date}.log`, `logs/hawk/hawk_{date}.log`, `logs/token/token_{date}.log`. Log rotation: 30-day compress, 90-day delete. |
 | tradeos CLI | v0.2.0 — 25+ subcommands, color-coded output, preflight check, auto-report. Installed at `/usr/local/bin/tradeos`. |
 | context-mode | MCP plugin (mksglu/context-mode v1.0.22) for context window optimization and session continuity. Sandboxes raw data out of context via SQLite + FTS5/BM25 indexing. Use `--continue` flag when resuming sessions to carry forward indexed context. Hooks intercept curl/wget and route through `ctx_execute`/`ctx_fetch_and_index`. |
-| OSD Compliance Audit | **2026-03-15** — Skills audited and enhanced. 4 new skills created (tradeos-architecture, tradeos-gotchas, tradeos-testing, tradeos-operations). CLAUDE.md verified against OSD Section 4.2 — deployment rule, branch discipline, and skills reference added. All 13 TradeOS skills operational. context-mode routing block verified intact. |
+| OSD v1.9.0 Compliance | **2026-03-16** — Full 29-standard audit complete. Gaps filled: CHANGELOG.md, data inventory, infrastructure register, rollback runbook, secrets template, git tag v0.5.0. Result: 15/29 PASS, 12/29 PARTIAL (acceptable), 2/29 N/A. |
+| OSD Skills Audit | **2026-03-15** — Skills audited and enhanced. 4 new skills created (tradeos-architecture, tradeos-gotchas, tradeos-testing, tradeos-operations). CLAUDE.md verified against OSD Section 4.2 — deployment rule, branch discipline, and skills reference added. All 13 TradeOS skills operational. context-mode routing block verified intact. |
 | B15 fix | **2026-03-16** — Max positions race condition fixed. Defense-in-depth: Layer 1 (pending_signals counter in Gate 4), Layer 2 (hard gate in execution engine), Layer 3 (capital ceiling check). Session 08 scenario (5 simultaneous signals with 1 open) now correctly limited to 3 new positions. Tests: 515→523. |
 | ASPS Restructure | **2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B (Engine + Tools), HEAVY tier. Engine modules moved to `core/` (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector). Subdirectory CLAUDE.md files for skill routing. Root CLAUDE.md rewritten (<200 lines). ADRs, runbooks, and specs directories created. Tests: 499 passed. Branch: `refactor/asps-restructure`. |
 | Mode | `paper` — never change to `live` without explicit instruction |
@@ -180,6 +181,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-16 | Nginx + Cron Fix | Fix 1: Nginx `proxy_pass` changed from `host.docker.internal:7291` to VPS public IP `72.62.226.215:7291` — `host.docker.internal` resolved to docker0 bridge (172.17.0.1) unreachable from tradeos_network (172.20.0.0/16), causing 504 Gateway Timeout on Zerodha OAuth callbacks. Fix 2: Cron timing in `setup_cron.sh` corrected — VPS clock runs IST, old entries used UTC-converted times (01:30 instead of 07:00). Token cron: `0 7 * * 1-5`, log rotation: `0 2 * * 0`. Commits: `3ad86b3`, `c603856`. | Merged to main. OAuth callback flow verified. |
 | 2026-03-16 | Session 08 + Report Fix | Session 08: 6 trades (5W/1L), +₹44 net, 15 signals, all DB writes verified, LOG=DB match on all trades. B12-B14 fixes confirmed working. Report formatting fix: fixed-width columns for signal/trade tables, HH:MM:SS timestamps, ANSI color for P&L, verify mode now compares gross vs gross (was comparing LOG gross against DB net). Tests: 499 passed. | Futures gate: 10/10 trades, 2/3 sessions, P&L verified, 1+ winner — 3/4 gates met. |
 | 2026-03-16 | Report + B15 Fix | Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). B15 max positions race condition: defense-in-depth with 3 layers — pending_signals counter (Gate 4), hard gate (execution engine), capital ceiling. Session 08 showed 6 positions with max=4 due to async fill delay. Tests: 515→523. | B15 resolved. Race condition eliminated. |
+| 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
 
 ---
 
@@ -204,4 +206,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — B15 max positions race condition fixed (defense-in-depth: pending counter + hard gate + capital ceiling). 523 tests passing.
+**2026-03-16** — OSD v1.9.0 compliance audit complete. 15/29 PASS, 12/29 PARTIAL, 2/29 N/A. CHANGELOG.md, security docs, rollback runbook, secrets template created. Git tag v0.5.0. 524 tests passing.

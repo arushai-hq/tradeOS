@@ -4,6 +4,7 @@ AI-powered algorithmic trading system for NSE intraday equities.
 
 **Stack:** Python 3.11 | Zerodha KiteConnect | asyncio | TimescaleDB | Docker
 **Phase:** Paper trading (March 2026) | **Mode:** `paper` only
+**Compliance:** OSD v1.9.0 (29 standards) | ASPS v1.3.0 (Pattern B / HEAVY tier)
 
 ---
 
@@ -215,7 +216,7 @@ tradeos test -x -q             # Stop on first failure, quiet
 tradeos test tests/unit/ -v    # Run unit tests, verbose
 ```
 
-Current: **523 passing**, 12 skipped, 0 failures.
+Current: **524 passing**, 12 skipped, 0 failures.
 
 ---
 
@@ -228,7 +229,7 @@ Current: **523 passing**, 12 skipped, 0 failures.
 | HAWK AI Engine | Active (evening + morning runs) |
 | CLI | v0.2.0 (25+ subcommands) |
 | Infrastructure | TimescaleDB + Docker + Nginx + SSL + cron |
-| Tests | 523 passing |
+| Tests | 524 passing |
 | VPS | Rocky Linux 9.7 |
 | Mode | `paper` (never auto-switched to live) |
 
