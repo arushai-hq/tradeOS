@@ -89,6 +89,7 @@ class TestTokenServerSuccess:
             patch("scripts.token_server._send_telegram") as mock_tg,
             patch("scripts.token_server.KiteConnect") as MockKite,
             patch("scripts.token_server._shutdown_server"),
+            patch("scripts.token_server._auto_start_main") as mock_auto,
         ):
             # Configure mock KiteConnect
             mock_kite = MagicMock()
@@ -124,10 +125,9 @@ class TestTokenServerSuccess:
             # Verify signal file created
             assert signal_file.exists()
 
-            # Verify Telegram sent
-            mock_tg.assert_called()
-            call_args = mock_tg.call_args[0]
-            assert "Token refreshed" in call_args[1]
+            # Verify auto-start was invoked with correct user
+            mock_auto.assert_called_once()
+            assert mock_auto.call_args[0][1] == "TestUser"
 
             server.server_close()
 

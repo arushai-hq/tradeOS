@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
@@ -81,6 +82,19 @@ def _config(max_positions: int = 4) -> dict:
             "allocation": {"s1_intraday": 0.70},
         },
     }
+
+
+def _mock_db_pool():
+    """Create a mock asyncpg pool with proper async context manager for acquire()."""
+    mock_conn = AsyncMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield mock_conn
+
+    mock_pool = MagicMock()
+    mock_pool.acquire = _acquire
+    return mock_pool
 
 
 def _open_pos(symbol: str, entry: float = 2500.0, qty: int = 50) -> dict:
@@ -151,7 +165,7 @@ async def test_ee_hard_gate_rejects_at_max_positions():
     }
     config = _config(max_positions=4)
     mock_rm = MagicMock()
-    mock_db = AsyncMock()
+    mock_db = _mock_db_pool()
 
     ee = ExecutionEngine(
         kite=MagicMock(),
@@ -191,7 +205,7 @@ async def test_sizer_rejection_decrements_pending():
     config = _config(max_positions=4)
     mock_rm = MagicMock()
     mock_rm.size_position.return_value = None  # sizer rejects
-    mock_db = AsyncMock()
+    mock_db = _mock_db_pool()
 
     ee = ExecutionEngine(
         kite=MagicMock(),
@@ -235,7 +249,7 @@ async def test_successful_order_decrements_pending():
     mock_order = MagicMock()
     mock_order.order_id = "ORD_001"
 
-    mock_db = AsyncMock()
+    mock_db = _mock_db_pool()
 
     ee = ExecutionEngine(
         kite=MagicMock(),
@@ -291,7 +305,7 @@ async def test_capital_ceiling_rejects_excess():
 
     mock_order = MagicMock()
     mock_order.order_id = "ORD_004"
-    mock_db = AsyncMock()
+    mock_db = _mock_db_pool()
 
     ee = ExecutionEngine(
         kite=MagicMock(),
@@ -445,7 +459,7 @@ async def test_order_placement_failure_decrements_pending():
     mock_rm = MagicMock()
     mock_rm.size_position.return_value = 50
 
-    mock_db = AsyncMock()
+    mock_db = _mock_db_pool()
 
     ee = ExecutionEngine(
         kite=MagicMock(),
