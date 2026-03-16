@@ -711,12 +711,14 @@ def test_all_sources_fail_returns_empty():
     from datetime import date
     from tools.hawk_engine.data_collector import _fetch_bhavcopy
 
-    # Mock KiteConnect that raises on historical_data
+    # Mock KiteConnect that raises on historical_data (blocks primary path)
     mock_kite = MagicMock()
     mock_kite.historical_data.side_effect = Exception("kite auth expired")
     mock_token_map = {"RELIANCE": 738561}
 
-    with patch.dict("sys.modules", {"nsepython": None}):
+    # Block standalone KiteConnect fallback by returning empty credentials
+    with patch.dict("sys.modules", {"nsepython": None}), \
+         patch("tools.hawk_engine.config.load_secrets", return_value={}):
         result, sources = _fetch_bhavcopy(
             date(2026, 3, 16), ["RELIANCE"],
             kite=mock_kite, token_map=mock_token_map,
