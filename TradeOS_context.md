@@ -183,6 +183,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-16 | Report + B15 Fix | Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). B15 max positions race condition: defense-in-depth with 3 layers — pending_signals counter (Gate 4), hard gate (execution engine), capital ceiling. Session 08 showed 6 positions with max=4 due to async fill delay. Tests: 515→523. | B15 resolved. Race condition eliminated. |
 | 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
 | 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
+| 2026-03-16 | CLI Progress Indicators | `utils/progress.py`: reusable spinner utility (braille animation, NO_COLOR, isatty). Integrated into HAWK evening/consensus (data collection + per-model LLM), session_report (log parsing, DB queries, exports), token_cron (server start, escalation). HAWK consensus alphabetical sort already implemented — verified, no changes needed. Tests: 539. | CLI UX improved across all long-running commands. |
 
 ---
 
@@ -207,4 +208,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — HAWK data collectors fixed (KiteConnect primary), watchlist expanded to 50 NIFTY 50 stocks. TATAMOTORS→TMPV. 533 tests passing.
+**2026-03-16** — CLI progress indicators added to all long-running commands (HAWK, session_report, token_cron). 539 tests passing.
