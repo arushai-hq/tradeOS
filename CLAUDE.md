@@ -7,7 +7,7 @@ Repo: `arushai-hq/tradeOS` | Phase 1: S1 Intraday Momentum | Mode: `paper`
 ## Commands
 
 ```bash
-tradeos test -x -q               # Run tests (499 passing)
+tradeos test -x -q               # Run tests (515 passing)
 tradeos start                    # Start trading in tmux
 tradeos stop                     # Graceful shutdown
 tradeos preflight                # Pre-market health check

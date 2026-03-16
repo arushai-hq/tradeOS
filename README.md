@@ -215,7 +215,7 @@ tradeos test -x -q             # Stop on first failure, quiet
 tradeos test tests/unit/ -v    # Run unit tests, verbose
 ```
 
-Current: **499 passing**, 12 skipped, 0 failures.
+Current: **515 passing**, 12 skipped, 0 failures.
 
 ---
 
@@ -228,7 +228,7 @@ Current: **499 passing**, 12 skipped, 0 failures.
 | HAWK AI Engine | Active (evening + morning runs) |
 | CLI | v0.2.0 (25+ subcommands) |
 | Infrastructure | TimescaleDB + Docker + Nginx + SSL + cron |
-| Tests | 499 passing |
+| Tests | 515 passing |
 | VPS | Rocky Linux 9.7 |
 | Mode | `paper` (never auto-switched to live) |
 

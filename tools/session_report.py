@@ -569,6 +569,45 @@ def _yellow(text: str) -> str:
     return _color(text, "33")
 
 
+def _indian_format(n: float, decimals: int = 0) -> str:
+    """Format a number with Indian comma grouping (lakhs/crores).
+
+    Rules: last 3 digits first, then groups of 2.
+    Examples: 100000 → '1,00,000', 1234567 → '12,34,567', 50.25 → '50.25'
+    """
+    if decimals > 0:
+        int_part, dec_part = f"{abs(n):.{decimals}f}".split(".")
+    else:
+        int_part = str(int(abs(n)))
+        dec_part = ""
+
+    # Apply Indian grouping: last 3 digits, then groups of 2
+    if len(int_part) <= 3:
+        formatted = int_part
+    else:
+        last3 = int_part[-3:]
+        rest = int_part[:-3]
+        # Group remaining digits in pairs from right
+        groups = []
+        while rest:
+            groups.append(rest[-2:])
+            rest = rest[:-2]
+        groups.reverse()
+        formatted = ",".join(groups) + "," + last3
+
+    result = formatted
+    if dec_part:
+        result += "." + dec_part
+    if n < 0:
+        result = "-" + result
+    return result
+
+
+def _inr(n: float, decimals: int = 0) -> str:
+    """Format as ₹ with Indian commas. E.g. _inr(125000) → '₹1,25,000'."""
+    return "₹" + _indian_format(n, decimals)
+
+
 def fmt_session_header(data: SessionData) -> str:
     lines = [
         f"  Date:        {data.date or 'unknown'}",
@@ -631,18 +670,20 @@ def fmt_trade_table(data: SessionData) -> str:
         f"{'Dir':<5}  "
         f"{'Entry':>10}  "
         f"{'Qty':>6}  "
+        f"{'Capital':>14}  "
         f"{'Stop':>10}  "
         f"{'Target':>10}  "
         f"{'Open IST':<8}  "
         f"{'Status':<8}  "
         f"{'Exit':>10}  "
-        f"{'P&L':>10}"
+        f"{'P&L':>10}  "
+        f"{'Charges':>10}"
     )
-    sep = "  " + "-" * 105
+    sep = "  " + "-" * 135
     rows = [header, sep]
     for i, trade in enumerate(data.trades, 1):
         if trade.pnl_rs is not None:
-            pnl_str = f"+{trade.pnl_rs:.0f}" if trade.pnl_rs >= 0 else f"{trade.pnl_rs:.0f}"
+            pnl_str = f"+{_indian_format(trade.pnl_rs)}" if trade.pnl_rs >= 0 else f"{_indian_format(trade.pnl_rs)}"
             pnl_padded = f"{pnl_str:>10}"
             if trade.pnl_rs > 0:
                 pnl_display = _green(pnl_padded)
@@ -653,18 +694,23 @@ def fmt_trade_table(data: SessionData) -> str:
         else:
             pnl_display = f"{'—':>10}"
         exit_str = f"{trade.exit_price:>10.2f}" if trade.exit_price else f"{'—':>10}"
+        capital = trade.entry_price * trade.qty
+        capital_str = _inr(capital)
+        charges_str = _inr(trade.charges, 2) if trade.charges else f"{'—':>10}"
         rows.append(
             f"  {i:>3}.  "
             f"{trade.symbol:<12}  "
             f"{trade.direction:<5}  "
             f"{trade.entry_price:>10.2f}  "
             f"{trade.qty:>6}  "
+            f"{capital_str:>14}  "
             f"{trade.stop_loss:>10.2f}  "
             f"{trade.target:>10.2f}  "
             f"{_hhmmss(trade.opened_at):<8}  "
             f"{trade.status:<8}  "
             f"{exit_str}  "
-            f"{pnl_display}"
+            f"{pnl_display}  "
+            f"{charges_str:>10}"
         )
     return "\n".join(rows)
 
@@ -680,8 +726,10 @@ def fmt_pnl_summary(data: SessionData) -> str:
     blocked = sum(1 for s in data.signals if s.status == "BLOCKED")
     dedup = sum(1 for s in data.signals if s.status == "DEDUP")
 
+    total_capital = sum(t.entry_price * t.qty for t in data.trades)
     lines = [
         f"  Positions:    {len(data.trades)} total  ({len(open_trades)} open, {len(closed)} closed)",
+        f"  Capital Used: {_inr(total_capital)}",
     ]
     if closed:
         win_rate = len(wins) / len(closed) * 100 if closed else 0.0
@@ -690,7 +738,8 @@ def fmt_pnl_summary(data: SessionData) -> str:
         lines.extend([
             f"  Result:       {len(wins)} wins, {len(losses)} losses  ({wr_colored} win rate)",
         ])
-        pnl_str = f"\u20b9{net_pnl:+.2f}"
+        sign = "+" if net_pnl >= 0 else ""
+        pnl_str = f"{sign}{_inr(net_pnl, 2)}"
         pnl_colored = _green(pnl_str) if net_pnl > 0 else (_red(pnl_str) if net_pnl < 0 else pnl_str)
         lines.append(f"  Net P&L:      {pnl_colored}")
     else:
@@ -1068,8 +1117,10 @@ def generate_db_report(dsn: str, session_date: str) -> SessionReport:
 
 def _fmt_pnl_from_report(report: SessionReport) -> str:
     """P&L summary from SessionReport — shows charges when available."""
+    total_capital = sum(t.entry_price * t.qty for t in report.trades)
     lines = [
         f"  Trades:       {report.total_trades} total",
+        f"  Capital Used: {_inr(total_capital)}",
     ]
     if report.trades_won or report.trades_lost:
         total_closed = report.trades_won + report.trades_lost
@@ -1078,11 +1129,13 @@ def _fmt_pnl_from_report(report: SessionReport) -> str:
         wr_colored = _green(wr_str) if win_rate >= 50 else _yellow(wr_str)
         lines.append(f"  Result:       {report.trades_won} wins, {report.trades_lost} losses  ({wr_colored} win rate)")
 
-    gross_str = f"\u20b9{report.gross_pnl:+.2f}"
+    gross_sign = "+" if report.gross_pnl >= 0 else ""
+    gross_str = f"{gross_sign}{_inr(report.gross_pnl, 2)}"
     lines.append(f"  Gross P&L:    {gross_str}")
     if report.total_charges > 0:
-        lines.append(f"  Charges:      \u20b9{report.total_charges:-.2f}")
-    net_str = f"\u20b9{report.net_pnl:+.2f}"
+        lines.append(f"  Charges:      {_inr(report.total_charges, 2)}")
+    net_sign = "+" if report.net_pnl >= 0 else ""
+    net_str = f"{net_sign}{_inr(report.net_pnl, 2)}"
     net_colored = _green(net_str) if report.net_pnl > 0 else (_red(net_str) if report.net_pnl < 0 else net_str)
     lines.append(f"  Net P&L:      {net_colored}")
     lines.extend([

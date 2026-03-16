@@ -202,4 +202,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — Report IST timestamp fix (DB UTC→IST conversion). Session 08 complete. Futures gate 3/4. 499 tests passing.
+**2026-03-16** — Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). 515 tests passing.

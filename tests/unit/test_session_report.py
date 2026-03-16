@@ -6,6 +6,7 @@ Tests:
   (b) pre-B5 signal correlation: s1_signal_generated + signal_queued → ACCEPTED
   (c) pre-B5 signal blocking:   s1_signal_generated + risk_gate_blocked + signal_blocked → BLOCKED
   (d) CSV export rows match SessionData signals and trades
+  (e) Indian number formatting: _indian_format and _inr helpers
 """
 from __future__ import annotations
 
@@ -22,6 +23,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from tools.session_report import (
     SessionParser,
     _coerce,
+    _indian_format,
+    _inr,
     export_csv,
     parse_fields,
     parse_line,
@@ -172,3 +175,37 @@ def test_csv_export_signals(tmp_path):
     assert hcltech["status"] == "BLOCKED"
     assert hcltech["block_reason"] == "REGIME_BLOCKED_BEAR_TREND"
     assert hcltech["gate"] == "7"
+
+
+# ---------------------------------------------------------------------------
+# (e) Indian number formatting — _indian_format and _inr
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value, decimals, expected", [
+    (500, 0, "500"),
+    (1000, 0, "1,000"),
+    (10000, 0, "10,000"),
+    (100000, 0, "1,00,000"),
+    (1000000, 0, "10,00,000"),
+    (10000000, 0, "1,00,00,000"),
+    (1234567, 0, "12,34,567"),
+    (50.25, 2, "50.25"),
+    (129550.5, 2, "1,29,550.50"),
+    (-1500, 0, "-1,500"),
+    (-125000, 2, "-1,25,000.00"),
+    (0, 0, "0"),
+    (99, 0, "99"),
+])
+def test_indian_format(value, decimals, expected):
+    """_indian_format produces correct Indian comma grouping."""
+    assert _indian_format(value, decimals) == expected
+
+
+@pytest.mark.parametrize("value, decimals, expected", [
+    (125000, 0, "₹1,25,000"),
+    (1448.40, 2, "₹1,448.40"),
+    (0, 0, "₹0"),
+])
+def test_inr_format(value, decimals, expected):
+    """_inr wraps _indian_format with ₹ prefix."""
+    assert _inr(value, decimals) == expected
