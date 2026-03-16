@@ -31,8 +31,9 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # NOTE: Removed extra_hosts (host.docker.internal:host-gateway) — it resolved
+    # to docker0 bridge (172.17.0.1) which is unreachable from tradeos_network.
+    # Nginx config now uses VPS public IP (72.62.226.215) directly.
 
   certbot:
     image: certbot/certbot
