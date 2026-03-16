@@ -236,11 +236,11 @@ def test_verify_match():
 
 
 # ---------------------------------------------------------------------------
-# (e) Verify mismatch P&L — net_pnl differs beyond tolerance
+# (e) Verify mismatch P&L — gross_pnl differs beyond tolerance
 # ---------------------------------------------------------------------------
 
 def test_verify_mismatch_pnl():
-    """net_pnl differing by >2.0 triggers mismatch."""
+    """gross_pnl differing by >2.0 triggers mismatch (like-for-like comparison)."""
     log_report = SessionReport(
         source="log", session_date="2026-03-16",
         signals=[], trades=[],
@@ -253,11 +253,11 @@ def test_verify_mismatch_pnl():
         signals=[], trades=[],
         total_signals=0, signals_accepted=0, signals_rejected=0,
         total_trades=0, trades_won=0, trades_lost=0,
-        gross_pnl=1500.0, total_charges=100.0, net_pnl=1495.0,
+        gross_pnl=1495.0, total_charges=100.0, net_pnl=1395.0,
     )
 
     results = verify_reports(log_report, db_report)
-    pnl_results = [r for r in results if r.field == "session_pnl"]
+    pnl_results = [r for r in results if r.field == "session_gross_pnl"]
     assert len(pnl_results) == 1
     assert pnl_results[0].match is False
 

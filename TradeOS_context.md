@@ -152,13 +152,14 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **Session 08** — Monday March 16. Verify B12-B14 fixes (correct P&L, Telegram display, exit reason).
-2. Trailing stop data gate review — March 16 (likely defer, only 2 trades, neither hit 2R).
-3. DB trade history — Nemawashi design: TimescaleDB tables (trades, signals, daily_sessions). Dual-write alongside logs. Use existing TimescaleDB + asyncpg infrastructure.
+1. **Session 09** — Next trading day. Continue S1 paper trading toward futures gate (need 3rd clean session).
+2. Trailing stop data gate review — deferred, insufficient trades hitting 2R to validate.
+3. ~~DB trade history~~ — **DONE**. TimescaleDB tables live, dual-write active.
 4. ~~Token semi-automation~~ — **DONE**. Tested 2026-03-14.
-5. Install certbot renewal cron on VPS (setup_ssl.sh handles this).
-6. HAWK Day 3 eval Monday after Session 08: `python tools/hawk_eval.py --date 2026-03-13`
-7. Futures gate: 2/10 trades, 0/3 clean sessions.
+5. ~~Verify P&L comparison bug~~ — **DONE**. Now compares gross vs gross (like-for-like).
+6. Install certbot renewal cron on VPS (setup_ssl.sh handles this).
+7. Futures gate: 10/10 trades ✓, 2/3 clean sessions, P&L verified ✓, 1+ winner ✓ — 3/4 gates met, need 1 more clean session.
+8. Watchlist expansion — target Session 11.
 
 ---
 
@@ -176,6 +177,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-14 | Token Automation + Infra + CLI + Audit | Nginx + Let's Encrypt (port 11443), token automation with auto-start, production logging, log rotation, session report DB+verify modes, tradeos CLI (25+ commands, color-coded), README.md + CLAUDE.md. Codebase audit: 2 criticals fixed (signal_id chain, structlog field names), 5 warnings resolved. Tests: 453→499. | Weekend complete. CLEAR FOR MONDAY. |
 | 2026-03-15 | ASPS Restructure | Full ASPS v1.0.0 compliance — engine modules moved to `core/`, subdirectory CLAUDE.md files (core/, tools/, docker/, scripts/, tests/), root CLAUDE.md rewritten (132 lines), ADRs (position sizing, token automation) + runbooks (daily trading) + specs directory created. Tests: 499 passed. | `refactor/asps-restructure` branch ready for review. |
 | 2026-03-16 | Nginx + Cron Fix | Fix 1: Nginx `proxy_pass` changed from `host.docker.internal:7291` to VPS public IP `72.62.226.215:7291` — `host.docker.internal` resolved to docker0 bridge (172.17.0.1) unreachable from tradeos_network (172.20.0.0/16), causing 504 Gateway Timeout on Zerodha OAuth callbacks. Fix 2: Cron timing in `setup_cron.sh` corrected — VPS clock runs IST, old entries used UTC-converted times (01:30 instead of 07:00). Token cron: `0 7 * * 1-5`, log rotation: `0 2 * * 0`. Commits: `3ad86b3`, `c603856`. | Merged to main. OAuth callback flow verified. |
+| 2026-03-16 | Session 08 + Report Fix | Session 08: 6 trades (5W/1L), +₹44 net, 15 signals, all DB writes verified, LOG=DB match on all trades. B12-B14 fixes confirmed working. Report formatting fix: fixed-width columns for signal/trade tables, HH:MM:SS timestamps, ANSI color for P&L, verify mode now compares gross vs gross (was comparing LOG gross against DB net). Tests: 499 passed. | Futures gate: 10/10 trades, 2/3 sessions, P&L verified, 1+ winner — 3/4 gates met. |
 
 ---
 
@@ -200,4 +202,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — Nginx proxy fix (VPS public IP instead of docker bridge) + cron timing fix (IST-direct). ASPS v1.0.0 structure. 499 tests passing.
+**2026-03-16** — Session 08 complete (6 trades, 5W/1L, +₹44). Report table alignment + verify P&L comparison fixed. Futures gate 3/4. 499 tests passing.

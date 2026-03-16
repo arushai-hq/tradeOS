@@ -515,12 +515,35 @@ class SessionParser:
 # Report formatters
 # ---------------------------------------------------------------------------
 
-def _hhmm(iso_ts: str) -> str:
-    """Extract HH:MM from ISO timestamp. Falls back to original string on error."""
+def _hhmmss(iso_ts: str) -> str:
+    """Extract HH:MM:SS from ISO timestamp. Handles both 'T' and space separators."""
     try:
-        return iso_ts.split("T")[1][:5]
+        if "T" in iso_ts:
+            time_part = iso_ts.split("T")[1]
+        else:
+            time_part = iso_ts.split(" ")[1]
+        return time_part[:8]
     except Exception:
         return iso_ts
+
+
+def _color(text: str, code: str) -> str:
+    """Wrap text in ANSI color if stdout is a TTY."""
+    if not sys.stdout.isatty():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _green(text: str) -> str:
+    return _color(text, "32")
+
+
+def _red(text: str) -> str:
+    return _color(text, "31")
+
+
+def _yellow(text: str) -> str:
+    return _color(text, "33")
 
 
 def fmt_session_header(data: SessionData) -> str:
@@ -528,11 +551,11 @@ def fmt_session_header(data: SessionData) -> str:
         f"  Date:        {data.date or 'unknown'}",
         f"  Mode:        {data.mode.upper()}",
         f"  Instruments: {data.instruments}",
-        f"  Start:       {_hhmm(data.start_ts) if data.start_ts else 'unknown'}",
-        f"  End:         {_hhmm(data.end_ts) if data.end_ts else 'unknown'}",
+        f"  Start:       {_hhmmss(data.start_ts) if data.start_ts else 'unknown'}",
+        f"  End:         {_hhmmss(data.end_ts) if data.end_ts else 'unknown'}",
     ]
     if data.hard_exit_triggered:
-        lines.append(f"  Hard Exit:   YES at {_hhmm(data.hard_exit_ts)} IST")
+        lines.append(f"  Hard Exit:   YES at {_hhmmss(data.hard_exit_ts)} IST")
     return "\n".join(lines)
 
 
@@ -545,13 +568,13 @@ def fmt_signal_table(data: SessionData, verbose: bool = False) -> str:
         f"{'Time':<8}  "
         f"{'Symbol':<12}  "
         f"{'Dir':<5}  "
-        f"{'Entry':>8}  "
-        f"{'RSI':>5}  "
+        f"{'Entry':>10}  "
+        f"{'RSI':>6}  "
         f"{'VolR':>5}  "
-        f"{'Status':<9}  "
+        f"{'Status':<10}  "
         f"{'Details'}"
     )
-    sep = "  " + "-" * 72
+    sep = "  " + "-" * 80
     rows = [header, sep]
     for i, sig in enumerate(data.signals, 1):
         if sig.status == "BLOCKED":
@@ -563,13 +586,13 @@ def fmt_signal_table(data: SessionData, verbose: bool = False) -> str:
             detail = f"stop={sig.stop:.2f}  target={sig.target:.2f}" if verbose else ""
         rows.append(
             f"  {i:>3}.  "
-            f"{_hhmm(sig.ts):<8}  "
+            f"{_hhmmss(sig.ts):<8}  "
             f"{sig.symbol:<12}  "
             f"{sig.direction:<5}  "
-            f"{sig.entry:>8.2f}  "
-            f"{sig.rsi:>5.1f}  "
+            f"{sig.entry:>10.2f}  "
+            f"{sig.rsi:>6.1f}  "
             f"{sig.volume_ratio:>5.2f}  "
-            f"{sig.status:<9}  "
+            f"{sig.status:<10}  "
             f"{detail}"
         )
     return "\n".join(rows)
@@ -583,34 +606,42 @@ def fmt_trade_table(data: SessionData) -> str:
         f"  {'#':>3}  "
         f"{'Symbol':<12}  "
         f"{'Dir':<5}  "
-        f"{'Entry':>8}  "
-        f"{'Qty':>5}  "
-        f"{'Stop':>8}  "
-        f"{'Target':>8}  "
-        f"{'Open':>5}  "
-        f"{'Status':<7}  "
-        f"{'Exit':>8}  "
-        f"{'P&L':>8}"
+        f"{'Entry':>10}  "
+        f"{'Qty':>6}  "
+        f"{'Stop':>10}  "
+        f"{'Target':>10}  "
+        f"{'Open':<8}  "
+        f"{'Status':<8}  "
+        f"{'Exit':>10}  "
+        f"{'P&L':>10}"
     )
-    sep = "  " + "-" * 84
+    sep = "  " + "-" * 105
     rows = [header, sep]
     for i, trade in enumerate(data.trades, 1):
-        pnl_str = f"+{trade.pnl_rs:.0f}" if (trade.pnl_rs and trade.pnl_rs >= 0) else (
-            f"{trade.pnl_rs:.0f}" if trade.pnl_rs is not None else "—"
-        )
-        exit_str = f"{trade.exit_price:.2f}" if trade.exit_price else "—"
+        if trade.pnl_rs is not None:
+            pnl_str = f"+{trade.pnl_rs:.0f}" if trade.pnl_rs >= 0 else f"{trade.pnl_rs:.0f}"
+            pnl_padded = f"{pnl_str:>10}"
+            if trade.pnl_rs > 0:
+                pnl_display = _green(pnl_padded)
+            elif trade.pnl_rs < 0:
+                pnl_display = _red(pnl_padded)
+            else:
+                pnl_display = pnl_padded
+        else:
+            pnl_display = f"{'—':>10}"
+        exit_str = f"{trade.exit_price:>10.2f}" if trade.exit_price else f"{'—':>10}"
         rows.append(
             f"  {i:>3}.  "
             f"{trade.symbol:<12}  "
             f"{trade.direction:<5}  "
-            f"{trade.entry_price:>8.2f}  "
-            f"{trade.qty:>5}  "
-            f"{trade.stop_loss:>8.2f}  "
-            f"{trade.target:>8.2f}  "
-            f"{_hhmm(trade.opened_at):>5}  "
-            f"{trade.status:<7}  "
-            f"{exit_str:>8}  "
-            f"{pnl_str:>8}"
+            f"{trade.entry_price:>10.2f}  "
+            f"{trade.qty:>6}  "
+            f"{trade.stop_loss:>10.2f}  "
+            f"{trade.target:>10.2f}  "
+            f"{_hhmmss(trade.opened_at):<8}  "
+            f"{trade.status:<8}  "
+            f"{exit_str}  "
+            f"{pnl_display}"
         )
     return "\n".join(rows)
 
@@ -631,12 +662,16 @@ def fmt_pnl_summary(data: SessionData) -> str:
     ]
     if closed:
         win_rate = len(wins) / len(closed) * 100 if closed else 0.0
+        wr_str = f"{win_rate:.1f}%"
+        wr_colored = _green(wr_str) if win_rate >= 50 else _yellow(wr_str)
         lines.extend([
-            f"  Result:       {len(wins)} wins, {len(losses)} losses  ({win_rate:.1f}% win rate)",
-            f"  Net P&L:      ₹{net_pnl:+.2f}",
+            f"  Result:       {len(wins)} wins, {len(losses)} losses  ({wr_colored} win rate)",
         ])
+        pnl_str = f"\u20b9{net_pnl:+.2f}"
+        pnl_colored = _green(pnl_str) if net_pnl > 0 else (_red(pnl_str) if net_pnl < 0 else pnl_str)
+        lines.append(f"  Net P&L:      {pnl_colored}")
     else:
-        lines.append("  Net P&L:      N/A (no closed positions — hard exit positions counted at EOD)")
+        lines.append("  Net P&L:      N/A (no closed positions \u2014 hard exit positions counted at EOD)")
 
     lines.extend([
         f"  Session PnL%: {data.last_daily_pnl_pct * 100:.3f}%",
@@ -667,7 +702,7 @@ def fmt_regime_timeline(data: SessionData) -> str:
     for ev in data.regime_events:
         from_str = ev.old_regime or "—"
         rows.append(
-            f"  {_hhmm(ev.ts):<8}  "
+            f"  {_hhmmss(ev.ts):<8}  "
             f"{ev.event_type:<12}  "
             f"{from_str:<18}  "
             f"{ev.new_regime:<18}  "
@@ -680,8 +715,8 @@ def fmt_regime_timeline(data: SessionData) -> str:
 def fmt_system_health(data: SessionData) -> str:
     lines = [
         f"  Heartbeats:   {data.heartbeat_count}",
-        f"  First / Last: {_hhmm(data.first_heartbeat_ts) if data.first_heartbeat_ts else '—'}"
-        f"  →  {_hhmm(data.last_heartbeat_ts) if data.last_heartbeat_ts else '—'}",
+        f"  First / Last: {_hhmmss(data.first_heartbeat_ts) if data.first_heartbeat_ts else '—'}"
+        f"  →  {_hhmmss(data.last_heartbeat_ts) if data.last_heartbeat_ts else '—'}",
         f"  WS:           {'Connected' if data.last_ws_connected else 'DISCONNECTED'}",
         f"  Kill Switch:  Level {data.last_kill_switch_level}",
         f"  Open Pos:     {data.last_open_positions} (at last heartbeat)",
@@ -691,7 +726,7 @@ def fmt_system_health(data: SessionData) -> str:
         lines.append("")
         lines.append("  Warning log:")
         for w in data.warnings[:10]:
-            lines.append(f"    {_hhmm(w['ts'])}  {w['event']}")
+            lines.append(f"    {_hhmmss(w['ts'])}  {w['event']}")
         if len(data.warnings) > 10:
             lines.append(f"    ... and {len(data.warnings) - 10} more")
     return "\n".join(lines)
@@ -1016,12 +1051,17 @@ def _fmt_pnl_from_report(report: SessionReport) -> str:
     if report.trades_won or report.trades_lost:
         total_closed = report.trades_won + report.trades_lost
         win_rate = report.trades_won / total_closed * 100 if total_closed else 0.0
-        lines.append(f"  Result:       {report.trades_won} wins, {report.trades_lost} losses  ({win_rate:.1f}% win rate)")
+        wr_str = f"{win_rate:.1f}%"
+        wr_colored = _green(wr_str) if win_rate >= 50 else _yellow(wr_str)
+        lines.append(f"  Result:       {report.trades_won} wins, {report.trades_lost} losses  ({wr_colored} win rate)")
 
-    lines.append(f"  Gross P&L:    \u20b9{report.gross_pnl:+.2f}")
+    gross_str = f"\u20b9{report.gross_pnl:+.2f}"
+    lines.append(f"  Gross P&L:    {gross_str}")
     if report.total_charges > 0:
         lines.append(f"  Charges:      \u20b9{report.total_charges:-.2f}")
-    lines.append(f"  Net P&L:      \u20b9{report.net_pnl:+.2f}")
+    net_str = f"\u20b9{report.net_pnl:+.2f}"
+    net_colored = _green(net_str) if report.net_pnl > 0 else (_red(net_str) if report.net_pnl < 0 else net_str)
+    lines.append(f"  Net P&L:      {net_colored}")
     lines.extend([
         "",
         f"  Signals:      {report.total_signals} total",
@@ -1108,9 +1148,16 @@ def verify_reports(log_report: SessionReport, db_report: SessionReport) -> list[
     if len(log_trades) != len(db_trades):
         results.append(VerifyResult("trade_count", len(log_trades), len(db_trades), False))
 
-    # Session P&L totals (tolerance ±2.0)
-    results.append(VerifyResult("session_pnl", log_report.net_pnl, db_report.net_pnl,
-                                abs(log_report.net_pnl - db_report.net_pnl) <= 2.0))
+    # Session P&L — compare gross vs gross (like-for-like, tolerance ±2.0)
+    results.append(VerifyResult("session_gross_pnl", log_report.gross_pnl, db_report.gross_pnl,
+                                abs(log_report.gross_pnl - db_report.gross_pnl) <= 2.0))
+
+    # Net P&L and charges — only compare when LOG has charges data
+    if log_report.total_charges > 0:
+        results.append(VerifyResult("session_charges", log_report.total_charges, db_report.total_charges,
+                                    abs(log_report.total_charges - db_report.total_charges) <= 2.0))
+        results.append(VerifyResult("session_net_pnl", log_report.net_pnl, db_report.net_pnl,
+                                    abs(log_report.net_pnl - db_report.net_pnl) <= 2.0))
 
     return results
 
@@ -1131,10 +1178,16 @@ def print_verify_results(results: list[VerifyResult], session_date: str) -> int:
             print(f"{r.field.capitalize():10s} LOG={r.log_value}  DB={r.db_value}  {icon}")
         elif r.field == "trade_count":
             print(f"Trade count: LOG={r.log_value}  DB={r.db_value}  {icon}")
-        elif r.field == "session_pnl":
+        elif r.field.startswith("session_"):
+            label_map = {
+                "session_gross_pnl": "Gross P&L",
+                "session_net_pnl": "Net P&L",
+                "session_charges": "Charges",
+            }
+            label = label_map.get(r.field, r.field)
             log_v = f"{r.log_value:.2f}" if isinstance(r.log_value, float) else str(r.log_value)
             db_v = f"{r.db_value:.2f}" if isinstance(r.db_value, float) else str(r.db_value)
-            print(f"Session P&L: LOG={log_v}  DB={db_v}  {icon}")
+            print(f"{label}: LOG={log_v}  DB={db_v}  {icon}")
         elif r.field.startswith("Trade #"):
             # Per-trade fields
             field_parts = r.field.rsplit(" ", 1)
