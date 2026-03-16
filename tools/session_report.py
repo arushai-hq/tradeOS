@@ -515,13 +515,36 @@ class SessionParser:
 # Report formatters
 # ---------------------------------------------------------------------------
 
+_IST = datetime.now().astimezone().tzinfo  # placeholder, replaced below
+try:
+    import pytz
+    _IST = pytz.timezone("Asia/Kolkata")
+except ImportError:
+    from datetime import timezone, timedelta
+    _IST = timezone(timedelta(hours=5, minutes=30))
+
+
 def _hhmmss(iso_ts: str) -> str:
-    """Extract HH:MM:SS from ISO timestamp. Handles both 'T' and space separators."""
+    """Extract HH:MM:SS in IST from a timestamp string.
+
+    Handles:
+      - Log timestamps (no TZ info, already IST): '2026-03-16T10:00:00.829569'
+      - DB timestamps (TZ-aware): '2026-03-16 10:00:00+05:30' or '2026-03-16 04:00:00+00:00'
+    """
     try:
-        if "T" in iso_ts:
-            time_part = iso_ts.split("T")[1]
+        # Try parsing as a full datetime to handle timezone conversion
+        ts_str = iso_ts.strip()
+        # Check for timezone offset indicator (+/-HH:MM at end)
+        has_tz = bool(re.search(r'[+-]\d{2}:\d{2}$', ts_str))
+        if has_tz:
+            dt = datetime.fromisoformat(ts_str)
+            dt_ist = dt.astimezone(_IST)
+            return dt_ist.strftime("%H:%M:%S")
+        # No timezone info — assume already IST (structlog uses IST)
+        if "T" in ts_str:
+            time_part = ts_str.split("T")[1]
         else:
-            time_part = iso_ts.split(" ")[1]
+            time_part = ts_str.split(" ")[1]
         return time_part[:8]
     except Exception:
         return iso_ts
@@ -565,7 +588,7 @@ def fmt_signal_table(data: SessionData, verbose: bool = False) -> str:
 
     header = (
         f"  {'#':>3}  "
-        f"{'Time':<8}  "
+        f"{'Time IST':<8}  "
         f"{'Symbol':<12}  "
         f"{'Dir':<5}  "
         f"{'Entry':>10}  "
@@ -610,7 +633,7 @@ def fmt_trade_table(data: SessionData) -> str:
         f"{'Qty':>6}  "
         f"{'Stop':>10}  "
         f"{'Target':>10}  "
-        f"{'Open':<8}  "
+        f"{'Open IST':<8}  "
         f"{'Status':<8}  "
         f"{'Exit':>10}  "
         f"{'P&L':>10}"
