@@ -51,73 +51,166 @@ trading_hours:
   intraday_exit: "15:00"
   no_entry_after: "14:45"   # No new entries after this time (IST). Existing positions unaffected.
 
+# NIFTY 50 constituents — alphabetically sorted
+# Run: python scripts/fetch_instrument_tokens.py to refresh tokens
 watchlist:
-  - RELIANCE
-  - INFY
-  - TCS
-  - HDFCBANK
-  - ICICIBANK
-  - KOTAKBANK
-  - HINDUNILVR
-  - AXISBANK
-  - BAJFINANCE
-  - WIPRO
-  - BHARTIARTL
-  - ITC
-  - LT
-  - HCLTECH
+  - ADANIENT
+  - ADANIPORTS
+  - APOLLOHOSP
   - ASIANPAINT
+  - AXISBANK
+  - BAJAJ-AUTO
+  - BAJAJFINSV
+  - BAJFINANCE
+  - BEL
+  - BHARTIARTL
+  - BPCL
+  - BRITANNIA
+  - CIPLA
+  - COALINDIA
+  - DRREDDY
+  - EICHERMOT
+  - ETERNAL
+  - GRASIM
+  - HCLTECH
+  - HDFCBANK
+  - HDFCLIFE
+  - HEROMOTOCO
+  - HINDALCO
+  - HINDUNILVR
+  - ICICIBANK
+  - INDUSINDBK
+  - INFY
+  - ITC
+  - JSWSTEEL
+  - KOTAKBANK
+  - LT
+  - "M&M"
   - MARUTI
-  - SUNPHARMA
-  - TITAN
-  - ULTRACEMCO
   - NESTLEIND
+  - NTPC
+  - ONGC
+  - POWERGRID
+  - RELIANCE
+  - SBILIFE
+  - SBIN
+  - SUNPHARMA
+  - TATACONSUM
+  - TATASTEEL
+  - TCS
+  - TECHM
+  - TITAN
+  - TMPV
+  - TRENT
+  - ULTRACEMCO
+  - WIPRO
 
-# Zerodha instrument tokens for WebSocket subscription
+# NIFTY 50 constituents — Zerodha instrument tokens for WebSocket subscription
 # Source: kite.instruments("NSE"), EQ segment
-# Last refreshed: 2026-03-06
+# Last refreshed: 2026-03-16
+# Run: python scripts/fetch_instrument_tokens.py to verify/refresh
 trading:
   instruments:
-    - symbol: RELIANCE
-      token: 738561
-    - symbol: INFY
-      token: 408065
-    - symbol: TCS
-      token: 2953217
-    - symbol: HDFCBANK
-      token: 341249
-    - symbol: ICICIBANK
-      token: 1270529
-    - symbol: KOTAKBANK
-      token: 492033
-    - symbol: HINDUNILVR
-      token: 356865
-    - symbol: AXISBANK
-      token: 1510401
-    - symbol: BAJFINANCE
-      token: 81153
-    - symbol: WIPRO
-      token: 969473
-    - symbol: BHARTIARTL
-      token: 2714625
-    - symbol: ITC
-      token: 424961
-    - symbol: LT
-      token: 2939649
-    - symbol: HCLTECH
-      token: 1850625
+    - symbol: ADANIENT
+      token: 6401
+    - symbol: ADANIPORTS
+      token: 3861249
+    - symbol: APOLLOHOSP
+      token: 40193
     - symbol: ASIANPAINT
       token: 60417
+    - symbol: AXISBANK
+      token: 1510401
+    - symbol: BAJAJ-AUTO
+      token: 4267265
+    - symbol: BAJAJFINSV
+      token: 4268801
+    - symbol: BAJFINANCE
+      token: 81153
+    - symbol: BEL
+      token: 98049
+    - symbol: BHARTIARTL
+      token: 2714625
+    - symbol: BPCL
+      token: 134657
+    - symbol: BRITANNIA
+      token: 140033
+    - symbol: CIPLA
+      token: 177665
+    - symbol: COALINDIA
+      token: 5215745
+    - symbol: DRREDDY
+      token: 225537
+    - symbol: EICHERMOT
+      token: 232961
+    - symbol: ETERNAL
+      token: 1304833
+    - symbol: GRASIM
+      token: 315393
+    - symbol: HCLTECH
+      token: 1850625
+    - symbol: HDFCBANK
+      token: 341249
+    - symbol: HDFCLIFE
+      token: 119553
+    - symbol: HEROMOTOCO
+      token: 345089
+    - symbol: HINDALCO
+      token: 348929
+    - symbol: HINDUNILVR
+      token: 356865
+    - symbol: ICICIBANK
+      token: 1270529
+    - symbol: INDUSINDBK
+      token: 1346049
+    - symbol: INFY
+      token: 408065
+    - symbol: ITC
+      token: 424961
+    - symbol: JSWSTEEL
+      token: 3001089
+    - symbol: KOTAKBANK
+      token: 492033
+    - symbol: LT
+      token: 2939649
+    - symbol: "M&M"
+      token: 519937
     - symbol: MARUTI
       token: 2815745
-    - symbol: SUNPHARMA
-      token: 857857
-    - symbol: TITAN
-      token: 897537
-    - symbol: ULTRACEMCO
-      token: 2952193
     - symbol: NESTLEIND
       token: 4598529
+    - symbol: NTPC
+      token: 2977281
+    - symbol: ONGC
+      token: 633601
+    - symbol: POWERGRID
+      token: 3834113
+    - symbol: RELIANCE
+      token: 738561
+    - symbol: SBILIFE
+      token: 5582849
+    - symbol: SBIN
+      token: 779521
+    - symbol: SUNPHARMA
+      token: 857857
+    - symbol: TATACONSUM
+      token: 878593
+    - symbol: TATASTEEL
+      token: 895745
+    - symbol: TCS
+      token: 2953217
+    - symbol: TECHM
+      token: 3465729
+    - symbol: TITAN
+      token: 897537
+    - symbol: TMPV
+      token: 884737
+    - symbol: TRENT
+      token: 502785
+    - symbol: ULTRACEMCO
+      token: 2952193
+    - symbol: WIPRO
+      token: 969473
 
 # Token automation — daily Zerodha token refresh
 token_automation:
