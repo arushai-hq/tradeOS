@@ -125,7 +125,7 @@ token_automation:
     port: 7291
     timeout_hours: 2              # Auto-shutdown if no callback
   cron:
-    first_send: "07:00"           # IST — initial login link
+    first_send: "07:00"           # IST — initial login link (VPS clock is IST)
     reminders:                    # IST — escalation messages
       - "07:30"
       - "08:00"

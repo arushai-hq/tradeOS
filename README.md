@@ -165,6 +165,8 @@ bash scripts/setup_ssl.sh your-email@example.com
 
 Sets up Nginx reverse proxy on port 11443 with Let's Encrypt SSL. Proxies `/callback` to token_server for Zerodha OAuth.
 
+**Networking note:** Nginx (in Docker on `tradeos_network` bridge 172.20.0.0/16) proxies to `token_server.py` on the host via the VPS public IP. `host.docker.internal` is not used — it resolves to the `docker0` bridge (172.17.0.1) which is unreachable from custom Docker networks.
+
 ### Cron (one-time)
 
 ```bash
