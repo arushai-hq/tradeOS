@@ -49,7 +49,16 @@ async def test_d1_sizer_rejection_updates_signal_status():
     ee._order_placer = MagicMock()
     ee._risk_manager = MagicMock()
     ee._risk_manager.size_position.return_value = None  # sizer rejects
-    ee._shared_state = {"signals_rejected_today": 0}
+    ee._shared_state = {
+        "signals_rejected_today": 0,
+        "open_positions": {},
+        "max_open_positions": 4,
+        "pending_signals": 0,
+    }
+    ee._config = {
+        "capital": {"total": 1000000, "allocation": {"s1_intraday": 0.70}},
+        "risk": {"max_open_positions": 4},
+    }
     ee._notifier = None
     ee._session_date = date(2026, 3, 13)
 

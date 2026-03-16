@@ -122,13 +122,16 @@ class RiskGate:
             )
             return False, "INSTRUMENT_LOCKED"
 
-        # Gate 4: max open positions (D6)
+        # Gate 4: max open positions (D6) — includes pending_signals (B15 fix)
         max_positions = config.get("risk", {}).get("max_open_positions", 3)
         open_count = len(shared_state.get("open_positions", {}))
-        if open_count >= max_positions:
+        pending_count = shared_state.get("pending_signals", 0)
+        effective_count = open_count + pending_count
+        if effective_count >= max_positions:
             log.debug(
                 "risk_gate_blocked", gate=4, reason="MAX_POSITIONS_REACHED",
                 symbol=signal.symbol, open_positions=open_count,
+                pending_signals=pending_count,
             )
             return False, "MAX_POSITIONS_REACHED"
 
