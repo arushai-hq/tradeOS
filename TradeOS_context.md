@@ -30,7 +30,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `utils/telegram_notifier.py` | Rich Telegram alerts — 6 event types + heartbeat summary. Config-driven via `config/telegram_alerts.yaml` (hot-reload, 60s TTL) |
 | `tools/session_report.py` | Standalone CLI session report — parses structlog, outputs signal/trade/P&L/regime/health tables. Supports `--export csv/xlsx/all` |
 | `core/risk_manager/position_sizer.py` | 3-layer slot-based sizing: risk-based → capital cap → viability floors (min_risk ₹1K, min_value ₹15K) |
-| `tools/hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect + nsetools. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
+| `tools/hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect (primary) → nsetools/nsepython (fallback). Shared KiteConnect instance per run. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
 | `migrations/` | SQL migration files. `001_create_sessions_table.sql`. Auto-created at startup if missing. |
 | `tools/db_backfill_session07.py` | One-time data fix for Session 07 trades (incorrect P&L + exit_reason from pre-B12 code). |
 | `scripts/token_server.py` | HTTP callback server (0.0.0.0:7291). Captures Zerodha request_token, exchanges for access_token, writes to secrets.yaml, confirms via Telegram, auto-shuts down. Auto-starts main.py in named tmux session (weekdays only). |
@@ -45,7 +45,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `docs/runbooks/` | Operational procedures (daily-trading.md) |
 
 **Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
-**Watchlist:** 20 hardcoded NSE stocks in `config/settings.yaml`
+**Watchlist:** 50 NIFTY 50 stocks in `config/settings.yaml` (expanded 2026-03-16)
 **Candle interval:** 15 minutes | **Trade window:** 09:15–15:00 IST | **Hard exit:** 15:00 IST
 
 ---
@@ -100,7 +100,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 8. **Capital config** — S1=90%, 6 slots (₹1,50,000/slot). S2/S3/S4 placeholders at 5%/3%/2%. Increased from 70%/4 for Session 09 to allow more concurrent positions during validated paper trading.
 9. **Slot-based position sizing** — 3-layer calculation: risk-based shares → capital cap scale-down → viability floors (min_risk ₹1,000, min_position_value ₹15,000). Charge estimation logged per sized position. No-entry window at 14:45 IST (Gate 5b). Startup refuses if slot_capital < ₹40,000. Pending orders cancelled at hard_exit before emergency_exit_all.
 10. **Futures trading gate criteria** — No futures until ALL conditions met: (a) 10 completed S1 trades (stop/target/hard_exit, not just opened), (b) 3 consecutive bug-free sessions, (c) every trade P&L verified in session report matches expected calculation, (d) at least 1 winning trade proving strategy can make money. Manual delivery trades (NIFTY BEES, large-caps) are acceptable anytime for market views — separate from TradeOS.
-11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. nsepython primary + nsetools fallback. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Development on feature/hawk branch. Full spec: `docs/hawk_spec.md`.
+11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. KiteConnect primary → nsetools/nsepython fallback. Shared kite instance per run. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Full spec: `docs/hawk_spec.md`. TATAMOTORS demerged → TMPV is NIFTY 50 constituent.
 12. **Option C stop floor** — Minimum 2% stop distance enforced when swing-based stops are tighter. Paper capital increased ₹5L→₹10L for realistic testing. All 10 S1 strategy parameters (EMA periods, RSI thresholds, volume ratio, RR ratio, swing lookback, min stop %) now configurable via settings.yaml. Zero hardcoded numbers in signal generation.
 13. **HAWK multi-model consensus** — 4 LLMs (Claude, Gemini, GPT-5.4, Kimi) run on same data. Picks scored: UNANIMOUS (4/4), STRONG (3/4), MAJORITY (2/4), SINGLE (1/4). $0.23/run, ~$10/month. All 4 models selected after side-by-side comparison — 80% pick overlap confirmed.
 
@@ -129,7 +129,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 |-----|--------|----------|
 | `tradingsymbol` null in `ticks` table | Cosmetic — token present, symbol lookup works | Low |
 | `bid` / `ask` null in `ticks` table | Cosmetic — not used in S1 logic | Low |
-| HAWK: nsepython bhavcopy/FII-DII broken (API changed) | Using KiteConnect fallback. Delivery % unavailable. | Medium |
+| ~~HAWK: nsepython bhavcopy/FII-DII broken~~ | **RESOLVED** — KiteConnect primary, nsepython enrichment for delivery %. FII/DII graceful zeros when nse_fii removed. | ~~Medium~~ |
 | HAWK: Telegram config for HAWK-Picks channel | bot_token + chat_id not yet configured in secrets.yaml | Medium |
 | HAWK: Regime shows "unknown" | Needs TradeOS regime integration | Low |
 | D2: System events expansion | SESSION_START, SESSION_END, KILL_SWITCH, REGIME_CHANGE, HARD_EXIT not yet captured | Medium |
@@ -161,7 +161,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 5. ~~Verify P&L comparison bug~~ — **DONE**. Now compares gross vs gross (like-for-like).
 6. Install certbot renewal cron on VPS (setup_ssl.sh handles this).
 7. Futures gate: 10/10 trades ✓, 2/3 clean sessions, P&L verified ✓, 1+ winner ✓ — 3/4 gates met, need 1 more clean session.
-8. Watchlist expansion — target Session 11.
+8. ~~Watchlist expansion~~ — **DONE**. Expanded to 50 NIFTY 50 stocks (2026-03-16). TATAMOTORS → TMPV.
 
 ---
 
@@ -182,6 +182,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-16 | Session 08 + Report Fix | Session 08: 6 trades (5W/1L), +₹44 net, 15 signals, all DB writes verified, LOG=DB match on all trades. B12-B14 fixes confirmed working. Report formatting fix: fixed-width columns for signal/trade tables, HH:MM:SS timestamps, ANSI color for P&L, verify mode now compares gross vs gross (was comparing LOG gross against DB net). Tests: 499 passed. | Futures gate: 10/10 trades, 2/3 sessions, P&L verified, 1+ winner — 3/4 gates met. |
 | 2026-03-16 | Report + B15 Fix | Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). B15 max positions race condition: defense-in-depth with 3 layers — pending_signals counter (Gate 4), hard gate (execution engine), capital ceiling. Session 08 showed 6 positions with max=4 due to async fill delay. Tests: 515→523. | B15 resolved. Race condition eliminated. |
 | 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
+| 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
 
 ---
 
@@ -206,4 +207,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — OSD v1.9.0 compliance audit complete. 15/29 PASS, 12/29 PARTIAL, 2/29 N/A. CHANGELOG.md, security docs, rollback runbook, secrets template created. Git tag v0.5.0. 524 tests passing.
+**2026-03-16** — HAWK data collectors fixed (KiteConnect primary), watchlist expanded to 50 NIFTY 50 stocks. TATAMOTORS→TMPV. 533 tests passing.

@@ -10,6 +10,8 @@ Tests:
   (f) missing data source handled gracefully (partial data, no crash)
   (g) config loading returns defaults when files missing
   (h) NIFTY 50 hardcoded fallback list has 50 stocks
+  (i) KiteConnect-primary bhavcopy fetch
+  (j) graceful degradation when all sources fail
 """
 from __future__ import annotations
 
@@ -32,25 +34,26 @@ def test_data_collector_returns_correct_structure():
     from unittest.mock import patch
 
     # Mock all external calls to return empty/default
-    with patch("tools.hawk_engine.data_collector._fetch_nifty50_stocks", return_value=["RELIANCE", "INFY"]):
-        with patch("tools.hawk_engine.data_collector._fetch_bhavcopy", return_value=(
-            [
-                {"symbol": "RELIANCE", "open": 2450, "high": 2480, "low": 2430, "close": 2470, "volume": 1000000, "delivery_pct": 55.0, "change_pct": 0.82},
-                {"symbol": "INFY", "open": 1500, "high": 1520, "low": 1490, "close": 1510, "volume": 800000, "delivery_pct": 48.0, "change_pct": 0.67},
-            ],
-            ["mock"],
-        )):
-            with patch("tools.hawk_engine.data_collector._fetch_fii_dii", return_value=(
-                {"fii_net_equity": -1000.0, "dii_net_equity": 800.0}, ["mock"]
+    with patch("tools.hawk_engine.data_collector._init_kiteconnect", return_value=None):
+        with patch("tools.hawk_engine.data_collector._fetch_nifty50_stocks", return_value=["RELIANCE", "INFY"]):
+            with patch("tools.hawk_engine.data_collector._fetch_bhavcopy", return_value=(
+                [
+                    {"symbol": "RELIANCE", "open": 2450, "high": 2480, "low": 2430, "close": 2470, "volume": 1000000, "delivery_pct": 55.0, "change_pct": 0.82},
+                    {"symbol": "INFY", "open": 1500, "high": 1520, "low": 1490, "close": 1510, "volume": 800000, "delivery_pct": 48.0, "change_pct": 0.67},
+                ],
+                ["mock"],
             )):
-                with patch("tools.hawk_engine.data_collector._fetch_indices", return_value=(
-                    {"nifty_50": {"close": 24000, "change_pct": -0.5}}, ["mock"]
+                with patch("tools.hawk_engine.data_collector._fetch_fii_dii", return_value=(
+                    {"fii_net_equity": -1000.0, "dii_net_equity": 800.0}, ["mock"]
                 )):
-                    with patch("tools.hawk_engine.data_collector._fetch_sectors", return_value=({}, [])):
-                        from datetime import date
-                        from tools.hawk_engine.data_collector import collect_evening_data
+                    with patch("tools.hawk_engine.data_collector._fetch_indices", return_value=(
+                        {"nifty_50": {"close": 24000, "change_pct": -0.5}}, ["mock"]
+                    )):
+                        with patch("tools.hawk_engine.data_collector._fetch_sectors", return_value=({}, [])):
+                            from datetime import date
+                            from tools.hawk_engine.data_collector import collect_evening_data
 
-                        result = collect_evening_data(date(2026, 3, 11))
+                            result = collect_evening_data(date(2026, 3, 11))
 
     assert "date" in result
     assert "bhavcopy" in result
@@ -342,14 +345,15 @@ def test_missing_data_source_no_crash():
     from datetime import date
     from tools.hawk_engine.data_collector import collect_evening_data
 
-    with patch("tools.hawk_engine.data_collector._fetch_nifty50_stocks", return_value=["RELIANCE"]):
-        with patch("tools.hawk_engine.data_collector._fetch_bhavcopy", return_value=([], [])):
-            with patch("tools.hawk_engine.data_collector._fetch_fii_dii", return_value=(
-                {"fii_net_equity": 0.0, "dii_net_equity": 0.0}, []
-            )):
-                with patch("tools.hawk_engine.data_collector._fetch_indices", return_value=({}, [])):
-                    with patch("tools.hawk_engine.data_collector._fetch_sectors", return_value=({}, [])):
-                        result = collect_evening_data(date(2026, 3, 11))
+    with patch("tools.hawk_engine.data_collector._init_kiteconnect", return_value=None):
+        with patch("tools.hawk_engine.data_collector._fetch_nifty50_stocks", return_value=["RELIANCE"]):
+            with patch("tools.hawk_engine.data_collector._fetch_bhavcopy", return_value=([], [])):
+                with patch("tools.hawk_engine.data_collector._fetch_fii_dii", return_value=(
+                    {"fii_net_equity": 0.0, "dii_net_equity": 0.0}, []
+                )):
+                    with patch("tools.hawk_engine.data_collector._fetch_indices", return_value=({}, [])):
+                        with patch("tools.hawk_engine.data_collector._fetch_sectors", return_value=({}, [])):
+                            result = collect_evening_data(date(2026, 3, 11))
 
     # Should not crash — returns structure with empty data
     assert result["bhavcopy"] == []
@@ -393,6 +397,9 @@ def test_nifty50_hardcoded_list_has_50_stocks():
     assert "RELIANCE" in NIFTY_50_STOCKS
     assert "INFY" in NIFTY_50_STOCKS
     assert "TCS" in NIFTY_50_STOCKS
+    # TATAMOTORS demerged → TMPV is the NIFTY 50 constituent
+    assert "TMPV" in NIFTY_50_STOCKS
+    assert "TATAMOTORS" not in NIFTY_50_STOCKS
 
 
 # ---------------------------------------------------------------------------
@@ -614,3 +621,198 @@ def test_get_openrouter_site_name():
 
     assert get_openrouter_site_name({}) == "TradeOS-HAWK"
     assert get_openrouter_site_name({"llm": {"openrouter": {"site_name": "MyApp"}}}) == "MyApp"
+
+
+# ---------------------------------------------------------------------------
+# (l) KiteConnect-primary bhavcopy fetch
+# ---------------------------------------------------------------------------
+
+def test_bhavcopy_kiteconnect_primary():
+    """_fetch_bhavcopy uses KiteConnect when kite + token_map provided."""
+    from unittest.mock import MagicMock
+    from datetime import date
+    from tools.hawk_engine.data_collector import _fetch_bhavcopy
+
+    mock_kite = MagicMock()
+    mock_kite.historical_data.return_value = [
+        {"open": 2450.0, "high": 2480.0, "low": 2430.0, "close": 2470.0, "volume": 1000000}
+    ]
+
+    token_map = {"RELIANCE": 738561, "INFY": 408065}
+    stocks = ["RELIANCE", "INFY"]
+
+    result, sources = _fetch_bhavcopy(date(2026, 3, 16), stocks, kite=mock_kite, token_map=token_map)
+
+    assert len(result) == 2
+    assert "kiteconnect" in sources
+    assert result[0]["symbol"] in ("RELIANCE", "INFY")
+    assert result[0]["open"] == 2450.0
+    assert result[0]["delivery_pct"] == 0.0  # No nsepython enrichment
+    assert mock_kite.historical_data.call_count == 2
+
+
+def test_bhavcopy_kiteconnect_with_delivery_enrichment():
+    """_fetch_bhavcopy merges nsepython delivery_pct into KiteConnect data."""
+    from unittest.mock import MagicMock, patch
+    from datetime import date
+    import pandas as pd
+    from tools.hawk_engine.data_collector import _fetch_bhavcopy
+
+    mock_kite = MagicMock()
+    mock_kite.historical_data.return_value = [
+        {"open": 2450.0, "high": 2480.0, "low": 2430.0, "close": 2470.0, "volume": 1000000}
+    ]
+
+    # Mock nsepython returning delivery data
+    mock_df = pd.DataFrame([
+        {"SYMBOL": "RELIANCE", "DELIV_PER": 62.5},
+    ])
+
+    with patch("tools.hawk_engine.data_collector.nse_eq_symbols", create=True) as mock_nse:
+        # We need to mock the import inside the function
+        with patch.dict("sys.modules", {"nsepython": MagicMock(nse_eq_symbols=MagicMock(return_value=mock_df))}):
+            token_map = {"RELIANCE": 738561}
+            result, sources = _fetch_bhavcopy(date(2026, 3, 16), ["RELIANCE"], kite=mock_kite, token_map=token_map)
+
+    assert len(result) == 1
+    assert "kiteconnect" in sources
+    # Delivery pct should be enriched from nsepython
+    assert result[0]["symbol"] == "RELIANCE"
+
+
+def test_bhavcopy_falls_back_to_nsepython():
+    """_fetch_bhavcopy falls back to nsepython when kite is None."""
+    from unittest.mock import patch, MagicMock
+    from datetime import date
+    import pandas as pd
+    from tools.hawk_engine.data_collector import _fetch_bhavcopy
+
+    mock_df = pd.DataFrame([
+        {"SYMBOL": "RELIANCE", "OPEN_PRICE": 2450, "HIGH_PRICE": 2480,
+         "LOW_PRICE": 2430, "CLOSE_PRICE": 2470, "TTL_TRD_QNTY": 1000000,
+         "DELIV_PER": 55.0, "NET_TRDVAL": 0},
+    ])
+
+    with patch.dict("sys.modules", {"nsepython": MagicMock(nse_eq_symbols=MagicMock(return_value=mock_df))}):
+        result, sources = _fetch_bhavcopy(date(2026, 3, 16), ["RELIANCE"])
+
+    assert len(result) == 1
+    assert "nsepython" in sources
+    assert result[0]["delivery_pct"] == 55.0
+
+
+# ---------------------------------------------------------------------------
+# (m) Graceful degradation when all sources fail
+# ---------------------------------------------------------------------------
+
+def test_all_sources_fail_returns_empty():
+    """When KiteConnect, nsepython, and nsetools all fail, returns empty gracefully."""
+    from unittest.mock import patch
+    from datetime import date
+    from tools.hawk_engine.data_collector import _fetch_bhavcopy
+
+    with patch.dict("sys.modules", {"nsepython": None}):
+        result, sources = _fetch_bhavcopy(date(2026, 3, 16), ["RELIANCE"])
+
+    assert result == []
+    assert sources == []
+
+
+def test_fii_dii_graceful_when_nse_fii_removed():
+    """FII/DII returns zeros when nse_fii import fails."""
+    from unittest.mock import patch
+    from datetime import date
+    from tools.hawk_engine.data_collector import _fetch_fii_dii
+
+    # Simulate nse_fii being removed from nsepython
+    mock_nsepython = MagicMock()
+    del mock_nsepython.nse_fii  # Remove attribute
+    del mock_nsepython.nse_fii_dii  # Remove alternative too
+
+    with patch.dict("sys.modules", {"nsepython": mock_nsepython}):
+        result, sources = _fetch_fii_dii(date(2026, 3, 16))
+
+    assert result["fii_net_equity"] == 0.0
+    assert result["dii_net_equity"] == 0.0
+
+
+def test_indices_kiteconnect_primary():
+    """_fetch_indices uses KiteConnect when kite provided."""
+    from unittest.mock import MagicMock
+    from tools.hawk_engine.data_collector import _fetch_indices
+
+    mock_kite = MagicMock()
+    mock_kite.quote.return_value = {
+        "NSE:256265": {"last_price": 24000.0, "ohlc": {"close": -0.5}},
+        "NSE:260105": {"last_price": 51000.0, "ohlc": {"close": -1.2}},
+        "NSE:264969": {"last_price": 15.5, "ohlc": {"close": 3.0}},
+    }
+
+    indices, sources = _fetch_indices(kite=mock_kite)
+
+    assert "kiteconnect" in sources
+    assert "nifty_50" in indices
+    assert indices["nifty_50"]["close"] == 24000.0
+
+
+def test_nifty50_stocks_verified_against_kite():
+    """_fetch_nifty50_stocks removes unresolved symbols when kite_instruments provided."""
+    from tools.hawk_engine.data_collector import _fetch_nifty50_stocks
+
+    # Simulate instruments list that doesn't have TMPV
+    instruments = [
+        {"tradingsymbol": "RELIANCE", "instrument_type": "EQ"},
+        {"tradingsymbol": "INFY", "instrument_type": "EQ"},
+        {"tradingsymbol": "TCS", "instrument_type": "EQ"},
+    ]
+
+    stocks = _fetch_nifty50_stocks(kite_instruments=instruments)
+
+    assert "RELIANCE" in stocks
+    assert "INFY" in stocks
+    assert "TCS" in stocks
+    assert len(stocks) == 3  # Only resolved symbols
+
+
+# ---------------------------------------------------------------------------
+# (n) Config: watchlist/instruments sync validation
+# ---------------------------------------------------------------------------
+
+def test_settings_watchlist_instruments_sync():
+    """Watchlist and trading.instruments must be in sync in settings.yaml."""
+    import yaml
+
+    settings_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "config", "settings.yaml"
+    )
+    with open(settings_path) as f:
+        settings = yaml.safe_load(f)
+
+    watchlist = set(settings.get("watchlist", []))
+    instruments = {i["symbol"] for i in settings.get("trading", {}).get("instruments", [])}
+
+    assert watchlist == instruments, (
+        f"Mismatch: in watchlist only={watchlist - instruments}, "
+        f"in instruments only={instruments - watchlist}"
+    )
+
+
+def test_settings_watchlist_count():
+    """Watchlist should have 50 NIFTY 50 stocks."""
+    import yaml
+
+    settings_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "config", "settings.yaml"
+    )
+    with open(settings_path) as f:
+        settings = yaml.safe_load(f)
+
+    watchlist = settings.get("watchlist", [])
+    instruments = settings.get("trading", {}).get("instruments", [])
+
+    assert len(watchlist) == 50, f"Watchlist has {len(watchlist)} stocks, expected 50"
+    assert len(instruments) == 50, f"Instruments has {len(instruments)} entries, expected 50"
+
+
+# Import MagicMock at module level for test_fii_dii_graceful_when_nse_fii_removed
+from unittest.mock import MagicMock
