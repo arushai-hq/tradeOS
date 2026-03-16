@@ -55,8 +55,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Item | Status |
 |------|--------|
 | Tests | **524 passing, 0 failures, 12 skipped** |
-| Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,75,000. Risk/trade: ₹2,625. |
-| S1 allocation | 70% (₹7,00,000). Max positions: 4. S2=15%, S3=10%, S4=5%. |
+| Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
+| S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
 | Paper Session 05 | Complete — system health PASS. Zero bugs, zero false kill switch, zero ghost positions. B7-B11 fixes confirmed. 6 signals (3 accepted, 3 blocked by no-entry window). Zero trades — all 3 accepted signals rejected by position sizer due to tight swing stops (pre-fix). Stop floor + ₹10L capital fix applied post-session. |
 | Paper Session 06 | Config tuning: volume_ratio_min 1.5→1.2, no_entry_after 14:30→14:45. T1-T3 Telegram fixes live. Validates S1 with ₹10L capital + 2% stop floor + widened params. |
@@ -97,7 +97,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 5. **AI/LLM dynamic watchlist parked** — Revisit after S1 validated on fixed watchlist.
 6. **Accept zero-signal sessions as valid outcome** — S1 sitting out unfavorable regimes is correct behavior. Do not loosen gates to force trades. Revisit only if zero-signal persists across 3+ sessions with mixed regimes.
 7. **Nemawashi Principle** — *"Preparing the roots before transplanting the tree."* All features, fixes, and system changes follow a 70-80% planning / 20-30% implementation split. Deep-dive analysis, edge case mapping, cost modeling, and brainstorming MUST be completed before any CC prompt is generated. No rushing to implementation. This applies to every session, every feature, every decision.
-8. **Scenario D capital config** — S1=70%, 4 slots. S2/S3/S4 placeholders at 15%/10%/5%. Full 3-layer slot-based position sizing pending Nemawashi deep dive.
+8. **Capital config** — S1=90%, 6 slots (₹1,50,000/slot). S2/S3/S4 placeholders at 5%/3%/2%. Increased from 70%/4 for Session 09 to allow more concurrent positions during validated paper trading.
 9. **Slot-based position sizing** — 3-layer calculation: risk-based shares → capital cap scale-down → viability floors (min_risk ₹1,000, min_position_value ₹15,000). Charge estimation logged per sized position. No-entry window at 14:45 IST (Gate 5b). Startup refuses if slot_capital < ₹40,000. Pending orders cancelled at hard_exit before emergency_exit_all.
 10. **Futures trading gate criteria** — No futures until ALL conditions met: (a) 10 completed S1 trades (stop/target/hard_exit, not just opened), (b) 3 consecutive bug-free sessions, (c) every trade P&L verified in session report matches expected calculation, (d) at least 1 winning trade proving strategy can make money. Manual delivery trades (NIFTY BEES, large-caps) are acceptable anytime for market views — separate from TradeOS.
 11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. nsepython primary + nsetools fallback. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Development on feature/hawk branch. Full spec: `docs/hawk_spec.md`.

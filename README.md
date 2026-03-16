@@ -241,7 +241,7 @@ Current: **524 passing**, 12 skipped, 0 failures.
 |------|-------|
 | Max loss per trade | 1.5% of S1 capital |
 | Max daily loss | 3.0% (triggers kill switch) |
-| Max open positions | 4 |
+| Max open positions | 6 |
 | Hard intraday exit | 15:00 IST |
 | Stop-loss | Mandatory on every order |
 | Mode | Paper only until all gates pass |

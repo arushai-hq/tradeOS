@@ -14,15 +14,15 @@ capital:
   total: 1000000       # ₹10L
   # RULE: All allocations MUST sum to 1.00 (100%). Validated at startup.
   allocation:
-    s1_intraday: 0.70
-    s2_swing: 0.15
-    s3_positional: 0.10
-    s4_event: 0.05
+    s1_intraday: 0.90
+    s2_swing: 0.05
+    s3_positional: 0.03
+    s4_event: 0.02
 
 risk:
   max_loss_per_trade_pct: 0.015
   max_daily_loss_pct: 0.03
-  max_open_positions: 4
+  max_open_positions: 6
   hard_exit_time: "15:00"
 
 # Slot-based position sizing
