@@ -166,8 +166,8 @@ def build_consensus(model_results: list[dict], total_models: int) -> dict:
             "per_model_detail": per_model_detail,
         })
 
-    # Sort by score desc, then votes desc
-    scored.sort(key=lambda x: (-x["consensus_score"], -x["model_votes"]))
+    # Sort by score desc, then votes desc, then symbol alphabetically (tiebreaker)
+    scored.sort(key=lambda x: (-x["consensus_score"], -x["model_votes"], x["symbol"]))
 
     # Assign ranks
     for i, pick in enumerate(scored, 1):
