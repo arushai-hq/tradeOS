@@ -87,6 +87,15 @@ All operations go through the `tradeos` command. Set `TRADEOS_DIR` to override t
 | `tradeos hawk eval` | Evaluate yesterday's picks |
 | `tradeos hawk eval --date YYYY-MM-DD` | Evaluate specific date |
 
+### Data (Backtest)
+
+| Command | Description |
+|---------|-------------|
+| `tradeos data download --interval 15min --days 1095` | Download 15min candles (3 years) |
+| `tradeos data download --all` | Download all 5 intervals with recommended durations |
+| `tradeos data download --symbol RELIANCE --interval 15min --days 200` | Single symbol |
+| `tradeos data status` | Show download coverage per interval |
+
 ### System
 
 | Command | Description |

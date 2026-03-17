@@ -361,6 +361,36 @@ cmd_hawk() {
 }
 
 # ---------------------------------------------------------------------------
+# Data commands (backtest)
+# ---------------------------------------------------------------------------
+
+cmd_data() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos data <download|status> [args...]"
+        exit 1
+    fi
+    shift
+
+    _require_venv
+    cd "$TRADEOS_DIR"
+
+    case "$subcmd" in
+        download)
+            "$PYTHON" tools/data_downloader.py download "$@"
+            ;;
+        status)
+            "$PYTHON" tools/data_downloader.py status "$@"
+            ;;
+        *)
+            echo "$(_red "Unknown data command"): $subcmd"
+            echo "Usage: tradeos data <download|status> [args...]"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Logs commands
 # ---------------------------------------------------------------------------
 
@@ -866,6 +896,12 @@ HAWK (AI Market Intelligence)
   tradeos hawk eval                         Evaluate yesterday's picks
   tradeos hawk eval --date 2026-03-13       Evaluate specific date
 
+DATA (Backtest)
+  tradeos data download --interval 15min --days 1095   Download 15min candles
+  tradeos data download --all                          All intervals + indices
+  tradeos data download --symbol RELIANCE --interval 15min --days 200
+  tradeos data status                                  Show download coverage
+
 LOGS
   tradeos logs tail             Tail today's trading log
   tradeos logs list             List recent log files
@@ -909,6 +945,8 @@ EXAMPLES
   tradeos test -x -q                                   # Run tests (stop on first failure)
   tradeos db shell                                     # Connect to database
   tradeos cron status                                  # Check cron entries
+  tradeos data download --all                             # Download all historical data
+  tradeos data status                                     # Check download coverage
   TRADEOS_DIR=. tradeos test -x -q                     # Run from dev checkout
 HELP
 }
@@ -937,6 +975,7 @@ main() {
         preflight)    cmd_preflight "$@" ;;
         report)       cmd_report "$@" ;;
         hawk)         cmd_hawk "$@" ;;
+        data)         cmd_data "$@" ;;
         logs)         cmd_logs "$@" ;;
         db)           cmd_db "$@" ;;
         docker)       cmd_docker "$@" ;;
