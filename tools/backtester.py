@@ -26,6 +26,7 @@ import math
 import os
 import sys
 from collections import defaultdict
+import dataclasses
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import ROUND_DOWN, Decimal
@@ -513,6 +514,27 @@ class BacktestEngine:
             )
         return [r["session_date"] for r in rows]
 
+    @staticmethod
+    def _compute_vwap_for_day(candles: list[Candle]) -> list[Candle]:
+        """Compute running intraday VWAP for a single stock's day candles.
+
+        VWAP = cumulative(typical_price × volume) / cumulative(volume)
+        typical_price = (high + low + close) / 3
+
+        Resets each trading day (called per-stock per-day).
+        """
+        cum_tp_vol = Decimal("0")
+        cum_vol = Decimal("0")
+        result: list[Candle] = []
+        for c in candles:
+            tp = (c.high + c.low + c.close) / Decimal("3")
+            vol = Decimal(str(c.volume))
+            cum_tp_vol += tp * vol
+            cum_vol += vol
+            vwap = cum_tp_vol / cum_vol if cum_vol > 0 else c.close
+            result.append(dataclasses.replace(c, vwap=vwap))
+        return result
+
     async def _load_day_candles(
         self, day: date, symbols: list[str]
     ) -> dict[str, list[Candle]]:
@@ -539,7 +561,7 @@ class BacktestEngine:
                 low=Decimal(str(r["low"])),
                 close=Decimal(str(r["close"])),
                 volume=int(r["volume"]),
-                vwap=Decimal(str(r["close"])),  # Use close as VWAP proxy for backtest
+                vwap=Decimal(str(r["close"])),  # Placeholder — overwritten by _compute_vwap_for_day()
                 candle_time=r["candle_time"] if r["candle_time"].tzinfo else IST.localize(r["candle_time"]),
                 session_date=r["session_date"],
                 tick_count=0,
@@ -574,7 +596,7 @@ class BacktestEngine:
                 low=Decimal(str(r["low"])),
                 close=Decimal(str(r["close"])),
                 volume=int(r["volume"]),
-                vwap=Decimal(str(r["close"])),
+                vwap=Decimal(str(r["close"])),  # Warmup only — EMA/RSI init, not signal gen
                 candle_time=r["candle_time"] if r["candle_time"].tzinfo else IST.localize(r["candle_time"]),
                 session_date=r["session_date"],
                 tick_count=0,
@@ -683,6 +705,12 @@ class BacktestEngine:
         candles_by_symbol = await self._load_day_candles(day, symbols)
         if not candles_by_symbol:
             return []
+
+        # Compute running VWAP per stock (resets each day — intraday indicator)
+        for symbol in candles_by_symbol:
+            candles_by_symbol[symbol] = self._compute_vwap_for_day(
+                candles_by_symbol[symbol]
+            )
 
         # Ensure indicator engines exist (persist across days for EMA continuity)
         for symbol in candles_by_symbol:

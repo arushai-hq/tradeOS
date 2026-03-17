@@ -214,6 +214,61 @@ def test_risk_gate_regime_blocks_long_in_bear():
 
 
 # ---------------------------------------------------------------------------
+# (6b) _compute_vwap_for_day
+# ---------------------------------------------------------------------------
+
+def test_compute_vwap_for_day():
+    """Running VWAP computed correctly from OHLCV candles."""
+    from tools.backtester import BacktestEngine
+
+    candles = [
+        _make_candle(
+            open_=Decimal("100"), high=Decimal("110"), low=Decimal("90"),
+            close=Decimal("105"), volume=1000,
+            candle_time=IST.localize(datetime(2026, 3, 1, 9, 15)),
+        ),
+        _make_candle(
+            open_=Decimal("105"), high=Decimal("115"), low=Decimal("95"),
+            close=Decimal("110"), volume=2000,
+            candle_time=IST.localize(datetime(2026, 3, 1, 9, 30)),
+        ),
+        _make_candle(
+            open_=Decimal("110"), high=Decimal("120"), low=Decimal("100"),
+            close=Decimal("115"), volume=1500,
+            candle_time=IST.localize(datetime(2026, 3, 1, 9, 45)),
+        ),
+    ]
+
+    result = BacktestEngine._compute_vwap_for_day(candles)
+
+    # Candle 1: tp = (110+90+105)/3 ≈ 101.6667, cum_tp_vol = 101666.7, cum_vol = 1000
+    #   vwap1 = 101666.7 / 1000 ≈ 101.6667
+    tp1 = (Decimal("110") + Decimal("90") + Decimal("105")) / Decimal("3")
+    expected_vwap1 = tp1  # cum_vol = 1000, so vwap = tp1 * 1000 / 1000 = tp1
+    assert result[0].vwap == expected_vwap1
+
+    # Candle 2: tp = (115+95+110)/3 ≈ 106.6667
+    #   cum_tp_vol = tp1*1000 + tp2*2000, cum_vol = 3000
+    tp2 = (Decimal("115") + Decimal("95") + Decimal("110")) / Decimal("3")
+    expected_vwap2 = (tp1 * 1000 + tp2 * 2000) / Decimal("3000")
+    assert result[1].vwap == expected_vwap2
+
+    # Candle 3: tp = (120+100+115)/3 ≈ 111.6667
+    #   cum_tp_vol += tp3*1500, cum_vol = 4500
+    tp3 = (Decimal("120") + Decimal("100") + Decimal("115")) / Decimal("3")
+    expected_vwap3 = (tp1 * 1000 + tp2 * 2000 + tp3 * 1500) / Decimal("4500")
+    assert result[2].vwap == expected_vwap3
+
+    # VWAP should differ from close (the whole point of this fix)
+    assert result[0].vwap != result[0].close
+    assert result[1].vwap != result[1].close
+
+    # Original candle fields unchanged
+    assert result[0].close == Decimal("105")
+    assert result[1].volume == 2000
+
+
+# ---------------------------------------------------------------------------
 # (7) compute_atr
 # ---------------------------------------------------------------------------
 
