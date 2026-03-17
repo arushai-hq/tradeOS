@@ -77,6 +77,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | OSD Skills Audit | **2026-03-15** — Skills audited and enhanced. 4 new skills created (tradeos-architecture, tradeos-gotchas, tradeos-testing, tradeos-operations). CLAUDE.md verified against OSD Section 4.2 — deployment rule, branch discipline, and skills reference added. All 13 TradeOS skills operational. context-mode routing block verified intact. |
 | B15 fix | **2026-03-16** — Max positions race condition fixed. Defense-in-depth: Layer 1 (pending_signals counter in Gate 4), Layer 2 (hard gate in execution engine), Layer 3 (capital ceiling check). Session 08 scenario (5 simultaneous signals with 1 open) now correctly limited to 3 new positions. Tests: 515→523. |
 | ASPS Restructure | **2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B (Engine + Tools), HEAVY tier. Engine modules moved to `core/` (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector). Subdirectory CLAUDE.md files for skill routing. Root CLAUDE.md rewritten (<200 lines). ADRs, runbooks, and specs directories created. Tests: 499 passed. Branch: `refactor/asps-restructure`. |
+| Backtester | Operational. 2.75M candles (52 symbols × 5 intervals). First runs complete. S1 fixed/trailing/partial all show negative expectancy. Parameter optimization confirms no profitable configuration exists for current S1 entry logic. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 only |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -104,6 +105,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 11. **HAWK** — AI watchlist engine. Standalone shadow-testing tool. KiteConnect primary → nsetools/nsepython fallback. Shared kite instance per run. Claude Sonnet. Dual storage: JSON + TimescaleDB. Separate Telegram channel (HAWK-Picks). Full spec: `docs/hawk_spec.md`. TATAMOTORS demerged → TMPV is NIFTY 50 constituent.
 12. **Option C stop floor** — Minimum 2% stop distance enforced when swing-based stops are tighter. Paper capital increased ₹5L→₹10L for realistic testing. All 10 S1 strategy parameters (EMA periods, RSI thresholds, volume ratio, RR ratio, swing lookback, min stop %) now configurable via settings.yaml. Zero hardcoded numbers in signal generation.
 13. **HAWK multi-model consensus** — 4 LLMs (Claude, Gemini, GPT-5.4, Kimi) run on same data. Picks scored: UNANIMOUS (4/4), STRONG (3/4), MAJORITY (2/4), SINGLE (1/4). $0.23/run, ~$10/month. All 4 models selected after side-by-side comparison — 80% pick overlap confirmed.
+14. **S1 strategy validation failed backtesting** — Negative expectancy across all exit modes and parameter sweeps (Jan 2025 - Mar 2026). Entry logic (EMA crossover + RSI + VWAP + volume) generates too many false signals. Architectural redesign required before live capital deployment. Paper trading continues for infrastructure validation.
 
 ---
 
@@ -188,6 +190,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | Backtester Data Infrastructure | 4 DB tables (backtest_candles, backtest_metadata, backtest_runs, backtest_trades) in `migrations/002_backtest_tables.sql`. Auto-create at startup. `tools/data_downloader.py`: KiteConnect historical candle downloader with 5 intervals, resume, rate limiting, ON CONFLICT idempotent. CLI: `tradeos data download/status`. PYTHONPATH fix for CLI/cron. Tests: 551. | Data layer ready for backtester engine. |
 | 2026-03-17 | Core Backtester Engine | `tools/backtester.py`: replays historical candles through exact S1 pipeline (IndicatorEngine, SignalGenerator, PositionSizer, ChargeCalculator, classify_regime). BacktestRiskGate adapts Gates 4-7 with candle_time. Three exit modes: fixed, trailing (ATR), partial (50% at 1R). Optimizer (param sweep), compare (exit mode comparison). DB storage + rich terminal report. CLI: `tradeos backtest run/optimize/compare/show`. Tests: 576. | Backtester complete. Ready for live data download + first run. |
 | 2026-03-17 | Backtester VWAP Fix | KiteConnect historical_data returns OHLCV but not VWAP. Backtester was setting `vwap=close`, making `close > vwap` always False — zero signals. Fix: `_compute_vwap_for_day()` computes running VWAP per-stock per-day from `(H+L+C)/3 × volume`. Resets each day. No live code changes. Tests: 577. | Backtester now generates signals correctly. |
+| 2026-03-17 | Session 09 + Backtester | Session 09: 5 trades (1W/4L), -₹3,196 net, 36 signals (31 regime-blocked). Backtester: 2.75M candles downloaded, first full backtest run. S1 loses money across ALL parameter combinations — fixed exits (-₹1.16L/51d), trailing (-₹1.85L), partial (-₹1.83L). ATR sweep 1.0-4.0× all negative. RSI sweep 40-65 all negative. Volume ratio sweep pending. Signal quality is the core issue, not exit strategy. | Critical finding — S1 needs architectural redesign before live trading. |
 
 ---
 
@@ -212,4 +215,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — Backtester VWAP fix: compute running VWAP from historical candle data. 577 tests passing.
+**2026-03-17** — Backtester operational. S1 backtested to -₹4.3L over 198 days. Parameter sweeps confirm no profitable config. Session 09: -₹3,196 (matches backtest prediction). Strategy redesign needed.
