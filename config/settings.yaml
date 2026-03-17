@@ -60,6 +60,27 @@ strategy:
     time_stop_bars: 30          # Max bars in trade — multi mode (5min = 150min)
     time_stop_bars_15min: 20    # Max bars in trade — single mode (15min = 300min)
 
+  s1v3:
+    # Time window (IST)
+    signal_start: "09:30"       # No signals before this (open noise)
+    signal_end: "14:30"         # No signals after this (not enough time for reversion)
+    # Panic detection
+    atr_period: 14              # ATR period (15min)
+    panic_atr_multiplier: 2.0   # Drop must exceed 2×ATR relative to day_high
+    # Oversold/overbought confirmation
+    rsi_period: 14              # RSI period (15min)
+    rsi_oversold: 30            # LONG: RSI must be below this
+    rsi_overbought: 70          # SHORT: RSI must be above this
+    bb_period: 20               # Bollinger Band SMA period
+    bb_std: 2.0                 # Bollinger Band standard deviations
+    # Volume confirmation
+    volume_ratio_min: 1.5       # Reversal bar vol / SMA(20) threshold
+    volume_sma_period: 20       # Volume SMA lookback
+    # Risk:Reward
+    min_rr_ratio: 2.0           # Minimum R:R to accept trade
+    # Reversal timeout
+    reversal_timeout_bars: 5    # Cancel panic setup if no reversal within 5 bars (75min)
+
 # Backtester-specific overrides (live trading ignores this section)
 backtester:
   min_risk_floor: 200          # ₹200 — covers round-trip commission. Live uses ₹1,000.

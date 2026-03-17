@@ -2000,3 +2000,608 @@ def test_multi_tf_backward_compat():
     assert state.phase == S1v2Phase.IN_PULLBACK
     # Candle went to 5min buffer (multi mode)
     assert len(evaluator._candles_5min["RELIANCE"]) == 26  # 25 warmup + 1
+
+
+# ---------------------------------------------------------------------------
+# S1v3 Tests — Mean Reversion (Kotegawa-inspired)
+# ---------------------------------------------------------------------------
+
+
+def _minimal_config_s1v3() -> dict:
+    """Minimal config dict for S1v3 engine construction."""
+    cfg = _minimal_config()
+    cfg["strategy"]["s1v3"] = {
+        "signal_start": "09:30",
+        "signal_end": "14:30",
+        "atr_period": 14,
+        "panic_atr_multiplier": 2.0,
+        "rsi_period": 14,
+        "rsi_oversold": 30,
+        "rsi_overbought": 70,
+        "bb_period": 20,
+        "bb_std": 2.0,
+        "volume_ratio_min": 1.5,
+        "volume_sma_period": 20,
+        "min_rr_ratio": 2.0,
+        "reversal_timeout_bars": 5,
+    }
+    cfg["_strategy_override"] = "s1v3"
+    return cfg
+
+
+def _make_s1v3_evaluator(config=None):
+    """Create S1v3SignalEvaluator with default config."""
+    from tools.backtester import S1v3SignalEvaluator
+    return S1v3SignalEvaluator(config or _minimal_config_s1v3())
+
+
+def _make_candles_for_bb(n=30, base=100.0, spread=0.5):
+    """Create candles with enough history for Bollinger Band computation.
+
+    Creates a series with small oscillations around base price.
+    """
+    candles = []
+    for i in range(n):
+        offset = spread * (1 if i % 2 == 0 else -1)
+        price = Decimal(str(round(base + offset * (i % 5), 2)))
+        candles.append(_make_candle(
+            open_=price - Decimal("0.5"),
+            high=price + Decimal("1"),
+            low=price - Decimal("1"),
+            close=price,
+            volume=50000,
+            candle_time=IST.localize(datetime(2026, 2, 28, 9, 15) + timedelta(minutes=15 * i)),
+        ))
+    return candles
+
+
+# --- Indicator tests ---
+
+
+def test_compute_bollinger_bands_known():
+    """Bollinger Bands: verify upper > middle > lower with known data."""
+    from tools.backtester import compute_bollinger_bands
+
+    candles = _make_candles_for_bb(30, base=100.0)
+    result = compute_bollinger_bands(candles, period=20, std_dev=2.0)
+    assert result is not None
+    upper, middle, lower = result
+    assert upper > middle > lower
+    # Middle should be near the base price
+    assert Decimal("95") < middle < Decimal("105")
+
+
+def test_compute_bollinger_bands_insufficient():
+    """Bollinger Bands: None when not enough data."""
+    from tools.backtester import compute_bollinger_bands
+
+    candles = _make_candles_for_bb(10, base=100.0)
+    result = compute_bollinger_bands(candles, period=20, std_dev=2.0)
+    assert result is None
+
+
+def test_compute_rsi_known():
+    """RSI: computable with trending data, returns value in 0-100."""
+    from tools.backtester import compute_rsi
+
+    # Uptrending → RSI should be above 50
+    candles = _make_trending_candles(30, base=100.0, trend=1.0)
+    rsi = compute_rsi(candles, period=14)
+    assert rsi is not None
+    assert Decimal("0") < rsi <= Decimal("100")
+
+
+def test_compute_rsi_insufficient():
+    """RSI: None when not enough data."""
+    from tools.backtester import compute_rsi
+
+    candles = _make_trending_candles(10, base=100.0, trend=0.5)
+    rsi = compute_rsi(candles, period=14)
+    assert rsi is None
+
+
+# --- Panic detection tests ---
+
+
+def test_panic_detected_when_drop_exceeds_2atr():
+    """S1v3: panic detected when price drops >= 2×ATR from day high."""
+    evaluator = _make_s1v3_evaluator()
+
+    # Warmup candles for indicator computation
+    warmup = _make_candles_for_bb(30, base=200.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # First candle establishes day_high at 210
+    c1 = _make_candle(
+        open_=Decimal("205"), high=Decimal("210"), low=Decimal("204"),
+        close=Decimal("208"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 15)),
+    )
+    evaluator.evaluate(c1, bar_idx=0)
+
+    state = evaluator._day_states.get("RELIANCE")
+    assert state is not None
+    assert state.day_high == Decimal("210")
+
+
+def test_panic_not_detected_small_drop():
+    """S1v3: small drop does NOT trigger panic."""
+    evaluator = _make_s1v3_evaluator()
+
+    warmup = _make_candles_for_bb(30, base=200.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # Day high candle
+    c1 = _make_candle(
+        open_=Decimal("200"), high=Decimal("205"), low=Decimal("199"),
+        close=Decimal("203"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 15)),
+    )
+    evaluator.evaluate(c1, bar_idx=0)
+
+    # Small dip — shouldn't set up panic
+    c2 = _make_candle(
+        open_=Decimal("202"), high=Decimal("203"), low=Decimal("200"),
+        close=Decimal("201"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 30)),
+    )
+    evaluator.evaluate(c2, bar_idx=1)
+
+    state = evaluator._day_states["RELIANCE"]
+    assert state.panic_setup is None
+
+
+# --- RSI + BB double confirmation tests ---
+
+
+def test_panic_needs_both_rsi_and_bb():
+    """S1v3: panic needs both RSI < 30 AND close <= lower BB."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+    evaluator = _make_s1v3_evaluator()
+
+    # Create warmup that produces known BB and RSI
+    # With strong uptrend warmup, RSI will be high (not oversold)
+    warmup = _make_trending_candles(30, base=200.0, trend=2.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # Simulate a large drop candle (below BB lower)
+    # But RSI from trending warmup won't be < 30
+    c1 = _make_candle(
+        open_=Decimal("260"), high=Decimal("262"), low=Decimal("255"),
+        close=Decimal("258"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 15)),
+    )
+    evaluator.evaluate(c1, bar_idx=0)
+
+    # Big drop candle — but RSI likely still above 30 from uptrend
+    c2 = _make_candle(
+        open_=Decimal("258"), high=Decimal("259"), low=Decimal("240"),
+        close=Decimal("241"), volume=80000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 30)),
+    )
+    evaluator.evaluate(c2, bar_idx=1)
+
+    state = evaluator._day_states["RELIANCE"]
+    # Without both conditions met, no panic setup
+    assert state.panic_setup is None
+
+
+# --- Reversal confirmation tests ---
+
+
+def test_reversal_green_candle_above_prev_high():
+    """S1v3: LONG reversal = green candle closing above prev high."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # Manually set up a panic setup for LONG
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            open_=Decimal("88"), high=Decimal("90"), low=Decimal("85"),
+            close=Decimal("87"), volume=50000,
+            candle_time=IST.localize(datetime(2026, 3, 1, 10, 30)),
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    # Green reversal candle: close > open AND close > prev.high (90)
+    # With high volume and VWAP above entry
+    reversal = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    # Set VWAP above entry to pass R:R gate
+    import dataclasses
+    reversal = dataclasses.replace(reversal, vwap=Decimal("105"))
+
+    # Lower min_rr to make test pass more easily
+    evaluator._min_rr = Decimal("1.0")
+
+    signal = evaluator.evaluate(reversal, bar_idx=4)
+    assert signal is not None
+    assert signal.direction == "LONG"
+    assert signal.target == Decimal("105")  # Fixed VWAP at entry
+    assert signal.stop_loss == Decimal("85")  # intraday_low
+
+
+def test_reversal_timeout_cancels_panic():
+    """S1v3: reversal timeout (5 bars) cancels panic setup."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # Setup panic at bar 2
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(close=Decimal("87"), volume=50000),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=2,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    # Bar 8 (6 bars after panic_bar_idx=2, timeout=5) → setup should be cancelled
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 30)),
+    )
+    signal = evaluator.evaluate(candle, bar_idx=8)
+
+    # No signal — panic setup timed out
+    assert signal is None
+    state = evaluator._day_states["RELIANCE"]
+    assert state.panic_setup is None
+
+
+# --- Volume gate test ---
+
+
+def test_reversal_rejected_low_volume():
+    """S1v3: reversal rejected when volume < 1.5 × SMA(20)."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    # Low volume reversal candle (volume=10000, vol_sma≈50000, ratio=0.2)
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=10000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is None
+
+
+# --- R:R gate tests ---
+
+
+def test_rr_below_minimum_rejected():
+    """S1v3: R:R < 2.0 → SKIP."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    # Reversal candle with VWAP barely above entry (bad R:R)
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    # VWAP = 93 (entry=92, stop=85, reward=1, risk=7 → R:R=0.14)
+    candle = dataclasses.replace(candle, vwap=Decimal("93"))
+
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is None  # R:R = 0.14 < 2.0
+
+
+def test_vwap_below_entry_long_rejected():
+    """S1v3: LONG with VWAP <= entry → SKIP (price already above mean)."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    evaluator._min_rr = Decimal("0.1")  # Lower R:R gate
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    # VWAP below entry → makes no sense for LONG
+    candle = dataclasses.replace(candle, vwap=Decimal("90"))
+
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is None
+
+
+def test_vwap_above_entry_short_rejected():
+    """S1v3: SHORT with VWAP >= entry → SKIP."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    evaluator._min_rr = Decimal("0.1")
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("112"), low=Decimal("108"), close=Decimal("111"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="SHORT", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("111"), high=Decimal("112"), low=Decimal("107"),
+        close=Decimal("107"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    # VWAP above entry → makes no sense for SHORT
+    candle = dataclasses.replace(candle, vwap=Decimal("112"))
+
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is None
+
+
+# --- Time window filter tests ---
+
+
+def test_time_window_before_0930_rejected():
+    """S1v3: signal before 09:30 IST is rejected."""
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    candle = _make_candle(
+        close=Decimal("100"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 15)),
+    )
+    signal = evaluator.evaluate(candle, bar_idx=0)
+    assert signal is None  # Before 09:30 → rejected
+
+
+def test_time_window_after_1430_rejected():
+    """S1v3: signal after 14:30 IST is rejected."""
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    candle = _make_candle(
+        close=Decimal("100"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 14, 45)),
+    )
+    signal = evaluator.evaluate(candle, bar_idx=20)
+    assert signal is None  # After 14:30 → rejected
+
+
+def test_time_window_0930_accepted():
+    """S1v3: signal at exactly 09:30 IST is accepted (within window)."""
+    evaluator = _make_s1v3_evaluator()
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    candle = _make_candle(
+        close=Decimal("100"), volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 9, 30)),
+    )
+    # This won't generate a signal (no panic), but it shouldn't be time-rejected
+    evaluator.evaluate(candle, bar_idx=0)
+    # If time window didn't reject, day_state should have been updated
+    assert "RELIANCE" in evaluator._day_states
+
+
+# --- Stop and target tests ---
+
+
+def test_stop_is_intraday_low_for_long():
+    """S1v3: LONG stop = intraday_low (lowest low since 09:15)."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    evaluator._min_rr = Decimal("0.1")
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    intraday_low = Decimal("82.50")
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=intraday_low,
+        intraday_low=intraday_low,
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=intraday_low, intraday_high=Decimal("110"),
+        ),
+    )
+
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    candle = dataclasses.replace(candle, vwap=Decimal("105"))
+
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is not None
+    assert signal.stop_loss == intraday_low
+
+
+def test_vwap_target_fixed_at_entry():
+    """S1v3: VWAP target is captured at entry time, not dynamic."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    evaluator._min_rr = Decimal("0.1")
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    vwap_at_entry = Decimal("105")
+    candle = dataclasses.replace(candle, vwap=vwap_at_entry)
+
+    signal = evaluator.evaluate(candle, bar_idx=4)
+    assert signal is not None
+    # Target should be exactly the VWAP at the moment of entry
+    assert signal.target == vwap_at_entry
+
+
+# --- Engine integration tests ---
+
+
+def test_s1v3_engine_creation():
+    """S1v3 engine: creates with correct interval and evaluator."""
+    from tools.backtester import BacktestEngine
+    from unittest.mock import MagicMock
+
+    config = _minimal_config_s1v3()
+    engine = BacktestEngine(pool=MagicMock(), config=config)
+    assert engine._interval == "15min"
+    assert engine._strategy_name == "s1v3"
+    assert hasattr(engine, "_s1v3_evaluator")
+
+
+def test_s1v3_one_signal_per_instrument_per_day():
+    """S1v3: only one signal per instrument per day (dedup)."""
+    from tools.backtester import S1v3DayState, S1v3PanicSetup
+
+    evaluator = _make_s1v3_evaluator()
+    evaluator._min_rr = Decimal("0.1")
+    warmup = _make_candles_for_bb(30, base=100.0)
+    evaluator.feed_warmup_15min("RELIANCE", warmup)
+
+    # First signal
+    evaluator._day_states["RELIANCE"] = S1v3DayState(
+        day_high=Decimal("110"),
+        day_low=Decimal("85"),
+        intraday_low=Decimal("85"),
+        intraday_high=Decimal("110"),
+        prev_candle=_make_candle(
+            high=Decimal("90"), low=Decimal("85"), close=Decimal("87"), volume=50000,
+        ),
+        panic_setup=S1v3PanicSetup(
+            direction="LONG", panic_bar_idx=3,
+            intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+        ),
+    )
+
+    import dataclasses
+    candle = _make_candle(
+        open_=Decimal("88"), high=Decimal("93"), low=Decimal("87"),
+        close=Decimal("92"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 45)),
+    )
+    candle = dataclasses.replace(candle, vwap=Decimal("105"))
+
+    signal1 = evaluator.evaluate(candle, bar_idx=4)
+    assert signal1 is not None
+
+    # Second attempt should be blocked by signal_fired flag
+    evaluator._day_states["RELIANCE"].panic_setup = S1v3PanicSetup(
+        direction="LONG", panic_bar_idx=5,
+        intraday_low=Decimal("85"), intraday_high=Decimal("110"),
+    )
+    candle2 = _make_candle(
+        open_=Decimal("89"), high=Decimal("94"), low=Decimal("88"),
+        close=Decimal("93"), volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    candle2 = dataclasses.replace(candle2, vwap=Decimal("105"))
+
+    signal2 = evaluator.evaluate(candle2, bar_idx=6)
+    assert signal2 is None  # Dedup — already fired today

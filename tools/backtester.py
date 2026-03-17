@@ -167,6 +167,34 @@ class S1v2State:
 
 
 # ---------------------------------------------------------------------------
+# S1v3 — Mean Reversion state tracking
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class S1v3PanicSetup:
+    """Tracks a panic setup awaiting reversal confirmation."""
+
+    direction: str              # LONG or SHORT
+    panic_bar_idx: int          # index in day's candle sequence when panic detected
+    intraday_low: Decimal       # running lowest low since 09:15 (LONG stop)
+    intraday_high: Decimal      # running highest high since 09:15 (SHORT stop)
+
+
+@dataclass
+class S1v3DayState:
+    """Per-instrument daily state for S1v3 Mean Reversion."""
+
+    day_high: Decimal = Decimal("0")
+    day_low: Decimal = Decimal("999999")
+    intraday_low: Decimal = Decimal("999999")
+    intraday_high: Decimal = Decimal("0")
+    prev_candle: Optional[Candle] = None
+    panic_setup: Optional[S1v3PanicSetup] = None
+    signal_fired: bool = False     # one signal per instrument per day
+
+
+# ---------------------------------------------------------------------------
 # BacktestRegimeAdapter — wraps MarketRegime for RiskGate compatibility
 # ---------------------------------------------------------------------------
 
@@ -346,6 +374,48 @@ def compute_volume_sma(candles: list[Candle], period: int = 20) -> Optional[Deci
     volumes = [c.volume for c in candles[-period:]]
     avg = sum(volumes) / len(volumes)
     return Decimal(str(round(avg, 2)))
+
+
+def compute_bollinger_bands(
+    candles: list[Candle], period: int = 20, std_dev: float = 2.0
+) -> Optional[tuple[Decimal, Decimal, Decimal]]:
+    """Compute Bollinger Bands (upper, middle, lower) from close prices.
+
+    Returns (upper, middle, lower) or None if insufficient data.
+    """
+    if len(candles) < period:
+        return None
+    import pandas as pd
+    closes = pd.Series([float(c.close) for c in candles])
+    import ta.volatility
+    bb = ta.volatility.BollingerBands(close=closes, window=period, window_dev=std_dev, fillna=False)
+    upper = bb.bollinger_hband().iloc[-1]
+    middle = bb.bollinger_mavg().iloc[-1]
+    lower = bb.bollinger_lband().iloc[-1]
+    if pd.isna(upper) or pd.isna(middle) or pd.isna(lower):
+        return None
+    return (
+        Decimal(str(round(upper, 4))),
+        Decimal(str(round(middle, 4))),
+        Decimal(str(round(lower, 4))),
+    )
+
+
+def compute_rsi(candles: list[Candle], period: int = 14) -> Optional[Decimal]:
+    """Compute RSI from close prices using ta library.
+
+    Returns None if insufficient data.
+    """
+    if len(candles) < period + 1:
+        return None
+    import pandas as pd
+    import ta.momentum
+    closes = pd.Series([float(c.close) for c in candles])
+    rsi = ta.momentum.RSIIndicator(close=closes, window=period, fillna=False).rsi()
+    val = rsi.iloc[-1]
+    if pd.isna(val):
+        return None
+    return Decimal(str(round(val, 4)))
 
 
 # ---------------------------------------------------------------------------
@@ -760,11 +830,263 @@ class S1v2SignalEvaluator:
 
 
 # ---------------------------------------------------------------------------
+# S1v3SignalEvaluator — Mean Reversion (Kotegawa-inspired)
+# ---------------------------------------------------------------------------
+
+_S1V3_SIGNAL_START = time(9, 30)
+_S1V3_SIGNAL_END = time(14, 30)
+
+
+class S1v3SignalEvaluator:
+    """Evaluates S1v3 Mean Reversion signals on 15min candles.
+
+    7-step signal flow:
+    1. Time window filter (09:30–14:30 IST)
+    2. Panic detection (price drop/spike >= 2×ATR)
+    3. Oversold/overbought confirmation (RSI + Bollinger Band)
+    4. Reversal confirmation (first green/red candle)
+    5. Volume confirmation (vol > 1.5 × SMA20)
+    6. Risk:Reward gate (R:R >= 2.0, VWAP target sanity check)
+    7. Execute
+    """
+
+    def __init__(self, config: dict) -> None:
+        s1v3_cfg = config.get("strategy", {}).get("s1v3", {})
+        # Time window
+        start_str = s1v3_cfg.get("signal_start", "09:30")
+        end_str = s1v3_cfg.get("signal_end", "14:30")
+        sh, sm = map(int, start_str.split(":"))
+        eh, em = map(int, end_str.split(":"))
+        self._signal_start = time(sh, sm)
+        self._signal_end = time(eh, em)
+        # Panic detection
+        self._atr_period = s1v3_cfg.get("atr_period", 14)
+        self._panic_atr_mult = Decimal(str(s1v3_cfg.get("panic_atr_multiplier", 2.0)))
+        # Oversold/overbought
+        self._rsi_period = s1v3_cfg.get("rsi_period", 14)
+        self._rsi_oversold = Decimal(str(s1v3_cfg.get("rsi_oversold", 30)))
+        self._rsi_overbought = Decimal(str(s1v3_cfg.get("rsi_overbought", 70)))
+        self._bb_period = s1v3_cfg.get("bb_period", 20)
+        self._bb_std = float(s1v3_cfg.get("bb_std", 2.0))
+        # Volume
+        self._volume_ratio_min = Decimal(str(s1v3_cfg.get("volume_ratio_min", 1.5)))
+        self._volume_sma_period = s1v3_cfg.get("volume_sma_period", 20)
+        # R:R
+        self._min_rr = Decimal(str(s1v3_cfg.get("min_rr_ratio", 2.0)))
+        # Reversal timeout
+        self._reversal_timeout = s1v3_cfg.get("reversal_timeout_bars", 5)
+
+        # Per-instrument daily state (reset each day)
+        self._day_states: dict[str, S1v3DayState] = {}
+        # Candle buffer for indicator computation (persistent across days)
+        self._candles_15min: dict[str, list[Candle]] = defaultdict(list)
+        # Bar index counter per day (for reversal timeout tracking)
+        self._bar_idx: dict[str, int] = defaultdict(int)
+
+    def reset_day(self) -> None:
+        """Reset daily state for new trading day."""
+        self._day_states.clear()
+        self._bar_idx.clear()
+
+    def feed_warmup_15min(self, symbol: str, candles: list[Candle]) -> None:
+        """Bulk-load warmup 15min candles for indicator computation."""
+        self._candles_15min[symbol] = list(candles)
+
+    def evaluate(self, candle: Candle, bar_idx: int) -> Optional[Signal]:
+        """Evaluate S1v3 mean reversion signal on a 15min candle.
+
+        Args:
+            candle: Current 15min candle.
+            bar_idx: Zero-based bar index within the day (for timeout tracking).
+
+        Returns Signal if all 7 steps pass, None otherwise.
+        """
+        symbol = candle.symbol
+
+        # Add candle to buffer
+        buf = self._candles_15min[symbol]
+        buf.append(candle)
+        if len(buf) > 200:
+            self._candles_15min[symbol] = buf[-200:]
+
+        # Initialize or update daily state
+        if symbol not in self._day_states:
+            self._day_states[symbol] = S1v3DayState(
+                day_high=candle.high,
+                day_low=candle.low,
+                intraday_low=candle.low,
+                intraday_high=candle.high,
+            )
+        state = self._day_states[symbol]
+        state.day_high = max(state.day_high, candle.high)
+        state.day_low = min(state.day_low, candle.low)
+        state.intraday_low = min(state.intraday_low, candle.low)
+        state.intraday_high = max(state.intraday_high, candle.high)
+
+        # Already fired a signal today for this instrument
+        if state.signal_fired:
+            state.prev_candle = candle
+            return None
+
+        # --- STEP 1: Time Window Filter ---
+        ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+        if ct < self._signal_start or ct >= self._signal_end:
+            state.prev_candle = candle
+            return None
+
+        # Compute indicators
+        buf = self._candles_15min[symbol]
+        atr = compute_atr(buf, self._atr_period)
+        rsi = compute_rsi(buf, self._rsi_period)
+        bb = compute_bollinger_bands(buf, self._bb_period, self._bb_std)
+        vol_sma = compute_volume_sma(buf, self._volume_sma_period)
+
+        if atr <= 0 or rsi is None or bb is None or vol_sma is None or vol_sma <= 0:
+            state.prev_candle = candle
+            return None
+
+        bb_upper, bb_middle, bb_lower = bb
+
+        # --- Check if we have a pending panic setup awaiting reversal ---
+        if state.panic_setup is not None:
+            setup = state.panic_setup
+            # Check reversal timeout
+            bars_since_panic = bar_idx - setup.panic_bar_idx
+            if bars_since_panic > self._reversal_timeout:
+                state.panic_setup = None
+                # Fall through to check for new panic on this candle
+            else:
+                # --- STEP 4: Reversal Confirmation ---
+                signal = self._check_reversal(
+                    candle, state, setup, vol_sma, bar_idx,
+                )
+                state.prev_candle = candle
+                return signal
+
+        # --- STEP 2 + 3: Panic Detection + Oversold/Overbought Confirmation ---
+        # Check LONG setup: panic dip
+        if state.day_high > 0:
+            drop = (state.day_high - candle.close) / state.day_high
+            drop_threshold = (self._panic_atr_mult * atr) / state.day_high
+            if drop >= drop_threshold and drop_threshold > 0:
+                # STEP 3: RSI < oversold AND close <= lower BB
+                if rsi < self._rsi_oversold and candle.close <= bb_lower:
+                    state.panic_setup = S1v3PanicSetup(
+                        direction="LONG",
+                        panic_bar_idx=bar_idx,
+                        intraday_low=state.intraday_low,
+                        intraday_high=state.intraday_high,
+                    )
+
+        # Check SHORT setup: panic spike
+        if state.panic_setup is None and state.day_low > 0:
+            spike = (candle.close - state.day_low) / state.day_low
+            spike_threshold = (self._panic_atr_mult * atr) / state.day_low
+            if spike >= spike_threshold and spike_threshold > 0:
+                # STEP 3: RSI > overbought AND close >= upper BB
+                if rsi > self._rsi_overbought and candle.close >= bb_upper:
+                    state.panic_setup = S1v3PanicSetup(
+                        direction="SHORT",
+                        panic_bar_idx=bar_idx,
+                        intraday_low=state.intraday_low,
+                        intraday_high=state.intraday_high,
+                    )
+
+        state.prev_candle = candle
+        return None
+
+    def _check_reversal(
+        self,
+        candle: Candle,
+        state: S1v3DayState,
+        setup: S1v3PanicSetup,
+        vol_sma: Decimal,
+        bar_idx: int,
+    ) -> Optional[Signal]:
+        """Check if current candle is a valid reversal bar.
+
+        Returns Signal if reversal + volume + R:R all pass.
+        """
+        prev = state.prev_candle
+        if prev is None:
+            return None
+
+        is_reversal = False
+        if setup.direction == "LONG":
+            # First GREEN candle closing above previous candle's high
+            if candle.close > candle.open and candle.close > prev.high:
+                is_reversal = True
+        else:
+            # First RED candle closing below previous candle's low
+            if candle.close < candle.open and candle.close < prev.low:
+                is_reversal = True
+
+        if not is_reversal:
+            return None
+
+        # --- STEP 5: Volume Confirmation ---
+        vol_ratio = Decimal(str(candle.volume)) / vol_sma
+        if vol_ratio < self._volume_ratio_min:
+            state.panic_setup = None  # Setup consumed
+            return None
+
+        # --- STEP 6: Risk:Reward Gate ---
+        entry_price = candle.close
+        vwap_target = candle.vwap  # Fixed at entry time
+
+        if setup.direction == "LONG":
+            # VWAP must be above entry for LONG
+            if vwap_target <= entry_price:
+                state.panic_setup = None
+                return None
+            stop_loss = state.intraday_low
+            risk = entry_price - stop_loss
+            reward = vwap_target - entry_price
+        else:
+            # VWAP must be below entry for SHORT
+            if vwap_target >= entry_price:
+                state.panic_setup = None
+                return None
+            stop_loss = state.intraday_high
+            risk = stop_loss - entry_price
+            reward = entry_price - vwap_target
+
+        if risk <= 0:
+            state.panic_setup = None
+            return None
+
+        rr = reward / risk
+        if rr < self._min_rr:
+            state.panic_setup = None
+            return None
+
+        # --- STEP 7: Execute ---
+        state.signal_fired = True
+        state.panic_setup = None
+
+        return Signal(
+            symbol=candle.symbol,
+            instrument_token=candle.instrument_token,
+            direction=setup.direction,
+            signal_time=candle.candle_time,
+            candle_time=candle.candle_time,
+            theoretical_entry=entry_price,
+            stop_loss=stop_loss,
+            target=vwap_target,
+            ema9=Decimal("0"),       # Not used by S1v3
+            ema21=Decimal("0"),      # Not used by S1v3
+            rsi=compute_rsi(self._candles_15min[candle.symbol], self._rsi_period) or Decimal("0"),
+            vwap=vwap_target,
+            volume_ratio=vol_ratio,
+        )
+
+
+# ---------------------------------------------------------------------------
 # BacktestEngine — the core simulation engine
 # ---------------------------------------------------------------------------
 
 class BacktestEngine:
-    """Replays historical candles through strategy pipelines (S1 or S1v2)."""
+    """Replays historical candles through strategy pipelines (S1, S1v2, S1v3)."""
 
     def __init__(
         self,
@@ -809,7 +1131,14 @@ class BacktestEngine:
         # Pending partial exit trades (collected during day processing)
         self._pending_partial_trades: list[BacktestTrade] = []
 
-        if self._strategy_name == "s1v2":
+        if self._strategy_name == "s1v3":
+            self._interval = "15min"
+            self._s1v3_evaluator = S1v3SignalEvaluator(config)
+            self._s1v3_warmed_up: set[str] = set()
+            self._signal_gen = None  # type: ignore[assignment]
+            self._indicator_engines: dict[str, IndicatorEngine] = {}
+            self._candle_buffers: dict[str, list[Candle]] = defaultdict(list)
+        elif self._strategy_name == "s1v2":
             self._s1v2_evaluator = S1v2SignalEvaluator(config)
             self._s1v2_warmed_up: set[str] = set()
             # Interval depends on timeframe mode
@@ -864,7 +1193,11 @@ class BacktestEngine:
             regime_adapter = BacktestRegimeAdapter(regime)
 
             # Process the day — dispatch by strategy
-            if self._strategy_name == "s1v2" and self._s1v2_tf_mode == "single":
+            if self._strategy_name == "s1v3":
+                day_trades = await self._process_day_s1v3(
+                    day, regime_adapter, symbols,
+                )
+            elif self._strategy_name == "s1v2" and self._s1v2_tf_mode == "single":
                 day_trades = await self._process_day_s1v2_single(
                     day, regime_adapter, symbols,
                 )
@@ -1743,6 +2076,153 @@ class BacktestEngine:
 
         return day_trades
 
+    # ------------------------------------------------------------------
+    # S1v3: mean reversion simulation loop (15min only)
+    # ------------------------------------------------------------------
+
+    async def _process_day_s1v3(
+        self,
+        day: date,
+        regime_adapter: BacktestRegimeAdapter,
+        symbols: list[str],
+    ) -> list[BacktestTrade]:
+        """Simulate one trading day using S1v3 Mean Reversion on 15min candles."""
+        evaluator = self._s1v3_evaluator
+        evaluator.reset_day()
+
+        # Load 15min candles
+        candles_by_sym = await self._load_day_candles(day, symbols)
+        if not candles_by_sym:
+            return []
+
+        # Compute VWAP per stock
+        for symbol in candles_by_sym:
+            candles_by_sym[symbol] = self._compute_vwap_for_day(candles_by_sym[symbol])
+
+        # Warmup: 15min candles for indicator history
+        for symbol in candles_by_sym:
+            if symbol not in self._s1v3_warmed_up:
+                warmup = await self._load_warmup_candles_15min(day, symbol)
+                evaluator.feed_warmup_15min(symbol, warmup)
+                self._s1v3_warmed_up.add(symbol)
+
+        # Merge all 15min candles chronologically
+        all_candles: list[Candle] = []
+        for candle_list in candles_by_sym.values():
+            all_candles.extend(candle_list)
+        all_candles.sort(key=lambda c: c.candle_time)
+
+        # Simulated state
+        open_positions: dict[str, BacktestPosition] = {}
+        shared_state: dict = {
+            "open_positions": {},
+            "pending_signals": 0,
+            "kill_switch_level": 0,
+        }
+        # Track bar index per symbol for reversal timeout
+        sym_bar_idx: dict[str, int] = defaultdict(int)
+
+        config = self._config
+        day_trades: list[BacktestTrade] = []
+
+        # S1v3 EOD exit at 15:10 IST (spec says 15:10, not 15:00)
+        eod_exit_time = time(15, 10)
+
+        for candle in all_candles:
+            symbol = candle.symbol
+            sym_bar_idx[symbol] += 1
+
+            # --- Check exits for open positions ---
+            if symbol in open_positions:
+                pos = open_positions[symbol]
+
+                # Fixed exit (stop/target) — stop checked before target
+                trade = self._check_fixed_exit(pos, candle)
+                if trade is not None:
+                    day_trades.append(trade)
+                    del open_positions[symbol]
+                    shared_state["open_positions"] = {
+                        s: {"direction": p.direction}
+                        for s, p in open_positions.items()
+                    }
+                    continue
+
+            # --- EOD exit at 15:10 ---
+            ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+            if ct >= eod_exit_time and symbol in open_positions:
+                pos = open_positions[symbol]
+                trade = self._close_position(pos, candle.close, candle.candle_time, "EOD_EXIT")
+                day_trades.append(trade)
+                del open_positions[symbol]
+                shared_state["open_positions"] = {
+                    s: {"direction": p.direction}
+                    for s, p in open_positions.items()
+                }
+                continue
+
+            # --- Signal generation (S1v3) ---
+            if ct >= eod_exit_time:
+                continue
+
+            signal = evaluator.evaluate(candle, sym_bar_idx[symbol])
+            if signal is None:
+                continue
+
+            # Risk gate check
+            allowed, reason = self._risk_gate.check(
+                signal, shared_state, config, candle.candle_time, regime_adapter,
+            )
+            if not allowed:
+                continue
+
+            # Position sizing
+            entry_price = self._apply_slippage(
+                signal.theoretical_entry, signal.direction, is_entry=True
+            )
+            qty = self._position_sizer.calculate(
+                entry_price=entry_price,
+                stop_loss=signal.stop_loss,
+                slot_capital=self._slot_capital,
+                risk_pct=self._risk_pct,
+                min_risk_floor=self._min_risk_floor,
+            )
+            if qty is None or qty == 0:
+                continue
+
+            # Open position — target is VWAP fixed at entry time
+            pos = BacktestPosition(
+                symbol=signal.symbol,
+                instrument_token=signal.instrument_token,
+                direction=signal.direction,
+                entry_price=entry_price,
+                entry_time=candle.candle_time,
+                qty=qty,
+                stop_loss=signal.stop_loss,
+                target=signal.target,  # Fixed VWAP at entry
+                original_stop=signal.stop_loss,
+                regime=regime_adapter.current_regime().value,
+            )
+            open_positions[signal.symbol] = pos
+            shared_state["open_positions"] = {
+                s: {"direction": p.direction}
+                for s, p in open_positions.items()
+            }
+
+        # End of day: force-close remaining positions
+        for symbol, pos in list(open_positions.items()):
+            last_candle = None
+            for c in reversed(all_candles):
+                if c.symbol == symbol:
+                    last_candle = c
+                    break
+            if last_candle:
+                trade = self._close_position(
+                    pos, last_candle.close, last_candle.candle_time, "EOD_EXIT"
+                )
+                day_trades.append(trade)
+
+        return day_trades
+
     def _check_exits(
         self,
         pos: BacktestPosition,
@@ -2140,6 +2620,15 @@ _CONFIG_PATH_PARAMS: dict[str, list[str]] = {
     "time_stop_bars_15min": ["strategy", "s1v2", "time_stop_bars_15min"],
     "ema_trend_period": ["strategy", "s1v2", "ema_trend_period"],
     "ema_pullback_period": ["strategy", "s1v2", "ema_pullback_period"],
+    # S1v3 params
+    "panic_atr_multiplier": ["strategy", "s1v3", "panic_atr_multiplier"],
+    "rsi_oversold": ["strategy", "s1v3", "rsi_oversold"],
+    "rsi_overbought": ["strategy", "s1v3", "rsi_overbought"],
+    "min_rr_ratio": ["strategy", "s1v3", "min_rr_ratio"],
+    "s1v3_volume_ratio_min": ["strategy", "s1v3", "volume_ratio_min"],
+    "reversal_timeout_bars": ["strategy", "s1v3", "reversal_timeout_bars"],
+    "bb_period": ["strategy", "s1v3", "bb_period"],
+    "bb_std": ["strategy", "s1v3", "bb_std"],
     # Shared params
     "no_entry_after": ["trading_hours", "no_entry_after"],
     "max_open_positions": ["risk", "max_open_positions"],
@@ -2432,10 +2921,9 @@ def print_report(result: BacktestResult) -> None:
     print(f"  {'Max Con. Wins:':<25}{result.max_consecutive_wins}")
     print(f"  {'Max Con. Losses:':<25}{result.max_consecutive_losses}")
 
-    # S1v2-specific: exit reason breakdown
-    if result.params.get("strategy") == "s1v2" and result.trades:
-        time_stops = sum(1 for t in result.trades if t.exit_reason == "TIME_STOP")
-        hard_exits = sum(1 for t in result.trades if t.exit_reason == "HARD_EXIT")
+    # Exit reason breakdown (S1v2 and S1v3)
+    strat = result.params.get("strategy", "")
+    if strat in ("s1v2", "s1v3") and result.trades:
         stop_hits = sum(1 for t in result.trades if t.exit_reason == "STOP_HIT")
         target_hits = sum(1 for t in result.trades if t.exit_reason == "TARGET_HIT")
         total = max(result.total_trades, 1)
@@ -2443,8 +2931,14 @@ def print_report(result: BacktestResult) -> None:
         print(_bold("  EXIT REASONS"))
         print(f"  {'Target Hit:':<25}{target_hits} ({target_hits/total*100:.1f}%)")
         print(f"  {'Stop Hit:':<25}{stop_hits} ({stop_hits/total*100:.1f}%)")
-        print(f"  {'Time Stop:':<25}{time_stops} ({time_stops/total*100:.1f}%)")
-        print(f"  {'Hard Exit:':<25}{hard_exits} ({hard_exits/total*100:.1f}%)")
+        if strat == "s1v2":
+            time_stops = sum(1 for t in result.trades if t.exit_reason == "TIME_STOP")
+            hard_exits = sum(1 for t in result.trades if t.exit_reason == "HARD_EXIT")
+            print(f"  {'Time Stop:':<25}{time_stops} ({time_stops/total*100:.1f}%)")
+            print(f"  {'Hard Exit:':<25}{hard_exits} ({hard_exits/total*100:.1f}%)")
+        if strat == "s1v3":
+            eod_exits = sum(1 for t in result.trades if t.exit_reason == "EOD_EXIT")
+            print(f"  {'EOD Exit:':<25}{eod_exits} ({eod_exits/total*100:.1f}%)")
 
     if result.run_id:
         print(f"\n  Run ID: {result.run_id}")
