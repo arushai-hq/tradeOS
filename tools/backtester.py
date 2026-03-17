@@ -778,6 +778,10 @@ class BacktestEngine:
         self._slot_capital = self._total_capital / Decimal(str(max_positions))
         self._risk_pct = Decimal(str(config.get("risk", {}).get("max_loss_per_trade_pct", 0.015)))
 
+        # Backtester-specific min_risk_floor override (live uses ₹1,000)
+        bt_cfg = config.get("backtester", {})
+        self._min_risk_floor = Decimal(str(bt_cfg.get("min_risk_floor", 200)))
+
         # Pending partial exit trades (collected during day processing)
         self._pending_partial_trades: list[BacktestTrade] = []
 
@@ -1284,6 +1288,7 @@ class BacktestEngine:
                 stop_loss=signal.stop_loss,
                 slot_capital=self._slot_capital,
                 risk_pct=self._risk_pct,
+                min_risk_floor=self._min_risk_floor,
             )
             if qty is None or qty == 0:
                 continue
@@ -1467,6 +1472,7 @@ class BacktestEngine:
                 stop_loss=signal.stop_loss,
                 slot_capital=self._slot_capital,
                 risk_pct=self._risk_pct,
+                min_risk_floor=self._min_risk_floor,
             )
             if qty is None or qty == 0:
                 continue

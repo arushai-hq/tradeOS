@@ -58,6 +58,10 @@ strategy:
     rr_min: 3.0                 # Minimum risk:reward ratio
     time_stop_bars: 30          # Max bars in trade (5min = 150min)
 
+# Backtester-specific overrides (live trading ignores this section)
+backtester:
+  min_risk_floor: 200          # ₹200 — covers round-trip commission. Live uses ₹1,000.
+
 trading_hours:
   market_open: "09:15"
   market_close: "15:30"

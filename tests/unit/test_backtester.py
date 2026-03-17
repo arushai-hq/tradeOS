@@ -1832,6 +1832,30 @@ def test_atr_floor_long_stop_is_min():
         assert signal.stop_loss <= Decimal("111")
 
 
+def test_backtester_min_risk_floor_override():
+    """Backtester reads min_risk_floor from config['backtester'] section."""
+    from tools.backtester import BacktestEngine
+    from decimal import Decimal
+    from unittest.mock import MagicMock
+
+    # Default (no backtester section) → ₹200
+    cfg = _minimal_config()
+    engine = BacktestEngine(pool=MagicMock(), config=cfg)
+    assert engine._min_risk_floor == Decimal("200")
+
+    # Explicit override → ₹150
+    cfg2 = _minimal_config()
+    cfg2["backtester"] = {"min_risk_floor": 150}
+    engine2 = BacktestEngine(pool=MagicMock(), config=cfg2)
+    assert engine2._min_risk_floor == Decimal("150")
+
+    # S1v2 also picks it up
+    cfg3 = _minimal_config_s1v2()
+    cfg3["backtester"] = {"min_risk_floor": 300}
+    engine3 = BacktestEngine(pool=MagicMock(), config=cfg3)
+    assert engine3._min_risk_floor == Decimal("300")
+
+
 def test_atr_floor_short_stop_is_max():
     """S1v2 ATR floor: SHORT stop = max(pullback_high, entry + ATR_floor)."""
     from tools.backtester import S1v2Phase, S1v2State
