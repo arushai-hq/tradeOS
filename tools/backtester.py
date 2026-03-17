@@ -387,6 +387,13 @@ def _pct_color(val: float) -> str:
     return _green(text) if val >= 0 else _red(text)
 
 
+def _pnl_col(val: float, width: int = 14) -> str:
+    """Right-align a ₹ P&L value to `width` visible chars, then apply color."""
+    text = _inr(val, 2)
+    padded = text.rjust(width)
+    return _green(padded) if val >= 0 else _red(padded)
+
+
 # ---------------------------------------------------------------------------
 # BacktestEngine — the core simulation engine
 # ---------------------------------------------------------------------------
@@ -1491,7 +1498,7 @@ def print_report(result: BacktestResult) -> None:
     if result.daily_results:
         print()
         print(_bold("  MONTHLY BREAKDOWN"))
-        print(f"  {'Month':<12}{'Trades':>7}{'Win%':>7}{'Net P&L':>14}{'Regime':>18}")
+        print(f"  {'Month':<12}  {'Trades':>6}  {'Win%':>5}  {'Net P&L':>14}  {'Regime'}")
         print("  " + "-" * 58)
 
         monthly: dict[str, dict] = {}
@@ -1515,15 +1522,14 @@ def print_report(result: BacktestResult) -> None:
             from collections import Counter
             regime_counts = Counter(data["regimes"])
             dominant = regime_counts.most_common(1)[0][0] if regime_counts else ""
-            pnl_str = _pnl_color(float(data["net_pnl"]))
-            print(f"  {month:<12}{data['trades']:>7}{wr:>6.0f}%{pnl_str:>14}  {dominant}")
+            print(f"  {month:<12}  {data['trades']:>6}  {wr:>4.0f}%  {_pnl_col(float(data['net_pnl']), 14)}  {dominant}")
 
     # Per-stock performance
     if result.trades:
         print()
         print(_bold("  PER-STOCK PERFORMANCE"))
-        print(f"  {'Symbol':<15}{'Trades':>7}{'Win%':>7}{'Net P&L':>14}{'Best':>14}{'Worst':>14}")
-        print("  " + "-" * 71)
+        print(f"  {'Symbol':<14}  {'Trades':>6}  {'Win%':>5}  {'Net P&L':>14}  {'Best':>12}  {'Worst':>12}")
+        print("  " + "-" * 73)
 
         by_stock: dict[str, list[BacktestTrade]] = defaultdict(list)
         for t in result.trades:
@@ -1539,22 +1545,22 @@ def print_report(result: BacktestResult) -> None:
             worst = min(t.net_pnl for t in stock_trades)
             stock_summary.append((symbol, total, wr, net, best, worst))
 
-        # Sort by net P&L descending
-        stock_summary.sort(key=lambda x: x[3], reverse=True)
+        # Sort alphabetically by symbol
+        stock_summary.sort(key=lambda x: x[0])
         for symbol, total, wr, net, best, worst in stock_summary:
             print(
-                f"  {symbol:<15}{total:>7}{wr:>6.0f}%"
-                f"{_pnl_color(float(net)):>14}"
-                f"{_pnl_color(float(best)):>14}"
-                f"{_pnl_color(float(worst)):>14}"
+                f"  {symbol:<14}  {total:>6}  {wr:>4.0f}%"
+                f"  {_pnl_col(float(net), 14)}"
+                f"  {_pnl_col(float(best), 12)}"
+                f"  {_pnl_col(float(worst), 12)}"
             )
 
     # Regime performance
     if result.trades:
         print()
         print(_bold("  REGIME PERFORMANCE"))
-        print(f"  {'Regime':<20}{'Trades':>7}{'Win%':>7}{'Avg P&L':>14}")
-        print("  " + "-" * 48)
+        print(f"  {'Regime':<20}  {'Trades':>6}  {'Win%':>5}  {'Avg P&L':>14}")
+        print("  " + "-" * 53)
 
         by_regime: dict[str, list[BacktestTrade]] = defaultdict(list)
         for t in result.trades:
@@ -1565,7 +1571,7 @@ def print_report(result: BacktestResult) -> None:
             wins = sum(1 for t in regime_trades if t.net_pnl > 0)
             wr = wins / total * 100 if total > 0 else 0
             avg_pnl = sum(t.net_pnl for t in regime_trades) / Decimal(str(total))
-            print(f"  {regime:<20}{total:>7}{wr:>6.0f}%{_pnl_color(float(avg_pnl)):>14}")
+            print(f"  {regime:<20}  {total:>6}  {wr:>4.0f}%  {_pnl_col(float(avg_pnl), 14)}")
 
     print()
     print(_bold("=" * 70))
@@ -1576,15 +1582,14 @@ def print_optimize_report(results: list[tuple[float, BacktestResult]], param_nam
     """Print optimizer sensitivity table."""
     print()
     print(_bold(f"  OPTIMIZER: {param_name}"))
-    print(f"  {'Value':>8}{'Trades':>8}{'Win%':>7}{'Net P&L':>14}{'Sharpe':>8}{'PF':>8}{'MaxDD%':>8}")
-    print("  " + "-" * 61)
+    print(f"  {'Value':>8}  {'Trades':>6}  {'Win%':>5}  {'Net P&L':>14}  {'Sharpe':>7}  {'PF':>6}  {'MaxDD%':>7}")
+    print("  " + "-" * 65)
 
     for val, r in results:
-        pnl = _pnl_color(float(r.net_pnl))
         print(
-            f"  {val:>8.2f}{r.total_trades:>8}{r.win_rate:>6.1f}%"
-            f"{pnl:>14}{r.sharpe_ratio:>8.2f}{r.profit_factor:>8.2f}"
-            f"{r.max_drawdown_pct:>7.2f}%"
+            f"  {val:>8.2f}  {r.total_trades:>6}  {r.win_rate:>4.1f}%"
+            f"  {_pnl_col(float(r.net_pnl), 14)}  {r.sharpe_ratio:>7.2f}"
+            f"  {r.profit_factor:>6.2f}  {r.max_drawdown_pct:>6.2f}%"
         )
     print()
 
@@ -1593,15 +1598,14 @@ def print_compare_report(results: dict[str, BacktestResult]) -> None:
     """Print side-by-side comparison of exit modes."""
     print()
     print(_bold("  EXIT MODE COMPARISON"))
-    print(f"  {'Mode':<12}{'Trades':>8}{'Win%':>7}{'Net P&L':>14}{'Sharpe':>8}{'PF':>8}{'MaxDD%':>8}")
-    print("  " + "-" * 65)
+    print(f"  {'Mode':<12}  {'Trades':>6}  {'Win%':>5}  {'Net P&L':>14}  {'Sharpe':>7}  {'PF':>6}  {'MaxDD%':>7}")
+    print("  " + "-" * 67)
 
     for mode, r in results.items():
-        pnl = _pnl_color(float(r.net_pnl))
         print(
-            f"  {mode:<12}{r.total_trades:>8}{r.win_rate:>6.1f}%"
-            f"{pnl:>14}{r.sharpe_ratio:>8.2f}{r.profit_factor:>8.2f}"
-            f"{r.max_drawdown_pct:>7.2f}%"
+            f"  {mode:<12}  {r.total_trades:>6}  {r.win_rate:>4.1f}%"
+            f"  {_pnl_col(float(r.net_pnl), 14)}  {r.sharpe_ratio:>7.2f}"
+            f"  {r.profit_factor:>6.2f}  {r.max_drawdown_pct:>6.2f}%"
         )
     print()
 
