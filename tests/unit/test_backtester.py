@@ -854,6 +854,77 @@ async def test_compare_produces_three_results():
 
 
 # ---------------------------------------------------------------------------
+# (26) Optimizer: config-path param (volume_ratio_min)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_optimize_volume_ratio_min():
+    """Optimizer sweeps volume_ratio_min via config override, not constructor kwarg."""
+    from tools.backtester import run_optimize
+
+    config = _minimal_config()
+    config["strategy"]["s1"]["volume_ratio_min"] = 1.5  # original value
+
+    # Mock pool that returns empty trading days
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[])
+    mock_conn.fetchrow = AsyncMock(return_value=None)
+    mock_conn.fetchval = AsyncMock(return_value=None)
+    pool = _mock_pool(mock_conn)
+
+    results = await run_optimize(
+        pool=pool,
+        config=config,
+        param_name="volume_ratio_min",
+        range_str="1.0:0.5:2.0",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 3, 1),
+        exit_mode="fixed",
+        slippage=0.001,
+    )
+
+    # 3 values: 1.0, 1.5, 2.0
+    assert len(results) == 3
+    # Original config must NOT be mutated
+    assert config["strategy"]["s1"]["volume_ratio_min"] == 1.5
+
+
+# ---------------------------------------------------------------------------
+# (27) Optimizer: config-path param (rsi_long_min)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_optimize_rsi_long_min():
+    """Optimizer sweeps rsi_long_min via config override."""
+    from tools.backtester import run_optimize
+
+    config = _minimal_config()
+    config["strategy"]["s1"]["rsi_long_min"] = 50
+
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[])
+    mock_conn.fetchrow = AsyncMock(return_value=None)
+    mock_conn.fetchval = AsyncMock(return_value=None)
+    pool = _mock_pool(mock_conn)
+
+    results = await run_optimize(
+        pool=pool,
+        config=config,
+        param_name="rsi_long_min",
+        range_str="40:10:60",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 3, 1),
+        exit_mode="fixed",
+        slippage=0.001,
+    )
+
+    # 3 values: 40, 50, 60
+    assert len(results) == 3
+    # Original config not mutated
+    assert config["strategy"]["s1"]["rsi_long_min"] == 50
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import math
 import os
 import sys
@@ -1225,6 +1226,40 @@ class BacktestEngine:
 # Optimizer
 # ---------------------------------------------------------------------------
 
+    # Params passed as BacktestEngine constructor kwargs
+_ENGINE_KWARG_PARAMS: dict[str, str] = {
+    "atr_multiplier": "atr_mult",
+    "atr_mult": "atr_mult",
+    "atr_period": "atr_period",
+    "partial_pct": "partial_pct",
+    "slippage": "slippage",
+}
+
+# Params injected into config dict (dot-separated path)
+_CONFIG_PATH_PARAMS: dict[str, list[str]] = {
+    "volume_ratio_min": ["strategy", "s1", "volume_ratio_min"],
+    "rsi_long_min": ["strategy", "s1", "rsi_long_min"],
+    "rsi_long_max": ["strategy", "s1", "rsi_long_max"],
+    "rsi_short_min": ["strategy", "s1", "rsi_short_min"],
+    "min_stop_pct": ["strategy", "s1", "min_stop_pct"],
+    "rr_ratio": ["strategy", "s1", "rr_ratio"],
+    "ema_fast": ["strategy", "s1", "ema_fast"],
+    "ema_slow": ["strategy", "s1", "ema_slow"],
+    "rsi_period": ["strategy", "s1", "rsi_period"],
+    "swing_lookback": ["strategy", "s1", "swing_lookback"],
+    "no_entry_after": ["trading_hours", "no_entry_after"],
+    "max_open_positions": ["risk", "max_open_positions"],
+    "max_loss_per_trade_pct": ["risk", "max_loss_per_trade_pct"],
+}
+
+
+def _set_config_value(cfg: dict, path: list[str], value) -> None:
+    """Set a nested config value by path (e.g. ["strategy", "s1", "volume_ratio_min"])."""
+    for key in path[:-1]:
+        cfg = cfg.setdefault(key, {})
+    cfg[path[-1]] = value
+
+
 async def run_optimize(
     pool,
     config: dict,
@@ -1247,22 +1282,34 @@ async def run_optimize(
 
     for i, val in enumerate(values):
         kwargs = dict(engine_kwargs)
-        # Map parameter name to engine kwarg
-        param_map = {
-            "atr_multiplier": "atr_mult",
-            "atr_mult": "atr_mult",
-            "atr_period": "atr_period",
-            "partial_pct": "partial_pct",
-            "slippage": "slippage",
-        }
-        kwarg_name = param_map.get(param_name, param_name)
-        if kwarg_name == "atr_period":
-            kwargs[kwarg_name] = int(val)
+        iter_config = config
+
+        if param_name in _ENGINE_KWARG_PARAMS:
+            # Constructor kwarg (atr_mult, atr_period, etc.)
+            kwarg_name = _ENGINE_KWARG_PARAMS[param_name]
+            kwargs[kwarg_name] = int(val) if kwarg_name == "atr_period" else val
+        elif param_name in _CONFIG_PATH_PARAMS:
+            # Config override — deep-copy and inject
+            iter_config = copy.deepcopy(config)
+            path = _CONFIG_PATH_PARAMS[param_name]
+            cast_val: object = val
+            if param_name in ("ema_fast", "ema_slow", "rsi_period",
+                              "swing_lookback", "max_open_positions"):
+                cast_val = int(val)
+            elif param_name == "no_entry_after":
+                # Convert float like 14.75 → "14:45"
+                hours = int(val)
+                minutes = int((val - hours) * 60)
+                cast_val = f"{hours:02d}:{minutes:02d}"
+            _set_config_value(iter_config, path, cast_val)
         else:
-            kwargs[kwarg_name] = val
+            raise ValueError(
+                f"Unknown optimizer param: {param_name}. "
+                f"Valid: {sorted(set(_ENGINE_KWARG_PARAMS) | set(_CONFIG_PATH_PARAMS))}"
+            )
 
         with spinner(f"[{i + 1}/{len(values)}] {param_name}={val}"):
-            engine = BacktestEngine(pool, config, **kwargs)
+            engine = BacktestEngine(pool, iter_config, **kwargs)
             result = await engine.run(date_from, date_to)
         results.append((val, result))
         step_done(f"{param_name}={val} \u2192 {result.total_trades} trades, net={_inr(float(result.net_pnl), 2)}")
