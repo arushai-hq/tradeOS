@@ -1,6 +1,10 @@
 -- TradeOS Migration 003: Futures backtest data tables
 -- Historical futures candle data for NIFTY/BANKNIFTY backtesting.
 --
+-- v2: Added tradingsymbol + expiry columns for per-contract intraday data.
+--     Daily continuous candles: tradingsymbol='', expiry=NULL.
+--     Intraday per-contract: tradingsymbol='NIFTY26MARFUT', expiry=2026-03-27.
+--
 -- Apply:
 --   psql -U tradeos -d tradeos -f migrations/003_futures_backtest_tables.sql
 -- Or:
@@ -9,6 +13,8 @@
 -- 1. backtest_futures_candles — Historical OHLCV+OI candles for index futures
 CREATE TABLE IF NOT EXISTS backtest_futures_candles (
     instrument         TEXT           NOT NULL,
+    tradingsymbol      TEXT           NOT NULL DEFAULT '',
+    expiry             DATE,
     interval           TEXT           NOT NULL,
     timestamp          TIMESTAMPTZ    NOT NULL,
     open               NUMERIC(12,2)  NOT NULL,
@@ -18,7 +24,7 @@ CREATE TABLE IF NOT EXISTS backtest_futures_candles (
     volume             BIGINT         NOT NULL,
     oi                 BIGINT,
 
-    PRIMARY KEY (instrument, interval, timestamp),
+    PRIMARY KEY (instrument, tradingsymbol, interval, timestamp),
 
     CONSTRAINT chk_fut_instrument CHECK (
         instrument IN ('NIFTY', 'BANKNIFTY')

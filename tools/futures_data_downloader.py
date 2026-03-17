@@ -64,6 +64,8 @@ RATE_LIMIT_SECS: float = 0.35
 _FUTURES_TABLES_SQL = """\
 CREATE TABLE IF NOT EXISTS backtest_futures_candles (
     instrument         TEXT           NOT NULL,
+    tradingsymbol      TEXT           NOT NULL DEFAULT '',
+    expiry             DATE,
     interval           TEXT           NOT NULL,
     timestamp          TIMESTAMPTZ    NOT NULL,
     open               NUMERIC(12,2)  NOT NULL,
@@ -73,7 +75,7 @@ CREATE TABLE IF NOT EXISTS backtest_futures_candles (
     volume             BIGINT         NOT NULL,
     oi                 BIGINT,
 
-    PRIMARY KEY (instrument, interval, timestamp),
+    PRIMARY KEY (instrument, tradingsymbol, interval, timestamp),
 
     CONSTRAINT chk_fut_instrument CHECK (
         instrument IN ('NIFTY', 'BANKNIFTY')
@@ -202,15 +204,14 @@ def _load_futures_config(config: dict) -> list[dict]:
 # Instrument resolution
 # ---------------------------------------------------------------------------
 
-def _resolve_futures_tokens(kite, config: dict) -> list[dict]:
-    """Resolve futures instrument names to KiteConnect instrument_tokens.
+def _resolve_futures_contracts(kite, config: dict) -> list[dict]:
+    """Resolve ALL active futures contracts from NFO instrument dump.
 
-    Process:
-    1. Fetch all NFO instruments via kite.instruments("NFO")
-    2. Filter to segment == "NFO-FUT"
-    3. Exclude unwanted instruments (FINNIFTY, MIDCPNIFTY, etc.)
-    4. For each target instrument, pick nearest non-expired expiry
-    5. Return list of {name, token, lot_size, expiry, tradingsymbol}
+    Returns list of {name, token, lot_size, expiry, tradingsymbol}
+    for ALL contracts where expiry >= today. Sorted by (name, expiry).
+
+    Daily downloads use only the nearest contract (via _pick_nearest_per_instrument).
+    Intraday downloads use all contracts (each downloaded separately).
     """
     futures_instruments = _load_futures_config(config)
     target_names = {i["name"] for i in futures_instruments}
@@ -219,6 +220,9 @@ def _resolve_futures_tokens(kite, config: dict) -> list[dict]:
     all_excluded: set[str] = set()
     for i in futures_instruments:
         all_excluded.update(i.get("exclude_prefixes", []))
+
+    # Build config lot sizes as fallback
+    config_lot_sizes = {i["name"]: i["lot_size"] for i in futures_instruments}
 
     # Fetch full NFO instrument dump
     nfo_instruments = kite.instruments("NFO")
@@ -235,34 +239,43 @@ def _resolve_futures_tokens(kite, config: dict) -> list[dict]:
             continue
         candidates.append(inst)
 
-    # Group by name, pick nearest expiry >= today
+    # Return ALL active contracts (expiry >= today), sorted by (name, expiry)
     today = date.today()
     resolved: list[dict] = []
 
-    for fi in futures_instruments:
-        name = fi["name"]
-        name_candidates = [
-            c for c in candidates
-            if c["name"] == name and c["expiry"] >= today
-        ]
-
-        if not name_candidates:
-            step_fail(f"No active futures contract found for {name}")
+    for c in candidates:
+        if c["expiry"] < today:
             continue
-
-        # Sort by expiry ascending, pick nearest
-        name_candidates.sort(key=lambda c: c["expiry"])
-        nearest = name_candidates[0]
-
         resolved.append({
-            "name": name,
-            "token": nearest["instrument_token"],
-            "lot_size": nearest.get("lot_size", fi["lot_size"]),
-            "expiry": nearest["expiry"],
-            "tradingsymbol": nearest.get("tradingsymbol", ""),
+            "name": c["name"],
+            "token": c["instrument_token"],
+            "lot_size": c.get("lot_size", config_lot_sizes.get(c["name"], 0)),
+            "expiry": c["expiry"],
+            "tradingsymbol": c.get("tradingsymbol", ""),
         })
 
+    resolved.sort(key=lambda r: (r["name"], r["expiry"]))
+
+    # Warn if any configured instrument has no contracts
+    resolved_names = {r["name"] for r in resolved}
+    for name in target_names:
+        if name not in resolved_names:
+            step_fail(f"No active futures contract found for {name}")
+
     return resolved
+
+
+def _pick_nearest_per_instrument(contracts: list[dict]) -> list[dict]:
+    """Filter contracts to only the nearest expiry per instrument name.
+
+    Used for daily continuous downloads where we need a single token per instrument.
+    """
+    nearest: dict[str, dict] = {}
+    for c in contracts:
+        name = c["name"]
+        if name not in nearest or c["expiry"] < nearest[name]["expiry"]:
+            nearest[name] = c
+    return list(nearest.values())
 
 
 # ---------------------------------------------------------------------------
@@ -302,13 +315,16 @@ def _download_futures(
     interval: str,
     start_date: date,
     end_date: date,
+    *,
+    continuous: bool = False,
 ) -> list[dict]:
     """Download historical candles for one futures instrument via KiteConnect.
 
-    Key differences from equity _download_symbol:
-    - continuous=True (stitches expired contracts automatically)
-    - oi=True (includes open interest data)
+    Args:
+        continuous: True for daily (stitched across expired contracts),
+                    False for intraday (per-contract data only).
 
+    Always includes oi=True for open interest data.
     Handles chunking and rate limiting. Returns list of candle dicts.
     """
     kite_interval = INTERVAL_MAP[interval]
@@ -321,7 +337,7 @@ def _download_futures(
 
         candles = kite.historical_data(
             token, from_dt, to_dt, kite_interval,
-            continuous=True, oi=True,
+            continuous=continuous, oi=True,
         )
         all_candles.extend(candles)
 
@@ -337,7 +353,12 @@ def _download_futures(
 # ---------------------------------------------------------------------------
 
 async def _ensure_tables(pool) -> None:
-    """Auto-create futures backtest tables if they don't exist (self-healing)."""
+    """Auto-create futures backtest tables if they don't exist (self-healing).
+
+    Also handles schema migration: if the old schema (without tradingsymbol
+    column) is detected, drops and recreates both tables. Safe because only
+    ~748 daily candles exist at this point — quick to re-download.
+    """
     async with pool.acquire() as conn:
         exists = await conn.fetchval(
             "SELECT EXISTS ("
@@ -348,6 +369,22 @@ async def _ensure_tables(pool) -> None:
         if not exists:
             await conn.execute(_FUTURES_TABLES_SQL)
             step_done("Created backtest_futures_candles + backtest_futures_metadata tables")
+            return
+
+        # Check if schema has the tradingsymbol column (added in CC004)
+        has_col = await conn.fetchval(
+            "SELECT EXISTS ("
+            "  SELECT FROM information_schema.columns "
+            "  WHERE table_name = 'backtest_futures_candles' "
+            "  AND column_name = 'tradingsymbol'"
+            ")"
+        )
+        if not has_col:
+            step_info("Old schema detected — migrating (DROP + RECREATE)...")
+            await conn.execute("DROP TABLE IF EXISTS backtest_futures_candles CASCADE")
+            await conn.execute("DROP TABLE IF EXISTS backtest_futures_metadata CASCADE")
+            await conn.execute(_FUTURES_TABLES_SQL)
+            step_done("Recreated futures tables with tradingsymbol + expiry columns")
 
 
 async def _get_metadata(pool, instrument: str, interval: str) -> dict | None:
@@ -369,15 +406,24 @@ async def _insert_candles(
     instrument: str,
     interval: str,
     candles: list[dict],
+    *,
+    tradingsymbol: str = "",
+    expiry: date | None = None,
 ) -> int:
-    """Batch insert candles with ON CONFLICT DO NOTHING. Returns count inserted."""
+    """Batch insert candles with ON CONFLICT DO NOTHING. Returns count inserted.
+
+    Args:
+        tradingsymbol: Contract name (e.g. 'NIFTY26MARFUT'). Empty for daily continuous.
+        expiry: Contract expiry date. None for daily continuous.
+    """
     if not candles:
         return 0
 
     sql = (
         "INSERT INTO backtest_futures_candles "
-        "(instrument, interval, timestamp, open, high, low, close, volume, oi) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) "
+        "(instrument, tradingsymbol, expiry, interval, timestamp, "
+        "open, high, low, close, volume, oi) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) "
         "ON CONFLICT DO NOTHING"
     )
 
@@ -388,7 +434,7 @@ async def _insert_candles(
         if candle_dt.tzinfo is None:
             candle_dt = IST.localize(candle_dt)
         rows.append((
-            instrument, interval, candle_dt,
+            instrument, tradingsymbol, expiry, interval, candle_dt,
             float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"]),
             int(c["volume"]),
             int(c.get("oi", 0)) if c.get("oi") else None,
@@ -434,44 +480,76 @@ async def _update_metadata(
 async def _download_and_store(
     kite,
     pool,
-    resolved_instruments: list[dict],
+    all_contracts: list[dict],
     interval: str,
     days: int,
 ) -> dict:
     """Download one interval for all resolved futures instruments.
 
+    Dual-mode logic:
+    - day interval: continuous=True, one token per instrument (nearest expiry)
+    - 5min/15min: continuous=False, each contract downloaded separately
+
     Returns summary dict: {interval, downloaded, skipped, total_candles, failed}
     """
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
-    total = len(resolved_instruments)
     downloaded = 0
     skipped = 0
     total_candles = 0
     failed: list[dict] = []
 
-    for idx, inst in enumerate(resolved_instruments, 1):
+    if interval == "day":
+        # Mode 1: Daily continuous — use nearest contract per instrument
+        targets = _pick_nearest_per_instrument(all_contracts)
+        use_continuous = True
+    else:
+        # Mode 2: Intraday — download each contract separately
+        targets = all_contracts
+        use_continuous = False
+
+    total = len(targets)
+
+    for idx, inst in enumerate(targets, 1):
         name = inst["name"]
         token = inst["token"]
         lot_size = inst["lot_size"]
+        tsym = inst.get("tradingsymbol", "")
+        inst_expiry = inst.get("expiry")
+
+        # For daily continuous, use empty tradingsymbol / no expiry
+        if use_continuous:
+            store_tsym = ""
+            store_expiry = None
+            label = name
+        else:
+            store_tsym = tsym
+            store_expiry = inst_expiry
+            label = f"{name} ({tsym})"
 
         try:
-            # Check resume point
+            # For intraday per-contract, compute start date from contract listing
+            if use_continuous:
+                actual_start = start_date
+            else:
+                # Contracts listed ~90 days before expiry
+                contract_start = inst_expiry - timedelta(days=90) if inst_expiry else start_date
+                actual_start = max(start_date, contract_start)
+
+            # Check resume point (keyed on instrument+interval for aggregate tracking)
             meta = await _get_metadata(pool, name, interval)
-            if meta and meta["first_candle"] and meta["last_candle"]:
+            if use_continuous and meta and meta["first_candle"] and meta["last_candle"]:
                 first_dt = meta["first_candle"]
                 last_dt = meta["last_candle"]
-                # Convert to date if timestamptz
                 first_d = first_dt.date() if hasattr(first_dt, "date") else first_dt
                 last_d = last_dt.date() if hasattr(last_dt, "date") else last_dt
-                if first_d <= start_date and last_d >= end_date:
-                    step_info(f"[{idx}/{total}] {name} {interval} — already complete, skipping")
+                if first_d <= actual_start and last_d >= end_date:
+                    step_info(f"[{idx}/{total}] {label} {interval} — already complete, skipping")
                     skipped += 1
                     continue
 
-            # Determine actual start (resume from last downloaded)
-            actual_start = start_date
-            if meta and meta["last_candle"]:
+            # Resume from last downloaded (daily continuous only)
+            if use_continuous and meta and meta["last_candle"]:
                 last_dt = meta["last_candle"]
                 last_d = last_dt.date() if hasattr(last_dt, "date") else last_dt
                 resume_from = last_d + timedelta(days=1)
@@ -479,21 +557,25 @@ async def _download_and_store(
                     actual_start = resume_from
 
             if actual_start > end_date:
-                step_info(f"[{idx}/{total}] {name} {interval} — up to date")
+                step_info(f"[{idx}/{total}] {label} {interval} — up to date")
                 skipped += 1
                 continue
 
             # Download
             with spinner(
-                f"[{idx}/{total}] {name} — downloading {interval} "
+                f"[{idx}/{total}] {label} — downloading {interval} "
                 f"({actual_start} → {end_date})..."
             ):
                 candles = _download_futures(
                     kite, token, name, interval, actual_start, end_date,
+                    continuous=use_continuous,
                 )
 
             if candles:
-                count = await _insert_candles(pool, name, interval, candles)
+                count = await _insert_candles(
+                    pool, name, interval, candles,
+                    tradingsymbol=store_tsym, expiry=store_expiry,
+                )
                 first_dt = candles[0]["date"]
                 last_dt = candles[-1]["date"]
                 first_date = first_dt.date() if hasattr(first_dt, "date") else first_dt
@@ -502,14 +584,14 @@ async def _download_and_store(
                     pool, name, interval, first_date, last_date, count, lot_size,
                 )
                 total_candles += count
-                step_done(f"{name} — {count:,} candles ({first_date} → {last_date})")
+                step_done(f"{label} — {count:,} candles ({first_date} → {last_date})")
             else:
-                step_info(f"{name} — no candles returned")
+                step_info(f"{label} — no candles returned")
 
             downloaded += 1
 
         except Exception as exc:
-            step_fail(f"{name} — {type(exc).__name__}: {exc}")
+            step_fail(f"{label} — {type(exc).__name__}: {exc}")
             failed.append({"instrument": name, "error": str(exc)})
 
     return {
@@ -524,14 +606,24 @@ async def _download_and_store(
 async def _show_status(pool) -> None:
     """Query and display futures download coverage per interval."""
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
+        # Aggregate metadata
+        meta_rows = await conn.fetch(
             "SELECT instrument, interval, candle_count, "
             "first_candle, last_candle, lot_size, last_download "
             "FROM backtest_futures_metadata "
             "ORDER BY instrument, interval"
         )
+        # Per-contract breakdown for intraday
+        contract_rows = await conn.fetch(
+            "SELECT instrument, tradingsymbol, expiry, interval, "
+            "COUNT(*) as candles, MIN(timestamp) as first_ts, MAX(timestamp) as last_ts "
+            "FROM backtest_futures_candles "
+            "WHERE tradingsymbol != '' "
+            "GROUP BY instrument, tradingsymbol, expiry, interval "
+            "ORDER BY instrument, interval, expiry"
+        )
 
-    if not rows:
+    if not meta_rows:
         print("\nFutures Data Status")
         print("=" * 60)
         print("  No futures data downloaded yet.")
@@ -539,7 +631,7 @@ async def _show_status(pool) -> None:
         print()
         return
 
-    print("\nFutures Data Status")
+    print("\nFutures Data Status — Aggregate")
     print("=" * 90)
     print(
         f"  {'Instrument':<12s} {'Interval':<10s} {'Candles':>10s} "
@@ -548,7 +640,7 @@ async def _show_status(pool) -> None:
     print("  " + "-" * 86)
 
     grand_candles = 0
-    for row in rows:
+    for row in meta_rows:
         candles = row["candle_count"] or 0
         grand_candles += candles
         first = str(row["first_candle"].date()) if row["first_candle"] else "—"
@@ -564,7 +656,26 @@ async def _show_status(pool) -> None:
         )
 
     print("  " + "-" * 86)
-    print(f"  Total: {grand_candles:,} candles across {len(rows)} instrument-interval pairs")
+    print(f"  Total: {grand_candles:,} candles across {len(meta_rows)} instrument-interval pairs")
+
+    # Per-contract breakdown
+    if contract_rows:
+        print(f"\nFutures Data Status — Per Contract (Intraday)")
+        print("=" * 90)
+        print(
+            f"  {'Instrument':<12s} {'Contract':<22s} {'Expiry':<12s} "
+            f"{'Interval':<10s} {'Candles':>10s} {'From':>12s} {'To':>12s}"
+        )
+        print("  " + "-" * 86)
+        for row in contract_rows:
+            first = str(row["first_ts"].date()) if row["first_ts"] else "—"
+            last = str(row["last_ts"].date()) if row["last_ts"] else "—"
+            expiry = str(row["expiry"]) if row["expiry"] else "—"
+            print(
+                f"  {row['instrument']:<12s} {row['tradingsymbol']:<22s} {expiry:<12s} "
+                f"{row['interval']:<10s} {row['candles']:>10,d} {first:>12s} {last:>12s}"
+            )
+
     print()
 
 
@@ -587,16 +698,21 @@ async def _run_download(args) -> int:
         kite = _init_kite()
     step_done("KiteConnect authenticated")
 
-    # Resolve futures instrument tokens
-    with spinner("Resolving futures instrument tokens from NFO..."):
-        resolved = _resolve_futures_tokens(kite, config)
+    # Resolve ALL active futures contracts
+    with spinner("Resolving futures contracts from NFO..."):
+        resolved = _resolve_futures_contracts(kite, config)
 
     if not resolved:
-        print("ERROR: No futures instruments resolved. Check config/settings.yaml futures section.")
+        print("ERROR: No futures contracts resolved. Check config/settings.yaml futures section.")
         return 1
 
-    for r in resolved:
-        step_done(f"{r['name']} → {r['tradingsymbol']} (token={r['token']}, lot={r['lot_size']}, expiry={r['expiry']})")
+    # Group for display
+    from itertools import groupby
+    for name, grp in groupby(resolved, key=lambda r: r["name"]):
+        contracts = list(grp)
+        step_done(f"{name}: {len(contracts)} contract(s)")
+        for c in contracts:
+            step_info(f"  {c['tradingsymbol']} (token={c['token']}, lot={c['lot_size']}, expiry={c['expiry']})")
 
     # Filter to single instrument if specified
     if args.instrument:

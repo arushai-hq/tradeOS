@@ -44,9 +44,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `tests/CLAUDE.md` | Test suite conventions and commands |
 | `docs/decisions/` | Architecture Decision Records (ADR-001: position sizing, ADR-002: token automation) |
 | `docs/runbooks/` | Operational procedures (daily-trading.md) |
-| `tools/futures_data_downloader.py` | Historical futures candle downloader. NIFTY + BANKNIFTY, NFO-FUT segment, continuous=True, 5min/15min/day, OI data. CLI: `tradeos futures download/status`. |
+| `tools/futures_data_downloader.py` | Historical futures candle downloader. NIFTY + BANKNIFTY, NFO-FUT segment. Dual-mode: day=continuous, intraday=per-contract. 5min/15min/day, OI data. CLI: `tradeos futures download/status`. |
 | `tools/futures_backtester.py` | Futures-specific backtester. Lot-based position sizing, futures charge model, single-instrument mode, OI indicators. CLI: `tradeos futures backtest run/compare/optimize/show`. |
-| `migrations/003_futures_backtest_tables.sql` | backtest_futures_candles + backtest_futures_metadata tables. |
+| `migrations/003_futures_backtest_tables.sql` | backtest_futures_candles (with tradingsymbol + expiry for per-contract intraday) + backtest_futures_metadata tables. |
 
 **Strategy (current):** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI + volume ratio. **DEPRECATED** — negative expectancy confirmed via backtester across all parameter combinations. Kept running for infrastructure validation only.
 **Strategy (in development):** S1v2 Trend Pullback + S1v3 Mean Reversion being validated on NIFTY/BANKNIFTY futures via backtester. Equity versions killed — insufficient intraday range.
@@ -86,7 +86,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
 | Futures pivot | **Decision locked.** NIFTY + BANKNIFTY index futures. Backtest-first approach — validate S1v2/S1v3 on 18 months of futures data before building trading engine. |
-| Futures data | **CC001 complete.** `tools/futures_data_downloader.py` + `migrations/003_futures_backtest_tables.sql`. CLI: `tradeos futures download/status`. 3 intervals (5min, 15min, day), OI, continuous=True. Pending VPS deploy + actual download. |
+| Futures data | **CC004 complete.** Dual-mode download: day=`continuous=True` (stitched), intraday=`continuous=False` (per-contract). Schema v2: `tradingsymbol` + `expiry` columns, PK `(instrument, tradingsymbol, interval, timestamp)`. Self-healing migration (DROP+RECREATE). 19 tests. Pending VPS deploy + actual download. |
 | Futures backtester | **Pending CC002.** Lot-based sizing, futures charges, single-instrument mode. |
 | NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
 | NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |
@@ -136,6 +136,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 32. **D29: Separate `backtest_futures_candles` table** — Not modifying equity table — Confirmed.
 33. **D30: 18 months historical data (Sep 2024 → Mar 2026)** — Confirmed.
 34. **D31: New `tools/futures_backtester.py`** — Separate from equity backtester — Confirmed.
+35. **D32: Dual-mode futures download** — KiteConnect `continuous=True` only works for `day` interval; intraday fails with `InputException`. Fix: day=continuous (stitched), intraday=per-contract (each contract downloaded separately with `continuous=False`). Schema updated with `tradingsymbol` + `expiry` columns.
 
 ---
 
@@ -187,9 +188,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **TRADEOS-04-CC001** — Futures data infrastructure (migration 003, futures_data_downloader.py, CLI). Branch: feature/futures-data.
-2. **TRADEOS-04-CC002** — Futures backtester (futures_backtester.py, lot-based sizer, futures charges, CLI). Branch: feature/futures-backtest.
-3. **VPS: Download futures data** — Run `tradeos futures download` after CC001 deployed.
+1. ~~**TRADEOS-04-CC001** — Futures data infrastructure~~ ✅ DONE (merged to main)
+2. ~~**TRADEOS-04-CC004** — Fix intraday download (dual-mode continuous/per-contract)~~ ✅ DONE
+3. **VPS: Download futures data** — Run `tradeos futures download --all` after CC004 deployed. Self-healing migration will auto-upgrade schema.
 4. **VPS: Run backtests** — Run S1v2 + S1v3 on NIFTY + BANKNIFTY after CC002 deployed. Compare with equity results.
 5. **Decision gate** — If backtest shows positive expectancy → proceed to trading engine adaptation. If not → evaluate strategy modifications or alternative strategies.
 6. **Continue S1 equity paper trading** — Infrastructure validation continues regardless.
@@ -208,6 +209,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | TradeOS-03 Strategy Redesign | Researched 7 proven short-term traders. Designed S1v2 (trend pullback) + S1v3 (mean reversion). 18 decisions locked. Spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. | Spec locked. CC prompts for backtester implementation ready. |
 | 2026-03-17 | TradeOS-03 Complete | Researched 7 traders. Built S1v2 + S1v3. Both killed: NIFTY 50 lacks intraday range. Backtest runs #9-#15. +61 tests (579→640). 7 CC prompts. Strategic pivot to futures/mid-caps/swing recommended. | All intraday equity strategies exhausted. Market structure pivot needed. |
 | 2026-03-17 | TradeOS-04 | Futures pivot locked. 6 decisions (D26-D31). NIFTY+BANKNIFTY, backtest-first, 18mo data, separate table, separate backtester. CC001 (data infra) + CC002 (backtester) prompts generated. | Strategic pivot — equity → futures. |
+| 2026-03-17 | TradeOS-04 CC001+CC004 | CC001: futures data infra (downloader, migration 003, CLI, 14 tests). CC004: fix intraday — dual-mode (day=continuous, intraday=per-contract), schema v2 (tradingsymbol+expiry), self-healing migration, 19 tests. D32 decision. 659 tests passing. | Futures data pipeline ready for VPS deploy. |
 
 ---
 
@@ -233,4 +235,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — TradeOS-04 in progress. Futures pivot decided (D26-D31). NIFTY + BANKNIFTY, backtest-first. CC001 (data infra) + CC002 (backtester) prompts ready. Next: deploy CC001, download data, deploy CC002, run backtests.
+**2026-03-17** — TradeOS-04. CC001 + CC004 complete. Futures data pipeline with dual-mode download (day=continuous, intraday=per-contract). 659 tests. Next: deploy to VPS, run `tradeos futures download --all`, then CC002 (backtester).
