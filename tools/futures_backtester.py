@@ -304,7 +304,7 @@ class FuturesBacktestEngine:
         self._atr_period = atr_period
         self._partial_pct = Decimal(str(partial_pct))
         self._slippage = Decimal(str(slippage))
-        self._interval = interval
+        self._interval = {"5minute": "5min", "15minute": "15min"}.get(interval, interval)
 
         # Strategy dispatch
         strategy_name = config.get("_strategy_override", "s1v2")
