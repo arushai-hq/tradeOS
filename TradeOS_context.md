@@ -56,7 +56,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **579 passing, 0 failures, 12 skipped** |
+| Tests | **612 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -112,6 +112,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 16. **S1v3 Mean Reversion design** — Kotegawa-inspired panic buy + Bollinger Band oversold + VWAP target. 15min chart only. Trigger: stock drops >2×ATR from day high, RSI<30, price at/below lower BB(20,2), first green reversal candle with volume>1.5×avg. Target: VWAP. Stop: intraday low. R:R gate: minimum 2:1. Valid window: 09:30–14:30 IST. Both LONG and SHORT directions.
 17. **Backtester strategy implementation** — Two separate strategy classes (s1v2_trend_pullback.py, s1v3_mean_reversion.py). New indicators required: EMA(10), EMA(20), ADX(14), Bollinger Bands(20,2). Shared position pool (6 max). Success criteria: positive P&L, win rate ≥40%, profit factor ≥1.3, max drawdown ≤15%, avg R:R ≥2.0, minimum 50 trades.
 18. **Strategy research methodology** — Derived from studying 7 proven short-term traders. Key principles extracted: (a) enter on pullback/reversal not exhausted momentum, (b) asymmetric R:R minimum 3:1, (c) regime awareness — don't trade choppy markets, (d) fast exits via price stop + time stop, (e) directional filter — never trade against prevailing trend.
+19. **S1v2 ATR stop floor** — Stop = wider of (pullback low/high, entry ± 1.0×ATR). Prevents position sizer rejection from tight 5min pullback stops. R:R gate recalculates with wider stop. Config: `strategy.s1v2.atr_stop_floor_mult: 1.0`.
 
 ---
 
@@ -205,4 +206,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — Strategy redesign spec locked (S1v2 trend pullback + S1v3 mean reversion). 18 design decisions captured. Backtester implementation CC prompts pending. S1 deprecated for trading (infrastructure validation only). Tests: 579 passing.
+**2026-03-17** — S1v2 backtester implemented (TRADEOS-03-CC002, a38144a). ATR stop floor fix applied (TRADEOS-03-CC003). First backtest run pending. Tests: 612 passing.

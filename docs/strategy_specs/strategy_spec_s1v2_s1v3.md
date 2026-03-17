@@ -59,15 +59,19 @@ STEP 5 — Volume Confirmation (5min)
 STEP 6 — Risk:Reward Gate
   FOR LONG:
     Entry = trigger bar close price
-    Stop = lowest low during the pullback (below 20-EMA zone)
+    Stop = min(pullback_low, entry - atr_stop_floor_mult × ATR(14, 5min))
+           (wider of: pullback-based stop OR ATR-based floor)
     Target = entry + 2.5 × ATR(14, 5min)
     R:R = (target - entry) / (entry - stop)
   FOR SHORT:
     Entry = trigger bar close price
-    Stop = highest high during the pullback (above 20-EMA zone)
+    Stop = max(pullback_high, entry + atr_stop_floor_mult × ATR(14, 5min))
+           (wider of: pullback-based stop OR ATR-based floor)
     Target = entry - 2.5 × ATR(14, 5min)
     R:R = (entry - target) / (stop - entry)
   IF R:R < 3.0 → SKIP
+  NOTE: ATR stop floor ensures minimum stop distance proportional to stock
+  volatility. Prevents position sizer rejection from tight pullback stops.
 
 STEP 7 — Execute
   Enter at trigger bar close

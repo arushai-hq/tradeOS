@@ -500,6 +500,7 @@ class S1v2SignalEvaluator:
         self._adx_threshold = Decimal(str(s1v2_cfg.get("adx_threshold", 25)))
         self._atr_period = s1v2_cfg.get("atr_period", 14)
         self._atr_target_mult = Decimal(str(s1v2_cfg.get("atr_target_mult", 2.5)))
+        self._atr_stop_floor_mult = Decimal(str(s1v2_cfg.get("atr_stop_floor_mult", 1.0)))
         self._volume_ratio_min = Decimal(str(s1v2_cfg.get("volume_ratio_min", 1.5)))
         self._volume_sma_period = s1v2_cfg.get("volume_sma_period", 20)
         self._rr_min = Decimal(str(s1v2_cfg.get("rr_min", 3.0)))
@@ -675,12 +676,17 @@ class S1v2SignalEvaluator:
 
             # --- STEP 6: Risk:Reward Gate ---
             entry_price = close_5m
-            stop_loss = state.pullback_extreme
+            raw_stop = state.pullback_extreme
+            atr_floor = self._atr_stop_floor_mult * atr
             if bias == "LONG":
+                # Wider stop = lower value = more room from entry
+                stop_loss = min(raw_stop, entry_price - atr_floor)
                 target = entry_price + self._atr_target_mult * atr
                 risk = entry_price - stop_loss
                 reward = target - entry_price
             else:
+                # Wider stop = higher value = more room from entry
+                stop_loss = max(raw_stop, entry_price + atr_floor)
                 target = entry_price - self._atr_target_mult * atr
                 risk = stop_loss - entry_price
                 reward = entry_price - target

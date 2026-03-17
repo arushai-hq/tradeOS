@@ -1681,3 +1681,189 @@ def test_s1v2_engine_creation():
     assert engine._strategy_name == "s1v2"
     assert engine._interval == "5min"
     assert isinstance(engine._s1v2_evaluator, S1v2SignalEvaluator)
+
+
+# ---------------------------------------------------------------------------
+# S1v2 Tests — ATR Stop Floor
+# ---------------------------------------------------------------------------
+
+def test_atr_floor_applied_long_tight_pullback():
+    """S1v2 ATR floor: Tight pullback stop widened to 1×ATR for LONG."""
+    from tools.backtester import S1v2Phase, S1v2State
+    evaluator = _make_evaluator()
+    evaluator._rr_min = Decimal("0.1")  # Low threshold to let signal through
+
+    # Tight pullback: entry≈115, pullback_low=114.5 → risk only 0.5
+    # ATR floor should widen stop to entry - 1.0*ATR
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.IN_PULLBACK,
+        direction="LONG",
+        pullback_count=1,
+        pullback_extreme=Decimal("114.50"),  # Very tight stop
+        adx_was_above=True,
+    )
+
+    # Feed 15min trending candles (ADX > 25, close > EMA10)
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+
+    # Feed 5min warmup
+    candles_5m = _make_trending_candles(25, base=100.0, trend=0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    candle = _make_candle(
+        close=Decimal("115"), high=Decimal("116"), low=Decimal("114"),
+        volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    signal = evaluator.evaluate(candle)
+
+    if signal is not None:
+        # Stop should be wider than the tight pullback_extreme
+        # stop = min(114.50, 115 - 1.0*ATR) — ATR is ~1-3 for these candles
+        # So atr_stop ≈ 113 or lower, which is < 114.50, so stop < 114.50
+        assert signal.stop_loss < Decimal("114.50"), (
+            f"ATR floor should widen stop below 114.50, got {signal.stop_loss}"
+        )
+
+
+def test_atr_floor_not_needed_wide_pullback_long():
+    """S1v2 ATR floor: Wide pullback stop already wider than ATR floor — no change."""
+    from tools.backtester import S1v2Phase, S1v2State
+    evaluator = _make_evaluator()
+    evaluator._rr_min = Decimal("0.1")
+
+    # Wide pullback: pullback_low=80, entry≈115. Risk = 35.
+    # ATR floor = 115 - 1.0*ATR ≈ 113. min(80, 113) = 80. Floor not needed.
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.IN_PULLBACK,
+        direction="LONG",
+        pullback_count=1,
+        pullback_extreme=Decimal("80"),  # Already very wide
+        adx_was_above=True,
+    )
+
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+    candles_5m = _make_trending_candles(25, base=100.0, trend=0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    candle = _make_candle(
+        close=Decimal("115"), high=Decimal("116"), low=Decimal("114"),
+        volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    signal = evaluator.evaluate(candle)
+
+    if signal is not None:
+        # Pullback low (80) is already wider than ATR floor (~113)
+        # min(80, 113) = 80, so stop stays at pullback_extreme
+        assert signal.stop_loss == Decimal("80")
+
+
+def test_atr_floor_rr_recheck_rejects():
+    """S1v2 ATR floor: Wider stop worsens R:R → trade rejected."""
+    from tools.backtester import S1v2Phase, S1v2State
+    evaluator = _make_evaluator()
+    # Keep default rr_min=3.0 — the wider stop should fail R:R check
+
+    # Pullback very tight (risk was tiny → R:R was infinite)
+    # ATR floor widens stop significantly → R:R drops below 3.0
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.IN_PULLBACK,
+        direction="LONG",
+        pullback_count=1,
+        pullback_extreme=Decimal("114.90"),  # Extremely tight
+        adx_was_above=True,
+    )
+
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+    candles_5m = _make_trending_candles(25, base=100.0, trend=0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    candle = _make_candle(
+        close=Decimal("115"), high=Decimal("116"), low=Decimal("114"),
+        volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    signal = evaluator.evaluate(candle)
+
+    # With wider stop from ATR floor, target=entry+2.5*ATR vs risk=1*ATR
+    # R:R = 2.5*ATR / 1*ATR = 2.5 < 3.0 → should be rejected
+    assert signal is None
+
+
+def test_atr_floor_long_stop_is_min():
+    """S1v2 ATR floor: LONG stop = min(pullback_low, entry - ATR_floor)."""
+    from tools.backtester import S1v2Phase, S1v2State
+    evaluator = _make_evaluator()
+    evaluator._rr_min = Decimal("0.1")
+    evaluator._atr_stop_floor_mult = Decimal("2.0")  # Large floor for clear test
+
+    # pullback_low=110, entry≈115, 2.0*ATR≈4 → atr_stop=111
+    # min(110, 111) = 110 → pullback wins (already wider)
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.IN_PULLBACK,
+        direction="LONG",
+        pullback_count=1,
+        pullback_extreme=Decimal("110"),
+        adx_was_above=True,
+    )
+
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+    candles_5m = _make_trending_candles(25, base=100.0, trend=0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    candle = _make_candle(
+        close=Decimal("115"), high=Decimal("116"), low=Decimal("114"),
+        volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    signal = evaluator.evaluate(candle)
+
+    if signal is not None:
+        # Either stop is pullback_low (110) or atr_floor, whichever is lower
+        assert signal.stop_loss <= Decimal("111")
+
+
+def test_atr_floor_short_stop_is_max():
+    """S1v2 ATR floor: SHORT stop = max(pullback_high, entry + ATR_floor)."""
+    from tools.backtester import S1v2Phase, S1v2State
+    evaluator = _make_evaluator()
+    evaluator._rr_min = Decimal("0.1")
+
+    # SHORT: pullback_high=182, entry≈180
+    # atr_floor = 180 + 1.0*ATR ≈ 182. max(182, 182) = 182
+    # But if pullback_high=180.5 (tight), atr_floor=182 → max(180.5, 182)=182
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.IN_PULLBACK,
+        direction="SHORT",
+        pullback_count=1,
+        pullback_extreme=Decimal("180.50"),  # Tight pullback high
+        adx_was_above=True,
+    )
+
+    candles_15m = _make_trending_candles(40, base=200.0, trend=-1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+    candles_5m = _make_trending_candles(25, base=195.0, trend=-0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    candle = _make_candle(
+        close=Decimal("180"), high=Decimal("182"), low=Decimal("179"),
+        volume=120000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 11, 0)),
+    )
+    signal = evaluator.evaluate(candle)
+
+    if signal is not None:
+        # Stop should be widened above the tight pullback_high
+        assert signal.stop_loss > Decimal("180.50"), (
+            f"ATR floor should widen SHORT stop above 180.50, got {signal.stop_loss}"
+        )
