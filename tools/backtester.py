@@ -505,6 +505,8 @@ class S1v2SignalEvaluator:
         self._volume_sma_period = s1v2_cfg.get("volume_sma_period", 20)
         self._rr_min = Decimal(str(s1v2_cfg.get("rr_min", 3.0)))
         self._time_stop_bars = s1v2_cfg.get("time_stop_bars", 30)
+        self._time_stop_bars_15min = s1v2_cfg.get("time_stop_bars_15min", 20)
+        self._timeframe_mode = s1v2_cfg.get("timeframe_mode", "single")
 
         # Per-instrument state machines (persist across days — ADX trend continues)
         self._states: dict[str, S1v2State] = defaultdict(S1v2State)
@@ -542,44 +544,59 @@ class S1v2SignalEvaluator:
             "close": buf[-1].close if buf else None,
         }
 
-    def _compute_5min_indicators(self, symbol: str) -> dict:
-        """Compute EMA20, ATR, volume SMA from 5min buffer."""
-        buf = self._candles_5min.get(symbol, [])
+    def _compute_entry_indicators(self, symbol: str) -> dict:
+        """Compute EMA20, ATR, volume SMA from entry-timeframe buffer.
+
+        Single mode: all indicators from 15min buffer.
+        Multi mode: indicators from 5min buffer.
+        """
+        if self._timeframe_mode == "single":
+            buf = self._candles_15min.get(symbol, [])
+        else:
+            buf = self._candles_5min.get(symbol, [])
         return {
             "ema20": compute_ema(buf, self._ema_pullback_period),
             "atr": compute_atr(buf, self._atr_period) if len(buf) >= 2 else Decimal("0"),
             "volume_sma": compute_volume_sma(buf, self._volume_sma_period),
         }
 
-    def evaluate(self, candle_5min: Candle) -> Optional[Signal]:
-        """Evaluate S1v2 signal flow on a 5min candle.
+    def evaluate(self, candle: Candle) -> Optional[Signal]:
+        """Evaluate S1v2 signal flow on an entry-timeframe candle.
 
+        Single mode: candle is 15min, all indicators from 15min.
+        Multi mode: candle is 5min, trend from 15min, entry from 5min.
         Returns Signal if all 7 steps pass, None otherwise.
         """
-        symbol = candle_5min.symbol
+        symbol = candle.symbol
 
-        # Add candle to 5min buffer
-        buf = self._candles_5min[symbol]
-        buf.append(candle_5min)
-        if len(buf) > 200:
-            self._candles_5min[symbol] = buf[-200:]
+        # Add candle to entry-timeframe buffer
+        if self._timeframe_mode == "single":
+            buf = self._candles_15min[symbol]
+            buf.append(candle)
+            if len(buf) > 200:
+                self._candles_15min[symbol] = buf[-200:]
+        else:
+            buf = self._candles_5min[symbol]
+            buf.append(candle)
+            if len(buf) > 200:
+                self._candles_5min[symbol] = buf[-200:]
 
         # Get state
         state = self._states[symbol]
 
         # Compute indicators
         ind_15m = self._compute_15min_indicators(symbol)
-        ind_5m = self._compute_5min_indicators(symbol)
+        ind_entry = self._compute_entry_indicators(symbol)
 
         ema10_15m = ind_15m["ema10"]
         adx = ind_15m["adx"]
         close_15m = ind_15m["close"]
-        ema20_5m = ind_5m["ema20"]
-        atr = ind_5m["atr"]
-        vol_sma = ind_5m["volume_sma"]
+        ema20 = ind_entry["ema20"]
+        atr = ind_entry["atr"]
+        vol_sma = ind_entry["volume_sma"]
 
         # Insufficient indicator data — skip
-        if any(v is None for v in (ema10_15m, adx, close_15m, ema20_5m)):
+        if any(v is None for v in (ema10_15m, adx, close_15m, ema20)):
             return None
         if atr <= 0 or vol_sma is None or vol_sma <= 0:
             return None
@@ -624,15 +641,15 @@ class S1v2SignalEvaluator:
             state.pullback_count = 0
             state.phase = S1v2Phase.WATCHING_FOR_PULLBACK
 
-        close_5m = candle_5min.close
+        close_entry = candle.close
 
-        # --- STEP 3: Pullback Detection (5min) ---
+        # --- STEP 3: Pullback Detection (entry timeframe) ---
         if state.phase == S1v2Phase.WATCHING_FOR_PULLBACK:
             # Check if price crosses wrong side of EMA20
             in_pullback = False
-            if bias == "LONG" and close_5m < ema20_5m:
+            if bias == "LONG" and close_entry < ema20:
                 in_pullback = True
-            elif bias == "SHORT" and close_5m > ema20_5m:
+            elif bias == "SHORT" and close_entry > ema20:
                 in_pullback = True
 
             if in_pullback:
@@ -640,23 +657,23 @@ class S1v2SignalEvaluator:
                 state.pullback_count += 1
                 # Initialize pullback extreme
                 if bias == "LONG":
-                    state.pullback_extreme = candle_5min.low
+                    state.pullback_extreme = candle.low
                 else:
-                    state.pullback_extreme = candle_5min.high
+                    state.pullback_extreme = candle.high
             return None
 
         if state.phase == S1v2Phase.IN_PULLBACK:
             # Update pullback extreme
             if bias == "LONG":
-                state.pullback_extreme = min(state.pullback_extreme, candle_5min.low)
+                state.pullback_extreme = min(state.pullback_extreme, candle.low)
             else:
-                state.pullback_extreme = max(state.pullback_extreme, candle_5min.high)
+                state.pullback_extreme = max(state.pullback_extreme, candle.high)
 
             # --- STEP 4: Entry Trigger — reclaim EMA20 ---
             reclaimed = False
-            if bias == "LONG" and close_5m > ema20_5m:
+            if bias == "LONG" and close_entry > ema20:
                 reclaimed = True
-            elif bias == "SHORT" and close_5m < ema20_5m:
+            elif bias == "SHORT" and close_entry < ema20:
                 reclaimed = True
 
             if not reclaimed:
@@ -668,14 +685,14 @@ class S1v2SignalEvaluator:
                 return None
 
             # --- STEP 5: Volume Confirmation ---
-            vol_ratio = Decimal(str(candle_5min.volume)) / vol_sma
+            vol_ratio = Decimal(str(candle.volume)) / vol_sma
             if vol_ratio < self._volume_ratio_min:
                 # Volume too low — back to watching (pullback consumed)
                 state.phase = S1v2Phase.WATCHING_FOR_PULLBACK
                 return None
 
             # --- STEP 6: Risk:Reward Gate ---
-            entry_price = close_5m
+            entry_price = close_entry
             raw_stop = state.pullback_extreme
             atr_floor = self._atr_stop_floor_mult * atr
             if bias == "LONG":
@@ -712,21 +729,28 @@ class S1v2SignalEvaluator:
 
             return Signal(
                 symbol=symbol,
-                instrument_token=candle_5min.instrument_token,
+                instrument_token=candle.instrument_token,
                 direction=bias,
-                signal_time=candle_5min.candle_time,
-                candle_time=candle_5min.candle_time,
+                signal_time=candle.candle_time,
+                candle_time=candle.candle_time,
                 theoretical_entry=entry_price,
                 stop_loss=stop_loss,
                 target=target,
                 ema9=ema10_15m,     # Repurpose: EMA10(15min)
-                ema21=ema20_5m,     # Repurpose: EMA20(5min)
+                ema21=ema20,     # Repurpose: EMA20(entry TF)
                 rsi=adx,            # Repurpose: ADX
-                vwap=candle_5min.vwap,
+                vwap=candle.vwap,
                 volume_ratio=vol_ratio,
             )
 
         return None
+
+    @property
+    def effective_time_stop_bars(self) -> int:
+        """Return time stop bars for the active timeframe mode."""
+        if self._timeframe_mode == "single":
+            return self._time_stop_bars_15min
+        return self._time_stop_bars
 
     def on_trade_closed(self, symbol: str) -> None:
         """Called when a trade is closed — transition state back to WATCHING."""
@@ -786,10 +810,11 @@ class BacktestEngine:
         self._pending_partial_trades: list[BacktestTrade] = []
 
         if self._strategy_name == "s1v2":
-            # S1v2: multi-timeframe, uses 5min for execution
-            self._interval = "5min"
             self._s1v2_evaluator = S1v2SignalEvaluator(config)
             self._s1v2_warmed_up: set[str] = set()
+            # Interval depends on timeframe mode
+            self._s1v2_tf_mode = self._s1v2_evaluator._timeframe_mode
+            self._interval = "15min" if self._s1v2_tf_mode == "single" else "5min"
             # S1 components not needed for s1v2 but initialize for safety
             self._signal_gen = None  # type: ignore[assignment]
             self._indicator_engines: dict[str, IndicatorEngine] = {}
@@ -839,7 +864,11 @@ class BacktestEngine:
             regime_adapter = BacktestRegimeAdapter(regime)
 
             # Process the day — dispatch by strategy
-            if self._strategy_name == "s1v2":
+            if self._strategy_name == "s1v2" and self._s1v2_tf_mode == "single":
+                day_trades = await self._process_day_s1v2_single(
+                    day, regime_adapter, symbols,
+                )
+            elif self._strategy_name == "s1v2":
                 day_trades = await self._process_day_s1v2(
                     day, regime_adapter, symbols,
                 )
@@ -1081,6 +1110,39 @@ class BacktestEngine:
             return candles
 
         return _rows_to_list(rows_5), _rows_to_list(rows_15)
+
+    async def _load_warmup_candles_15min(
+        self, day: date, symbol: str, days_back: int = 5
+    ) -> list[Candle]:
+        """Load prior days of 15min candles for S1v2 single-TF warmup."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT instrument_token, symbol, open, high, low, close,
+                       volume, candle_time, session_date
+                FROM backtest_candles
+                WHERE symbol = $1 AND interval = '15min' AND session_date < $2
+                ORDER BY candle_time DESC
+                LIMIT $3
+                """,
+                symbol, day, days_back * 25,
+            )
+        candles = []
+        for r in reversed(rows):
+            candles.append(Candle(
+                instrument_token=r["instrument_token"],
+                symbol=r["symbol"],
+                open=Decimal(str(r["open"])),
+                high=Decimal(str(r["high"])),
+                low=Decimal(str(r["low"])),
+                close=Decimal(str(r["close"])),
+                volume=int(r["volume"]),
+                vwap=Decimal(str(r["close"])),
+                candle_time=r["candle_time"] if r["candle_time"].tzinfo else IST.localize(r["candle_time"]),
+                session_date=r["session_date"],
+                tick_count=0,
+            ))
+        return candles
 
     async def _compute_regime(self, day: date) -> MarketRegime:
         """Compute market regime for a given day from historical data."""
@@ -1406,8 +1468,8 @@ class BacktestEngine:
                 pos = open_positions[symbol]
                 bar_counts[symbol] += 1
 
-                # Time stop: 30 bars of 5min = 150 minutes
-                if bar_counts[symbol] >= self._s1v2_evaluator._time_stop_bars:
+                # Time stop (multi mode: 30 bars × 5min = 150min)
+                if bar_counts[symbol] >= self._s1v2_evaluator.effective_time_stop_bars:
                     trade = self._close_position(pos, candle.close, candle.candle_time, "TIME_STOP")
                     day_trades.append(trade)
                     del open_positions[symbol]
@@ -1501,6 +1563,174 @@ class BacktestEngine:
         for symbol, pos in list(open_positions.items()):
             last_candle = None
             for c in reversed(all_5min):
+                if c.symbol == symbol:
+                    last_candle = c
+                    break
+            if last_candle:
+                trade = self._close_position(
+                    pos, last_candle.close, last_candle.candle_time, "HARD_EXIT"
+                )
+                day_trades.append(trade)
+                evaluator.on_trade_closed(symbol)
+
+        return day_trades
+
+    # ------------------------------------------------------------------
+    # S1v2: single-timeframe (15min only) simulation loop
+    # ------------------------------------------------------------------
+
+    async def _process_day_s1v2_single(
+        self,
+        day: date,
+        regime_adapter: BacktestRegimeAdapter,
+        symbols: list[str],
+    ) -> list[BacktestTrade]:
+        """Simulate one trading day using S1v2 on 15min candles only.
+
+        All indicators computed on 15min. No 5min data loaded.
+        """
+        evaluator = self._s1v2_evaluator
+        evaluator.reset_session()
+
+        # Load 15min candles (reuse the single-interval S1 loader)
+        candles_by_sym = await self._load_day_candles(day, symbols)
+        if not candles_by_sym:
+            return []
+
+        # Compute VWAP on 15min candles
+        for symbol in candles_by_sym:
+            candles_by_sym[symbol] = self._compute_vwap_for_day(candles_by_sym[symbol])
+
+        # Warmup: 15min only
+        for symbol in candles_by_sym:
+            if symbol not in self._s1v2_warmed_up:
+                warmup = await self._load_warmup_candles_15min(day, symbol)
+                evaluator.feed_warmup_15min(symbol, warmup)
+                self._s1v2_warmed_up.add(symbol)
+
+        # Merge all 15min candles chronologically
+        all_candles: list[Candle] = []
+        for candle_list in candles_by_sym.values():
+            all_candles.extend(candle_list)
+        all_candles.sort(key=lambda c: c.candle_time)
+
+        # Simulated state
+        open_positions: dict[str, BacktestPosition] = {}
+        bar_counts: dict[str, int] = defaultdict(int)
+        shared_state: dict = {
+            "open_positions": {},
+            "pending_signals": 0,
+            "kill_switch_level": 0,
+        }
+        time_stop = evaluator.effective_time_stop_bars
+
+        config = self._config
+        day_trades: list[BacktestTrade] = []
+
+        for candle in all_candles:
+            symbol = candle.symbol
+
+            # --- Check exits for open positions ---
+            if symbol in open_positions:
+                pos = open_positions[symbol]
+                bar_counts[symbol] += 1
+
+                # Time stop
+                if bar_counts[symbol] >= time_stop:
+                    trade = self._close_position(pos, candle.close, candle.candle_time, "TIME_STOP")
+                    day_trades.append(trade)
+                    del open_positions[symbol]
+                    del bar_counts[symbol]
+                    evaluator.on_trade_closed(symbol)
+                    shared_state["open_positions"] = {
+                        s: {"direction": p.direction}
+                        for s, p in open_positions.items()
+                    }
+                    continue
+
+                # Fixed exit (stop/target)
+                trade = self._check_fixed_exit(pos, candle)
+                if trade is not None:
+                    day_trades.append(trade)
+                    del open_positions[symbol]
+                    if symbol in bar_counts:
+                        del bar_counts[symbol]
+                    evaluator.on_trade_closed(symbol)
+                    shared_state["open_positions"] = {
+                        s: {"direction": p.direction}
+                        for s, p in open_positions.items()
+                    }
+
+            # --- Hard exit at 15:00 ---
+            ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+            if ct >= HARD_EXIT_TIME and symbol in open_positions:
+                pos = open_positions[symbol]
+                trade = self._close_position(pos, candle.close, candle.candle_time, "HARD_EXIT")
+                day_trades.append(trade)
+                del open_positions[symbol]
+                if symbol in bar_counts:
+                    del bar_counts[symbol]
+                evaluator.on_trade_closed(symbol)
+                shared_state["open_positions"] = {
+                    s: {"direction": p.direction}
+                    for s, p in open_positions.items()
+                }
+                continue
+
+            # --- Signal generation (S1v2 single-TF) ---
+            if ct >= HARD_EXIT_TIME:
+                continue
+
+            # No anti-leakage gate needed — single timeframe
+            signal = evaluator.evaluate(candle)
+            if signal is None:
+                continue
+
+            # Risk gate check
+            allowed, reason = self._risk_gate.check(
+                signal, shared_state, config, candle.candle_time, regime_adapter,
+            )
+            if not allowed:
+                continue
+
+            # Position sizing
+            entry_price = self._apply_slippage(
+                signal.theoretical_entry, signal.direction, is_entry=True
+            )
+            qty = self._position_sizer.calculate(
+                entry_price=entry_price,
+                stop_loss=signal.stop_loss,
+                slot_capital=self._slot_capital,
+                risk_pct=self._risk_pct,
+                min_risk_floor=self._min_risk_floor,
+            )
+            if qty is None or qty == 0:
+                continue
+
+            # Open position
+            pos = BacktestPosition(
+                symbol=signal.symbol,
+                instrument_token=signal.instrument_token,
+                direction=signal.direction,
+                entry_price=entry_price,
+                entry_time=candle.candle_time,
+                qty=qty,
+                stop_loss=signal.stop_loss,
+                target=signal.target,
+                original_stop=signal.stop_loss,
+                regime=regime_adapter.current_regime().value,
+            )
+            open_positions[signal.symbol] = pos
+            bar_counts[signal.symbol] = 0
+            shared_state["open_positions"] = {
+                s: {"direction": p.direction}
+                for s, p in open_positions.items()
+            }
+
+        # End of day: force-close remaining positions
+        for symbol, pos in list(open_positions.items()):
+            last_candle = None
+            for c in reversed(all_candles):
                 if c.symbol == symbol:
                     last_candle = c
                     break
@@ -1907,6 +2137,7 @@ _CONFIG_PATH_PARAMS: dict[str, list[str]] = {
     "s1v2_volume_ratio_min": ["strategy", "s1v2", "volume_ratio_min"],
     "rr_min": ["strategy", "s1v2", "rr_min"],
     "time_stop_bars": ["strategy", "s1v2", "time_stop_bars"],
+    "time_stop_bars_15min": ["strategy", "s1v2", "time_stop_bars_15min"],
     "ema_trend_period": ["strategy", "s1v2", "ema_trend_period"],
     "ema_pullback_period": ["strategy", "s1v2", "ema_pullback_period"],
     # Shared params

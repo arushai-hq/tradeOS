@@ -56,7 +56,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **613 passing, 0 failures, 12 skipped** |
+| Tests | **618 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -114,6 +114,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 18. **Strategy research methodology** — Derived from studying 7 proven short-term traders. Key principles extracted: (a) enter on pullback/reversal not exhausted momentum, (b) asymmetric R:R minimum 3:1, (c) regime awareness — don't trade choppy markets, (d) fast exits via price stop + time stop, (e) directional filter — never trade against prevailing trend.
 19. **S1v2 ATR stop floor** — Stop = wider of (pullback low/high, entry ± 1.0×ATR). Prevents position sizer rejection from tight 5min pullback stops. R:R gate recalculates with wider stop. Config: `strategy.s1v2.atr_stop_floor_mult: 1.0`.
 20. **Backtester min_risk_floor override** — Live position sizer uses ₹1,000 min_risk_floor. On 5min NIFTY 50 stocks, per-trade risk is ₹200-400 — always below ₹1,000. Backtester overrides to ₹200 (covers round-trip commission ₹40) via `config/settings.yaml` → `backtester.min_risk_floor: 200`. No `core/` changes — override passed as kwarg to `position_sizer.calculate()`.
+21. **S1v2 5min timeframe failed** — 108 trades, -₹36,158, 18.5% win rate, profit factor 0.23. 5min ATR too small for NIFTY 50 large-caps. Targets unreachable before stops hit. Switching to 15min single-timeframe mode.
+22. **S1v2 15min single-timeframe mode** — All indicators and entries on 15min. Config: `strategy.s1v2.timeframe_mode: single`. Time stop: 20 bars × 15min = 300min. Multi-TF mode preserved via `timeframe_mode: multi`.
 
 ---
 
@@ -207,4 +209,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — S1v2 backtester implemented (TRADEOS-03-CC002, a38144a). ATR stop floor fix (TRADEOS-03-CC003). Backtester min_risk_floor override ₹200 (TRADEOS-03-CC004). First backtest run pending (needs VPS data). Tests: 613 passing.
+**2026-03-17** — S1v2 5min backtest failed (run #9: -₹36,158, 18.5% WR). 15min single-timeframe mode implemented (CC005). Re-run pending. Tests: 618 passing.

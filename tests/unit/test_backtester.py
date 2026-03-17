@@ -942,10 +942,11 @@ def _minimal_config() -> dict:
     }
 
 
-def _minimal_config_s1v2() -> dict:
+def _minimal_config_s1v2(timeframe_mode: str = "multi") -> dict:
     """Minimal config dict for S1v2 engine construction."""
     cfg = _minimal_config()
     cfg["strategy"]["s1v2"] = {
+        "timeframe_mode": timeframe_mode,
         "ema_trend_period": 10,
         "ema_pullback_period": 20,
         "adx_period": 14,
@@ -956,6 +957,7 @@ def _minimal_config_s1v2() -> dict:
         "volume_sma_period": 20,
         "rr_min": 3.0,
         "time_stop_bars": 30,
+        "time_stop_bars_15min": 20,
     }
     cfg["_strategy_override"] = "s1v2"
     return cfg
@@ -1891,3 +1893,110 @@ def test_atr_floor_short_stop_is_max():
         assert signal.stop_loss > Decimal("180.50"), (
             f"ATR floor should widen SHORT stop above 180.50, got {signal.stop_loss}"
         )
+
+
+# ---------------------------------------------------------------------------
+# S1v2 Tests — Single-Timeframe (15min) Mode
+# ---------------------------------------------------------------------------
+
+
+def test_single_tf_evaluator_uses_15min_buffer():
+    """Single-TF mode: evaluate() adds candle to 15min buffer, not 5min."""
+    from tools.backtester import S1v2SignalEvaluator
+    evaluator = S1v2SignalEvaluator(_minimal_config_s1v2("single"))
+
+    # Feed 15min warmup to fill indicator buffer
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    evaluator.feed_warmup_15min("RELIANCE", candles_15m)
+
+    candle = _make_candle(
+        close=Decimal("150"), high=Decimal("152"), low=Decimal("148"),
+        volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 10, 0)),
+    )
+    evaluator.evaluate(candle)
+
+    # Candle should be in 15min buffer (single mode adds to 15min)
+    assert len(evaluator._candles_15min["RELIANCE"]) == 41  # 40 warmup + 1
+    # 5min buffer should be empty (no 5min data in single mode)
+    assert len(evaluator._candles_5min["RELIANCE"]) == 0
+
+
+def test_single_tf_indicators_from_15min():
+    """Single-TF mode: entry indicators computed from 15min buffer."""
+    from tools.backtester import S1v2SignalEvaluator
+    evaluator = S1v2SignalEvaluator(_minimal_config_s1v2("single"))
+
+    # Only feed 15min data — no 5min at all
+    candles_15m = _make_trending_candles(40, base=100.0, trend=1.0)
+    evaluator.feed_warmup_15min("RELIANCE", candles_15m)
+
+    # _compute_entry_indicators should work from 15min buffer
+    ind = evaluator._compute_entry_indicators("RELIANCE")
+    assert ind["ema20"] is not None, "EMA20 should be computable from 15min data"
+    assert ind["atr"] > 0, "ATR should be computable from 15min data"
+    assert ind["volume_sma"] is not None, "Volume SMA should be computable from 15min data"
+
+    # Verify 5min buffer gives nothing (since no 5min data loaded)
+    assert len(evaluator._candles_5min.get("RELIANCE", [])) == 0
+
+
+def test_single_tf_time_stop_uses_15min_config():
+    """Single-TF mode: effective_time_stop_bars returns time_stop_bars_15min."""
+    from tools.backtester import S1v2SignalEvaluator
+
+    # Single mode → uses time_stop_bars_15min (20)
+    eval_single = S1v2SignalEvaluator(_minimal_config_s1v2("single"))
+    assert eval_single.effective_time_stop_bars == 20
+
+    # Multi mode → uses time_stop_bars (30)
+    eval_multi = S1v2SignalEvaluator(_minimal_config_s1v2("multi"))
+    assert eval_multi.effective_time_stop_bars == 30
+
+
+def test_single_tf_engine_interval_15min():
+    """Single-TF mode: BacktestEngine sets interval to 15min."""
+    from tools.backtester import BacktestEngine
+    from unittest.mock import MagicMock
+
+    cfg_single = _minimal_config_s1v2("single")
+    engine_single = BacktestEngine(pool=MagicMock(), config=cfg_single)
+    assert engine_single._interval == "15min"
+
+    cfg_multi = _minimal_config_s1v2("multi")
+    engine_multi = BacktestEngine(pool=MagicMock(), config=cfg_multi)
+    assert engine_multi._interval == "5min"
+
+
+def test_multi_tf_backward_compat():
+    """Multi-TF mode unchanged: evaluator still uses separate 5min buffer."""
+    from tools.backtester import S1v2Phase, S1v2State, S1v2SignalEvaluator
+    evaluator = S1v2SignalEvaluator(_minimal_config_s1v2("multi"))
+
+    # Manually set state for LONG pullback detection
+    evaluator._states["RELIANCE"] = S1v2State(
+        phase=S1v2Phase.WATCHING_FOR_PULLBACK,
+        direction="LONG",
+        pullback_count=0,
+        adx_was_above=True,
+    )
+
+    # Feed 15min + 5min data (multi mode pattern)
+    candles_15m = _make_trending_candles(40, trend=1.0)
+    for c in candles_15m:
+        evaluator.feed_15min_candle(c)
+    candles_5m = _make_trending_candles(25, base=100.0, trend=0.5)
+    evaluator.feed_warmup_5min("RELIANCE", candles_5m)
+
+    # Evaluate with candle below EMA20 → IN_PULLBACK
+    candle = _make_candle(
+        close=Decimal("95"), high=Decimal("96"), low=Decimal("94"),
+        volume=50000,
+        candle_time=IST.localize(datetime(2026, 3, 1, 12, 0)),
+    )
+    evaluator.evaluate(candle)
+
+    state = evaluator._states["RELIANCE"]
+    assert state.phase == S1v2Phase.IN_PULLBACK
+    # Candle went to 5min buffer (multi mode)
+    assert len(evaluator._candles_5min["RELIANCE"]) == 26  # 25 warmup + 1

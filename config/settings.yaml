@@ -46,17 +46,19 @@ strategy:
     min_stop_pct: 0.02         # 2.0% minimum stop distance from entry
 
   s1v2:
+    timeframe_mode: single      # 'single' = all on 15min, 'multi' = 15min trend + 5min entry
     ema_trend_period: 10        # Directional filter EMA (15min)
-    ema_pullback_period: 20     # Pullback detection EMA (5min)
+    ema_pullback_period: 20     # Pullback detection EMA (5min in multi, 15min in single)
     adx_period: 14              # ADX period (15min)
     adx_threshold: 25           # Trend confirmation threshold
-    atr_period: 14              # ATR for target calc (5min)
+    atr_period: 14              # ATR for target calc (5min in multi, 15min in single)
     atr_target_mult: 2.5        # Target = entry ± 2.5×ATR
-    atr_stop_floor_mult: 1.0    # Minimum stop distance = 1.0 × ATR(14, 5min)
+    atr_stop_floor_mult: 1.0    # Minimum stop distance = 1.0 × ATR(14)
     volume_ratio_min: 1.5       # Trigger bar vol / SMA(20) threshold
     volume_sma_period: 20       # Volume SMA lookback
     rr_min: 3.0                 # Minimum risk:reward ratio
-    time_stop_bars: 30          # Max bars in trade (5min = 150min)
+    time_stop_bars: 30          # Max bars in trade — multi mode (5min = 150min)
+    time_stop_bars_15min: 20    # Max bars in trade — single mode (15min = 300min)
 
 # Backtester-specific overrides (live trading ignores this section)
 backtester:
