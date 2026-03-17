@@ -96,6 +96,15 @@ All operations go through the `tradeos` command. Set `TRADEOS_DIR` to override t
 | `tradeos data download --symbol RELIANCE --interval 15min --days 200` | Single symbol |
 | `tradeos data status` | Show download coverage per interval |
 
+### Futures Data
+
+| Command | Description |
+|---------|-------------|
+| `tradeos futures download --all` | Download all intervals for NIFTY + BANKNIFTY (18 months) |
+| `tradeos futures download --interval 15min --days 548` | Download 15min futures candles |
+| `tradeos futures download --instrument NIFTY` | Single instrument |
+| `tradeos futures status` | Show futures download coverage |
+
 ### Backtesting
 
 | Command | Description |

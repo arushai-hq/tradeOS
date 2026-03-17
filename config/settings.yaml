@@ -253,6 +253,23 @@ trading:
     - symbol: WIPRO
       token: 969473
 
+# Futures configuration — NIFTY/BANKNIFTY index futures (NFO)
+futures:
+  instruments:
+    - name: NIFTY
+      lot_size: 65
+      tradingsymbol_prefix: "NIFTY"
+      exclude_prefixes: ["NIFTYIT", "NIFTYNXT50", "FINNIFTY", "MIDCPNIFTY"]
+    - name: BANKNIFTY
+      lot_size: 30
+      tradingsymbol_prefix: "BANKNIFTY"
+      exclude_prefixes: []
+  download:
+    intervals: ["5min", "15min", "day"]
+    lookback_months: 18
+    oi: true
+    continuous: true
+
 # Token automation — daily Zerodha token refresh
 token_automation:
   server:

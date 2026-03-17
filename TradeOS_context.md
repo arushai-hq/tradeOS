@@ -86,7 +86,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
 | Futures pivot | **Decision locked.** NIFTY + BANKNIFTY index futures. Backtest-first approach — validate S1v2/S1v3 on 18 months of futures data before building trading engine. |
-| Futures data | **Pending CC001.** 18 months (Sep 2024 → Mar 2026), 5min + 15min + day, OI included. |
+| Futures data | **CC001 complete.** `tools/futures_data_downloader.py` + `migrations/003_futures_backtest_tables.sql`. CLI: `tradeos futures download/status`. 3 intervals (5min, 15min, day), OI, continuous=True. Pending VPS deploy + actual download. |
 | Futures backtester | **Pending CC002.** Lot-based sizing, futures charges, single-instrument mode. |
 | NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
 | NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |

@@ -391,6 +391,36 @@ cmd_data() {
 }
 
 # ---------------------------------------------------------------------------
+# Futures commands
+# ---------------------------------------------------------------------------
+
+cmd_futures() {
+    local subcmd="${1:-}"
+    if [ -z "$subcmd" ]; then
+        echo "Usage: tradeos futures <download|status> [args...]"
+        exit 1
+    fi
+    shift
+
+    _require_venv
+    cd "$TRADEOS_DIR"
+
+    case "$subcmd" in
+        download)
+            "$PYTHON" tools/futures_data_downloader.py download "$@"
+            ;;
+        status)
+            "$PYTHON" tools/futures_data_downloader.py status "$@"
+            ;;
+        *)
+            echo "$(_red "Unknown futures command"): $subcmd"
+            echo "Usage: tradeos futures <download|status> [args...]"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Backtest commands
 # ---------------------------------------------------------------------------
 
@@ -934,6 +964,12 @@ DATA (Backtest)
   tradeos data download --symbol RELIANCE --interval 15min --days 200
   tradeos data status                                  Show download coverage
 
+FUTURES DATA
+  tradeos futures download --all                         All intervals for NIFTY + BANKNIFTY
+  tradeos futures download --interval 15min --days 548   Download 15min futures candles
+  tradeos futures download --instrument NIFTY            Single instrument
+  tradeos futures status                                 Show futures download coverage
+
 BACKTEST
   tradeos backtest run --from 2025-09-01 --to 2026-03-16
   tradeos backtest run --exit-mode trailing --atr-mult 1.5 --from 2025-09-01 --to 2026-03-16
@@ -1019,6 +1055,7 @@ main() {
         report)       cmd_report "$@" ;;
         hawk)         cmd_hawk "$@" ;;
         data)         cmd_data "$@" ;;
+        futures)      cmd_futures "$@" ;;
         backtest)     cmd_backtest "$@" ;;
         logs)         cmd_logs "$@" ;;
         db)           cmd_db "$@" ;;
