@@ -391,6 +391,38 @@ cmd_data() {
 }
 
 # ---------------------------------------------------------------------------
+# Backtest commands
+# ---------------------------------------------------------------------------
+
+cmd_backtest() {
+    local subcmd="${1:-run}"
+    shift 2>/dev/null || true
+
+    _require_venv
+    cd "$TRADEOS_DIR"
+
+    case "$subcmd" in
+        run)
+            "$PYTHON" tools/backtester.py run "$@"
+            ;;
+        optimize)
+            "$PYTHON" tools/backtester.py optimize "$@"
+            ;;
+        compare)
+            "$PYTHON" tools/backtester.py compare "$@"
+            ;;
+        show)
+            "$PYTHON" tools/backtester.py show "$@"
+            ;;
+        *)
+            echo "$(_red "Unknown backtest command"): $subcmd"
+            echo "Usage: tradeos backtest <run|optimize|compare|show> [args...]"
+            exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Logs commands
 # ---------------------------------------------------------------------------
 
@@ -902,6 +934,15 @@ DATA (Backtest)
   tradeos data download --symbol RELIANCE --interval 15min --days 200
   tradeos data status                                  Show download coverage
 
+BACKTEST
+  tradeos backtest run --from 2025-09-01 --to 2026-03-16
+  tradeos backtest run --exit-mode trailing --atr-mult 1.5 --from 2025-09-01 --to 2026-03-16
+  tradeos backtest run --exit-mode partial --from 2025-09-01 --to 2026-03-16
+  tradeos backtest optimize --param atr_multiplier --range 1.0:0.25:3.0 --from 2025-09-01 --to 2026-03-16
+  tradeos backtest compare --modes fixed,trailing,partial --from 2025-09-01 --to 2026-03-16
+  tradeos backtest show --last-run                     Show most recent run
+  tradeos backtest show --run-id 5                     Show specific run
+
 LOGS
   tradeos logs tail             Tail today's trading log
   tradeos logs list             List recent log files
@@ -947,6 +988,8 @@ EXAMPLES
   tradeos cron status                                  # Check cron entries
   tradeos data download --all                             # Download all historical data
   tradeos data status                                     # Check download coverage
+  tradeos backtest run --from 2025-09-01 --to 2026-03-16  # Run S1 backtest
+  tradeos backtest compare --modes fixed,trailing,partial  # Compare exit modes
   TRADEOS_DIR=. tradeos test -x -q                     # Run from dev checkout
 HELP
 }
@@ -976,6 +1019,7 @@ main() {
         report)       cmd_report "$@" ;;
         hawk)         cmd_hawk "$@" ;;
         data)         cmd_data "$@" ;;
+        backtest)     cmd_backtest "$@" ;;
         logs)         cmd_logs "$@" ;;
         db)           cmd_db "$@" ;;
         docker)       cmd_docker "$@" ;;
