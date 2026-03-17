@@ -959,7 +959,9 @@ class FuturesBacktestEngine:
                 date_from=date_from, date_to=date_to,
             )
 
-        regime_adapter = BacktestRegimeAdapter()
+        # Index futures: default to HIGH_VOLATILITY — allows both long and short signals.
+        # The 0.5 position_size_multiplier is unused (futures sizer is lot-based).
+        regime_adapter = BacktestRegimeAdapter(MarketRegime.HIGH_VOLATILITY)
         all_trades: list[BacktestTrade] = []
         daily_results: list[DailyResult] = []
 
