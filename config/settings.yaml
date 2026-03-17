@@ -284,17 +284,20 @@ futures:
       timeframe_mode: "single"     # single (15min only) or multi (5min+15min)
       ema_fast: 10
       ema_slow: 20
-      adx_threshold: 20
+      adx_threshold: 15            # Index ADX reads structurally lower (components cancel)
       pullback_candles: 3
       atr_period: 14
       atr_stop_multiplier: 1.5
+      volume_ratio_min: 1.2        # Index volume is smoother than single stocks
+      rr_min: 2.0                  # 2R achievable intraday on index; 3R too ambitious
     s1v3:
       interval: "15min"
       rsi_period: 14
-      rsi_oversold: 30
-      rsi_overbought: 70
+      rsi_oversold: 35             # Index RSI rarely hits 30 on 15min
+      rsi_overbought: 65           # Index RSI rarely hits 70 on 15min
       bb_period: 20
       bb_std: 2.0
+      panic_atr_multiplier: 1.5    # Index panic moves smaller than single stocks
 
 # Token automation — daily Zerodha token refresh
 token_automation:

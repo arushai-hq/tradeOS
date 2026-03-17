@@ -886,6 +886,7 @@ class TestEdgeCases:
 
         mock_conn = AsyncMock()
         mock_conn.fetch.return_value = []  # No trading days
+        mock_conn.fetchrow.return_value = None  # No near-month contract
 
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = _async_ctx(mock_conn)
