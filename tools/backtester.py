@@ -1132,7 +1132,8 @@ class BacktestEngine:
         self._pending_partial_trades: list[BacktestTrade] = []
 
         if self._strategy_name == "s1v3":
-            self._interval = "15min"
+            s1v3_cfg = config.get("strategy", {}).get("s1v3", {})
+            self._interval = s1v3_cfg.get("interval", "5min")
             self._s1v3_evaluator = S1v3SignalEvaluator(config)
             self._s1v3_warmed_up: set[str] = set()
             self._signal_gen = None  # type: ignore[assignment]
@@ -1459,6 +1460,40 @@ class BacktestEngine:
                 LIMIT $3
                 """,
                 symbol, day, days_back * 25,
+            )
+        candles = []
+        for r in reversed(rows):
+            candles.append(Candle(
+                instrument_token=r["instrument_token"],
+                symbol=r["symbol"],
+                open=Decimal(str(r["open"])),
+                high=Decimal(str(r["high"])),
+                low=Decimal(str(r["low"])),
+                close=Decimal(str(r["close"])),
+                volume=int(r["volume"]),
+                vwap=Decimal(str(r["close"])),
+                candle_time=r["candle_time"] if r["candle_time"].tzinfo else IST.localize(r["candle_time"]),
+                session_date=r["session_date"],
+                tick_count=0,
+            ))
+        return candles
+
+    async def _load_warmup_candles(
+        self, day: date, symbol: str, days_back: int = 5
+    ) -> list[Candle]:
+        """Load prior days of candles at self._interval for warmup."""
+        bars_per_day = 75 if self._interval == "5min" else 25
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT instrument_token, symbol, open, high, low, close,
+                       volume, candle_time, session_date
+                FROM backtest_candles
+                WHERE symbol = $1 AND interval = $2 AND session_date < $3
+                ORDER BY candle_time DESC
+                LIMIT $4
+                """,
+                symbol, self._interval, day, days_back * bars_per_day,
             )
         candles = []
         for r in reversed(rows):
@@ -2099,10 +2134,10 @@ class BacktestEngine:
         for symbol in candles_by_sym:
             candles_by_sym[symbol] = self._compute_vwap_for_day(candles_by_sym[symbol])
 
-        # Warmup: 15min candles for indicator history
+        # Warmup: candles at configured interval for indicator history
         for symbol in candles_by_sym:
             if symbol not in self._s1v3_warmed_up:
-                warmup = await self._load_warmup_candles_15min(day, symbol)
+                warmup = await self._load_warmup_candles(day, symbol)
                 evaluator.feed_warmup_15min(symbol, warmup)
                 self._s1v3_warmed_up.add(symbol)
 
@@ -2629,6 +2664,7 @@ _CONFIG_PATH_PARAMS: dict[str, list[str]] = {
     "reversal_timeout_bars": ["strategy", "s1v3", "reversal_timeout_bars"],
     "bb_period": ["strategy", "s1v3", "bb_period"],
     "bb_std": ["strategy", "s1v3", "bb_std"],
+    "s1v3_interval": ["strategy", "s1v3", "interval"],
     # Shared params
     "no_entry_after": ["trading_hours", "no_entry_after"],
     "max_open_positions": ["risk", "max_open_positions"],

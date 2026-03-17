@@ -61,6 +61,7 @@ strategy:
     time_stop_bars_15min: 20    # Max bars in trade — single mode (15min = 300min)
 
   s1v3:
+    interval: "5min"            # Candle interval: "5min" or "15min"
     # Time window (IST)
     signal_start: "09:30"       # No signals before this (open noise)
     signal_end: "14:30"         # No signals after this (not enough time for reversion)

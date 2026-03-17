@@ -2551,7 +2551,7 @@ def test_s1v3_engine_creation():
 
     config = _minimal_config_s1v3()
     engine = BacktestEngine(pool=MagicMock(), config=config)
-    assert engine._interval == "15min"
+    assert engine._interval == "5min"  # default interval from config
     assert engine._strategy_name == "s1v3"
     assert hasattr(engine, "_s1v3_evaluator")
 
@@ -2605,3 +2605,26 @@ def test_s1v3_one_signal_per_instrument_per_day():
 
     signal2 = evaluator.evaluate(candle2, bar_idx=6)
     assert signal2 is None  # Dedup — already fired today
+
+
+def test_s1v3_reads_interval_from_config():
+    """S1v3 engine: reads interval from strategy config."""
+    from tools.backtester import BacktestEngine
+    from unittest.mock import MagicMock
+
+    config = _minimal_config_s1v3()
+    config["strategy"]["s1v3"]["interval"] = "15min"
+    engine = BacktestEngine(pool=MagicMock(), config=config)
+    assert engine._interval == "15min"
+
+
+def test_s1v3_default_interval_is_5min():
+    """S1v3 engine: default interval is 5min when not specified."""
+    from tools.backtester import BacktestEngine
+    from unittest.mock import MagicMock
+
+    config = _minimal_config_s1v3()
+    # No 'interval' key — should default to "5min"
+    assert "interval" not in config["strategy"]["s1v3"]
+    engine = BacktestEngine(pool=MagicMock(), config=config)
+    assert engine._interval == "5min"

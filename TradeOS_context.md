@@ -56,7 +56,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **638 passing, 0 failures, 12 skipped** |
+| Tests | **640 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -118,6 +118,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 22. **S1v2 15min single-timeframe mode** — All indicators and entries on 15min. Config: `strategy.s1v2.timeframe_mode: single`. Time stop: 20 bars × 15min = 300min. Multi-TF mode preserved via `timeframe_mode: multi`.
 23. **S1v2 killed** — Both 5min (run #9: 108 trades, 18.5% WR, -₹36,158) and 15min (run #10: 12 trades, 0% WR, -₹6,900) failed. EMA pullback + ADX trend filter does not produce viable signals on intraday NSE equities. Strategy abandoned.
 24. **S1v3 Mean Reversion implementation** — Kotegawa-inspired panic buy + BB oversold + VWAP target. 15min single-timeframe. All parameters from config. Fixed VWAP target at entry. Reversal timeout 5 bars. Min R:R 2.0.
+25. **S1v3 configurable interval** — S1v3 on 15min produced 79 trades with 0% WR (100% EOD exits). Price dips but never reverts to VWAP by close on 15min. Added `strategy.s1v3.interval` config (`"5min"` or `"15min"`, default `"5min"`). Backtester loads candles and warmup at configured interval. No strategy logic changes — just data granularity.
 
 ---
 
@@ -211,4 +212,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — S1v2 killed (both 5min and 15min failed). S1v3 mean reversion backtester implemented (CC006). First S1v3 backtest run pending. Tests: 638 passing.
+**2026-03-17** — S1v3 configurable interval added (CC007). Default 5min for faster reversion capture. S1v3 15min run showed 79 trades, 0% WR. Tests: 640 passing.
