@@ -96,6 +96,18 @@ All operations go through the `tradeos` command. Set `TRADEOS_DIR` to override t
 | `tradeos data download --symbol RELIANCE --interval 15min --days 200` | Single symbol |
 | `tradeos data status` | Show download coverage per interval |
 
+### Backtesting
+
+| Command | Description |
+|---------|-------------|
+| `tradeos backtest run --from 2025-09-01 --to 2026-03-16` | Run S1 backtest (fixed exit mode) |
+| `tradeos backtest run --exit-mode trailing --atr-mult 1.5` | Trailing stop with ATR |
+| `tradeos backtest run --exit-mode partial --partial-pct 0.5` | Partial exit at 1R + trail |
+| `tradeos backtest optimize --param atr_multiplier --range 1.0:0.25:3.0` | Parameter sweep |
+| `tradeos backtest compare --modes fixed,trailing,partial` | Compare exit modes |
+| `tradeos backtest show --last-run` | Show most recent backtest results |
+| `tradeos backtest show --run-id 5` | Show specific run by ID |
+
 ### System
 
 | Command | Description |

@@ -186,6 +186,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
 | 2026-03-16 | CLI Progress Indicators | `utils/progress.py`: reusable spinner utility (braille animation, NO_COLOR, isatty). Integrated into HAWK evening/consensus (data collection + per-model LLM), session_report (log parsing, DB queries, exports), token_cron (server start, escalation). HAWK consensus alphabetical sort already implemented — verified, no changes needed. Tests: 539. | CLI UX improved across all long-running commands. |
 | 2026-03-17 | Backtester Data Infrastructure | 4 DB tables (backtest_candles, backtest_metadata, backtest_runs, backtest_trades) in `migrations/002_backtest_tables.sql`. Auto-create at startup. `tools/data_downloader.py`: KiteConnect historical candle downloader with 5 intervals, resume, rate limiting, ON CONFLICT idempotent. CLI: `tradeos data download/status`. PYTHONPATH fix for CLI/cron. Tests: 551. | Data layer ready for backtester engine. |
+| 2026-03-17 | Core Backtester Engine | `tools/backtester.py`: replays historical candles through exact S1 pipeline (IndicatorEngine, SignalGenerator, PositionSizer, ChargeCalculator, classify_regime). BacktestRiskGate adapts Gates 4-7 with candle_time. Three exit modes: fixed, trailing (ATR), partial (50% at 1R). Optimizer (param sweep), compare (exit mode comparison). DB storage + rich terminal report. CLI: `tradeos backtest run/optimize/compare/show`. Tests: 576. | Backtester complete. Ready for live data download + first run. |
 
 ---
 
@@ -210,4 +211,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — Backtester data infrastructure: 4 DB tables, data downloader CLI, PYTHONPATH fix. 551 tests passing.
+**2026-03-17** — Core backtester engine: S1 replay with fixed/trailing/partial exits, optimizer, compare modes, DB storage, CLI. 576 tests passing.
