@@ -6,7 +6,7 @@
 
 ## 1. Project Overview
 
-TradeOS — AI-powered systematic trading system for NSE intraday equities.
+TradeOS — AI-powered systematic trading system for NSE intraday futures (NIFTY/BANKNIFTY) and equities.
 Repo: `arushai-hq/tradeOS` | Infra: Rocky Linux 9.7 VPS | Broker: Zerodha via `pykiteconnect v5` | Exchange: NSE (equities, MIS intraday only)
 
 ---
@@ -44,9 +44,12 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `tests/CLAUDE.md` | Test suite conventions and commands |
 | `docs/decisions/` | Architecture Decision Records (ADR-001: position sizing, ADR-002: token automation) |
 | `docs/runbooks/` | Operational procedures (daily-trading.md) |
+| `tools/futures_data_downloader.py` | Historical futures candle downloader. NIFTY + BANKNIFTY, NFO-FUT segment, continuous=True, 5min/15min/day, OI data. CLI: `tradeos futures download/status`. |
+| `tools/futures_backtester.py` | Futures-specific backtester. Lot-based position sizing, futures charge model, single-instrument mode, OI indicators. CLI: `tradeos futures backtest run/compare/optimize/show`. |
+| `migrations/003_futures_backtest_tables.sql` | backtest_futures_candles + backtest_futures_metadata tables. |
 
 **Strategy (current):** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI + volume ratio. **DEPRECATED** — negative expectancy confirmed via backtester across all parameter combinations. Kept running for infrastructure validation only.
-**Strategy (in development):** S1v2 Trend Pullback (Raschke/Schwartz/PTJ hybrid) + S1v3 Mean Reversion (Kotegawa-inspired). Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`
+**Strategy (in development):** S1v2 Trend Pullback + S1v3 Mean Reversion being validated on NIFTY/BANKNIFTY futures via backtester. Equity versions killed — insufficient intraday range.
 **Watchlist:** 50 NIFTY 50 stocks in `config/settings.yaml` (expanded 2026-03-16)
 **Candle interval:** 15 minutes | **Trade window:** 09:15–15:00 IST | **Hard exit:** 15:00 IST
 
@@ -82,6 +85,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Strategy redesign | S1v2 (killed — 5min: 18.5% WR, 15min: 0% WR) + S1v3 (killed — 15min: 0% WR, 5min: 6.2% WR). Root cause: NIFTY 50 intraday equities lack sufficient range for any strategy to produce asymmetric returns within same-day MIS constraints. Strategic pivot needed. |
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
+| Futures pivot | **Decision locked.** NIFTY + BANKNIFTY index futures. Backtest-first approach — validate S1v2/S1v3 on 18 months of futures data before building trading engine. |
+| Futures data | **Pending CC001.** 18 months (Sep 2024 → Mar 2026), 5min + 15min + day, OI included. |
+| Futures backtester | **Pending CC002.** Lot-based sizing, futures charges, single-instrument mode. |
+| NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
+| NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
 | Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
@@ -122,6 +130,12 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 26. **S1v3 5min failed** — 614 trades, 6.2% WR, -₹2.48L, profit factor 0.06. 75.6% EOD exit. Large-caps don't revert to VWAP on any intraday timeframe.
 27. **All intraday equity strategies exhausted** — S1 (EMA crossover), S1v2 (trend pullback), S1v3 (mean reversion) all failed across 5min and 15min timeframes. Root cause is market structure, not strategy logic. NIFTY 50 large-caps lack sufficient intraday range for profitable same-day exits.
 28. **Strategic pivot required** — Session 04 must address market structure: (A) NIFTY futures (recommended — leverage provides range), (B) NSE 500 mid-caps (more volatile), (C) Swing trading/CNC (hold 2-6 days), (D) Options strategies.
+29. **D26: Pivot from intraday equities to NIFTY/BANKNIFTY index futures** — Confirmed. Leverage provides sufficient intraday range that equities lack.
+30. **D27: Backtest-first approach** — Download data, adapt backtester, validate before building trading engine — Confirmed.
+31. **D28: Both NIFTY + BANKNIFTY from the start** — Confirmed. Two instruments, not sequential.
+32. **D29: Separate `backtest_futures_candles` table** — Not modifying equity table — Confirmed.
+33. **D30: 18 months historical data (Sep 2024 → Mar 2026)** — Confirmed.
+34. **D31: New `tools/futures_backtester.py`** — Separate from equity backtester — Confirmed.
 
 ---
 
@@ -164,7 +178,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 - **S3 positional strategy** — Multi-day swing trades. Allocation placeholder: 10%. Design pending S1 validation.
 - **S4 event strategy** — Earnings/macro event-driven trades. Allocation placeholder: 5%. Design pending S2.
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
-- **Futures paper trading** — NIFTY futures alongside S1. Gated on: 10 completed S1 trades + 3 clean sessions + verified P&L + 1 winner. Infrastructure needed: lot-aware position sizer, expiry management, margin monitoring. Design (Nemawashi) can begin during S1 validation phase — no code until gates clear.
+- **Futures paper trading** — Gated on: positive expectancy in futures backtest (S1v2 or S1v3 on NIFTY or BANKNIFTY). Infrastructure: lot-aware position sizer, expiry management, margin monitoring. Phase 1: data download + backtest (in progress). Phase 2: paper trading engine adaptation (gated on backtest results).
 - **Commodities** — Deferred until futures infrastructure built and validated.
 - **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. Phase 1 progress — DB trade history complete, token automation complete, production logging complete, log rotation complete, tradeos CLI complete. Remaining Phase 1: systemd service (optional — tmux auto-start working).
 - **`tradeos` CLI packaging roadmap** — Phase A: bash shim with subcommands (done). Phase B: Python Click CLI with argument validation. Phase C: `pyproject.toml` with `console_scripts` entry point. Phase D: systemd service files generated by CLI. Phase E: RPM/DEB packaging. Phase F: universal installer script (`curl | bash`).
@@ -173,11 +187,13 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **Strategic pivot decision (FORGE session)** — Choose new market/instrument: NIFTY futures (recommended), NSE 500 mid-caps, swing trading, or options. Nemawashi first — research before building.
-2. **Continue S1 paper trading** — Infrastructure validation continues regardless of strategy pivot.
-3. **Token automation** — Verify cron works on next trading day.
-4. **Preserve backtester infrastructure** — S1v2/S1v3 code stays. Indicators (ADX, BB, EMA10/20), multi-TF support, optimizer, and configurable intervals are reusable for future strategies.
-5. **Commit VPS config reset** — `git checkout -- config/settings.yaml` on VPS to restore committed defaults.
+1. **TRADEOS-04-CC001** — Futures data infrastructure (migration 003, futures_data_downloader.py, CLI). Branch: feature/futures-data.
+2. **TRADEOS-04-CC002** — Futures backtester (futures_backtester.py, lot-based sizer, futures charges, CLI). Branch: feature/futures-backtest.
+3. **VPS: Download futures data** — Run `tradeos futures download` after CC001 deployed.
+4. **VPS: Run backtests** — Run S1v2 + S1v3 on NIFTY + BANKNIFTY after CC002 deployed. Compare with equity results.
+5. **Decision gate** — If backtest shows positive expectancy → proceed to trading engine adaptation. If not → evaluate strategy modifications or alternative strategies.
+6. **Continue S1 equity paper trading** — Infrastructure validation continues regardless.
+7. **Token automation** — Verify cron continues working.
 
 ---
 
@@ -191,6 +207,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | Session 09 + Backtester | Session 09: 5 trades (1W/4L), -₹3,196 net, 36 signals (31 regime-blocked). Backtester: 2.75M candles downloaded, first full backtest run. S1 loses money across ALL parameter combinations — fixed exits (-₹1.16L/51d), trailing (-₹1.85L), partial (-₹1.83L). ATR sweep 1.0-4.0× all negative. RSI sweep 40-65 all negative. Volume ratio sweep pending. Signal quality is the core issue, not exit strategy. | Critical finding — S1 needs architectural redesign before live trading. |
 | 2026-03-17 | TradeOS-03 Strategy Redesign | Researched 7 proven short-term traders. Designed S1v2 (trend pullback) + S1v3 (mean reversion). 18 decisions locked. Spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. | Spec locked. CC prompts for backtester implementation ready. |
 | 2026-03-17 | TradeOS-03 Complete | Researched 7 traders. Built S1v2 + S1v3. Both killed: NIFTY 50 lacks intraday range. Backtest runs #9-#15. +61 tests (579→640). 7 CC prompts. Strategic pivot to futures/mid-caps/swing recommended. | All intraday equity strategies exhausted. Market structure pivot needed. |
+| 2026-03-17 | TradeOS-04 | Futures pivot locked. 6 decisions (D26-D31). NIFTY+BANKNIFTY, backtest-first, 18mo data, separate table, separate backtester. CC001 (data infra) + CC002 (backtester) prompts generated. | Strategic pivot — equity → futures. |
 
 ---
 
@@ -210,9 +227,10 @@ These rules apply to every TradeOS session regardless of context window or sessi
 10. **Log File Convention** — All modules write date-based log files: `logs/{module}/{module}_{YYYY-MM-DD}.log`. Subdirectories: `tradeos/` (main trading), `hawk/` (AI engine), `token/` (auth). Log rotation compresses files >30 days, deletes >90 days. session_report.py accepts any log file path. Never use `paper_session_NN.log` naming — always date-based.
 11. **CLI Convention** — All operations go through `tradeos <command>` in production. Never call Python scripts directly. New scripts must be registered as tradeos subcommands before deployment.
 12. **Documentation Convention** — README.md and CLAUDE.md must be updated with every feature addition. Every CC prompt must include README.md update requirements. CLAUDE.md contains all session rules and CC conventions for project continuity.
+13. **Futures lot size awareness** — NIFTY lot size: 65. BANKNIFTY lot size: 30. All position sizing in futures must be lot-based (floor division). Lot sizes are configured in `config/settings.yaml` under `futures.instruments` — never hardcoded. Lot sizes change periodically per NSE circulars.
 
 ---
 
 ## 11. Last Updated
 
-**2026-03-17** — TradeOS-03 complete. S1v2 killed (runs #9-#10). S1v3 killed (runs #11-#15). All intraday equity strategies failed — NIFTY 50 lacks sufficient range. Strategic pivot to NIFTY futures recommended for Session 04. Tests: 640 passing.
+**2026-03-17** — TradeOS-04 in progress. Futures pivot decided (D26-D31). NIFTY + BANKNIFTY, backtest-first. CC001 (data infra) + CC002 (backtester) prompts ready. Next: deploy CC001, download data, deploy CC002, run backtests.
