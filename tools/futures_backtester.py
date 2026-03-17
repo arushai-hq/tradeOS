@@ -361,40 +361,111 @@ class FuturesBacktestEngine:
         # Signal diagnostic counters (accumulated across all days)
         self._signal_diag: dict[str, int] = defaultdict(int)
 
+        # Near-month contract filter (resolved async before first run)
+        self._tradingsymbol: str | None = None
+
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
-    async def _get_trading_days(self, date_from: date, date_to: date) -> list[date]:
-        """Get distinct trading days from futures candle data."""
+    async def _resolve_near_month_contract(
+        self, date_from: date, date_to: date,
+    ) -> str:
+        """Determine the near-month tradingsymbol (earliest expiry with data).
+
+        Intraday rows have tradingsymbol like 'NIFTY26MARFUT' with expiry date.
+        Daily continuous rows have tradingsymbol='' — we skip those.
+        """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT DISTINCT timestamp::date AS session_date "
+            row = await conn.fetchrow(
+                "SELECT tradingsymbol, expiry "
                 "FROM backtest_futures_candles "
                 "WHERE instrument = $1 AND interval = $2 "
+                "  AND tradingsymbol != '' "
+                "  AND expiry IS NOT NULL "
                 "  AND timestamp::date BETWEEN $3 AND $4 "
-                "ORDER BY session_date",
+                "GROUP BY tradingsymbol, expiry "
+                "ORDER BY expiry "
+                "LIMIT 1",
                 self._instrument, self._interval, date_from, date_to,
             )
+        if row:
+            ts = row["tradingsymbol"]
+            log.info(
+                "futures_backtest_near_month",
+                instrument=self._instrument,
+                tradingsymbol=ts,
+                expiry=str(row["expiry"]),
+            )
+            return ts
+        # Fallback: no intraday per-contract data, use all
+        log.warning(
+            "futures_backtest_no_contract",
+            instrument=self._instrument,
+            msg="No per-contract intraday data found, using all rows",
+        )
+        return ""
+
+    async def _get_trading_days(self, date_from: date, date_to: date) -> list[date]:
+        """Get distinct trading days from futures candle data."""
+        ts_filter = self._tradingsymbol
+        if ts_filter:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT DISTINCT timestamp::date AS session_date "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND tradingsymbol = $3 "
+                    "  AND timestamp::date BETWEEN $4 AND $5 "
+                    "ORDER BY session_date",
+                    self._instrument, self._interval, ts_filter,
+                    date_from, date_to,
+                )
+        else:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT DISTINCT timestamp::date AS session_date "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND timestamp::date BETWEEN $3 AND $4 "
+                    "ORDER BY session_date",
+                    self._instrument, self._interval, date_from, date_to,
+                )
         return [r["session_date"] for r in rows]
 
     async def _load_day_candles(self, day: date) -> list[Candle]:
-        """Load one day's futures candles for this instrument."""
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT open, high, low, close, volume, oi, timestamp "
-                "FROM backtest_futures_candles "
-                "WHERE instrument = $1 AND interval = $2 "
-                "  AND timestamp::date = $3 "
-                "ORDER BY timestamp",
-                self._instrument, self._interval, day,
-            )
+        """Load one day's futures candles for this instrument (near-month only)."""
+        ts_filter = self._tradingsymbol
+        if ts_filter:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND tradingsymbol = $3 "
+                    "  AND timestamp::date = $4 "
+                    "ORDER BY timestamp",
+                    self._instrument, self._interval, ts_filter, day,
+                )
+        else:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND timestamp::date = $3 "
+                    "ORDER BY timestamp",
+                    self._instrument, self._interval, day,
+                )
 
         candles: list[Candle] = []
         for r in rows:
             ts = r["timestamp"]
+            # Always convert to IST — DB may store UTC (Bug 3 fix)
             if ts.tzinfo is None:
                 ts = IST.localize(ts)
+            else:
+                ts = ts.astimezone(IST)
             candles.append(Candle(
                 instrument_token=0,
                 symbol=self._instrument,
@@ -411,23 +482,40 @@ class FuturesBacktestEngine:
         return candles
 
     async def _load_warmup_candles(self, day: date, count: int = 100) -> list[Candle]:
-        """Load prior candles for indicator warmup."""
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT open, high, low, close, volume, oi, timestamp "
-                "FROM backtest_futures_candles "
-                "WHERE instrument = $1 AND interval = $2 "
-                "  AND timestamp::date < $3 "
-                "ORDER BY timestamp DESC "
-                "LIMIT $4",
-                self._instrument, self._interval, day, count,
-            )
+        """Load prior candles for indicator warmup (near-month only)."""
+        ts_filter = self._tradingsymbol
+        if ts_filter:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND tradingsymbol = $3 "
+                    "  AND timestamp::date < $4 "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT $5",
+                    self._instrument, self._interval, ts_filter, day, count,
+                )
+        else:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = $2 "
+                    "  AND timestamp::date < $3 "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT $4",
+                    self._instrument, self._interval, day, count,
+                )
 
         candles: list[Candle] = []
         for r in reversed(rows):  # Reverse to chronological order
             ts = r["timestamp"]
+            # Always convert to IST — DB may store UTC (Bug 3 fix)
             if ts.tzinfo is None:
                 ts = IST.localize(ts)
+            else:
+                ts = ts.astimezone(IST)
             candles.append(Candle(
                 instrument_token=0,
                 symbol=self._instrument,
@@ -1182,6 +1270,11 @@ class FuturesBacktestEngine:
         """Run the full backtest over the date range."""
         from core.regime_detector.regime_detector import MarketRegime
 
+        # Resolve near-month contract for this date range
+        self._tradingsymbol = await self._resolve_near_month_contract(
+            date_from, date_to,
+        )
+
         days = await self._get_trading_days(date_from, date_to)
         if not days:
             return BacktestResult(
@@ -1240,6 +1333,7 @@ class FuturesBacktestEngine:
             "strategy": f"{self._strategy_name}-fut",
             "segment": "futures",
             "instrument": self._instrument,
+            "tradingsymbol": self._tradingsymbol or "",
             "lot_size": self._lot_size,
             "exit_mode": self._exit_mode,
             "interval": self._interval,
