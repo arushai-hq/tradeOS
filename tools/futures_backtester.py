@@ -53,8 +53,13 @@ from tools.backtester import (
     BacktestRiskGate,
     BacktestTrade,
     DailyResult,
+    S1v2Phase,
     S1v2SignalEvaluator,
     S1v3SignalEvaluator,
+    compute_atr,
+    compute_bollinger_bands,
+    compute_rsi,
+    compute_volume_sma,
     _save_run,
     _save_trades,
     _load_run,
@@ -352,6 +357,9 @@ class FuturesBacktestEngine:
 
         # OI data (parallel dict: candle_time → {oi, oi_change, oi_change_pct})
         self._oi_data: dict[datetime, dict] = {}
+
+        # Signal diagnostic counters (accumulated across all days)
+        self._signal_diag: dict[str, int] = defaultdict(int)
 
     # ------------------------------------------------------------------
     # Data loading
@@ -659,6 +667,220 @@ class FuturesBacktestEngine:
                 return price * (Decimal("1") + self._slippage)
 
     # ------------------------------------------------------------------
+    # Signal diagnostics
+    # ------------------------------------------------------------------
+
+    def _evaluate_with_reason_s1v2(self, candle: Candle):
+        """Wrapper around S1v2 evaluate() that tracks rejection reasons.
+
+        Calls evaluate() normally (which mutates state), then inspects
+        pre/post state + indicators to determine which step rejected.
+        Returns (signal, reason_str).
+        """
+        evaluator = self._evaluator
+        symbol = candle.symbol
+        state = evaluator._states[symbol]
+
+        # Snapshot pre-call state
+        pre_phase = state.phase
+        pre_direction = state.direction
+
+        # Real evaluate — mutates state, appends candle to buffer
+        signal = evaluator.evaluate(candle)
+
+        if signal is not None:
+            return signal, "signal_generated"
+
+        # Post-hoc: compute same indicators evaluate() used
+        ind_15m = evaluator._compute_15min_indicators(symbol)
+        ind_entry = evaluator._compute_entry_indicators(symbol)
+
+        ema10 = ind_15m["ema10"]
+        adx = ind_15m["adx"]
+        close_15m = ind_15m["close"]
+        ema20 = ind_entry["ema20"]
+        atr = ind_entry["atr"]
+        vol_sma = ind_entry["volume_sma"]
+
+        # Step 0: Insufficient indicator data
+        if any(v is None for v in (ema10, adx, close_15m, ema20)):
+            return None, "insufficient_indicators"
+        if atr <= 0 or vol_sma is None or vol_sma <= 0:
+            return None, "insufficient_indicators"
+
+        # Step 1: No directional bias
+        if close_15m == ema10:
+            return None, "no_directional_bias"
+        bias = "LONG" if close_15m > ema10 else "SHORT"
+
+        # Step 2: ADX below threshold
+        if adx <= evaluator._adx_threshold:
+            return None, "adx_below_threshold"
+
+        post_phase = state.phase
+
+        # Just entered WATCHING from WAITING (ADX crossed above)
+        if pre_phase == S1v2Phase.WAITING_FOR_TREND:
+            return None, "entered_watching"
+
+        # Already fired signal, waiting for trade close
+        if pre_phase == S1v2Phase.SIGNAL_FIRED:
+            return None, "already_fired"
+
+        # Direction changed mid-trend
+        if bias != pre_direction:
+            return None, "direction_changed"
+
+        # Was WATCHING — check if pullback detected or not
+        if pre_phase == S1v2Phase.WATCHING_FOR_PULLBACK:
+            if post_phase == S1v2Phase.IN_PULLBACK:
+                return None, "pullback_entered"
+            return None, "no_pullback"
+
+        # Was IN_PULLBACK
+        if pre_phase == S1v2Phase.IN_PULLBACK:
+            if post_phase == S1v2Phase.IN_PULLBACK:
+                return None, "not_reclaimed"
+
+            # Reclaimed EMA20 but something failed — determine which check
+            if state.pullback_count > 1:
+                return None, "second_pullback"
+
+            vol_ratio = Decimal(str(candle.volume)) / vol_sma
+            if vol_ratio < evaluator._volume_ratio_min:
+                return None, "volume_rejected"
+
+            # R:R check (replicate evaluate's math)
+            entry_price = candle.close
+            raw_stop = state.pullback_extreme
+            atr_floor = evaluator._atr_stop_floor_mult * atr
+            if bias == "LONG":
+                stop_loss = min(raw_stop, entry_price - atr_floor)
+                risk = entry_price - stop_loss
+                reward = (entry_price + evaluator._atr_target_mult * atr) - entry_price
+            else:
+                stop_loss = max(raw_stop, entry_price + atr_floor)
+                risk = stop_loss - entry_price
+                reward = entry_price - (entry_price - evaluator._atr_target_mult * atr)
+
+            if risk <= 0:
+                return None, "risk_zero"
+
+            rr = reward / risk
+            if rr < evaluator._rr_min:
+                return None, "rr_rejected"
+
+            return None, "session_dedup"
+
+        return None, "unknown"
+
+    def _evaluate_with_reason_s1v3(self, candle: Candle, bar_idx: int):
+        """Wrapper around S1v3 evaluate() that tracks rejection reasons.
+
+        Calls evaluate() normally, then inspects state to determine which
+        step rejected. Returns (signal, reason_str).
+        """
+        evaluator = self._evaluator
+        symbol = candle.symbol
+
+        # Snapshot pre-call state
+        pre_state = evaluator._day_states.get(symbol)
+        was_signal_fired = pre_state.signal_fired if pre_state else False
+        had_panic_setup = (pre_state.panic_setup is not None) if pre_state else False
+
+        # Real evaluate
+        signal = evaluator.evaluate(candle, bar_idx)
+
+        if signal is not None:
+            return signal, "signal_generated"
+
+        state = evaluator._day_states.get(symbol)
+        if state is None:
+            return None, "unknown"
+
+        # Step 1: Already fired today
+        if was_signal_fired:
+            return None, "already_fired_today"
+
+        # Step 2: Time window
+        ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+        if ct < evaluator._signal_start or ct >= evaluator._signal_end:
+            return None, "outside_time_window"
+
+        # Step 3: Indicators
+        buf = evaluator._candles_15min[symbol]
+        atr = compute_atr(buf, evaluator._atr_period)
+        rsi = compute_rsi(buf, evaluator._rsi_period)
+        bb = compute_bollinger_bands(buf, evaluator._bb_period, evaluator._bb_std)
+        vol_sma = compute_volume_sma(buf, evaluator._volume_sma_period)
+
+        if atr <= 0 or rsi is None or bb is None or vol_sma is None or vol_sma <= 0:
+            return None, "insufficient_indicators"
+
+        # Step 4: Had a pending panic setup
+        if had_panic_setup:
+            if state.panic_setup is None:
+                # Setup consumed — timeout or reversal check failed
+                return None, "reversal_check_failed"
+            # Setup still pending — not a reversal candle
+            return None, "awaiting_reversal"
+
+        # Step 5: No panic setup — check if one was just created
+        if state.panic_setup is not None:
+            return None, "panic_detected"
+
+        # No panic detected at all
+        return None, "no_panic_detected"
+
+    def _log_signal_diagnostics(self) -> None:
+        """Print signal diagnostic summary at end of run."""
+        d = dict(self._signal_diag)
+        if not d:
+            return
+
+        total = d.get("total_candles", 0)
+        signals = d.get("signal_generated", 0)
+
+        print("\n" + "=" * 60)
+        print("  SIGNAL DIAGNOSTIC SUMMARY")
+        print("=" * 60)
+        print(f"  Strategy:    {self._strategy_name}")
+        print(f"  Instrument:  {self._instrument}")
+        print(f"  Interval:    {self._interval}")
+        print("-" * 60)
+        print(f"  {'Total candles processed':<38} {total:>6}")
+        print(f"  {'Signals generated':<38} {signals:>6}")
+        print("-" * 60)
+
+        # Sort remaining reasons by count descending
+        skip = {"total_candles", "signal_generated", "risk_gate_blocked",
+                "sizing_failed", "position_open", "no_entry_after"}
+        reasons = sorted(
+            ((k, v) for k, v in d.items() if k not in skip),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        if reasons:
+            print("  Rejection Breakdown:")
+            for reason, count in reasons:
+                label = reason.replace("_", " ").title()
+                pct = count / total * 100 if total > 0 else 0
+                print(f"    {label:<36} {count:>6}  ({pct:5.1f}%)")
+
+        # Post-signal rejections
+        print("-" * 60)
+        post_signal = {k: d.get(k, 0) for k in
+                       ("risk_gate_blocked", "sizing_failed")}
+        for key, count in post_signal.items():
+            if count > 0:
+                label = key.replace("_", " ").title()
+                print(f"  {label:<38} {count:>6}")
+
+        print("=" * 60 + "\n")
+
+        log.info("futures_backtest_signal_diagnostics", **d)
+
+    # ------------------------------------------------------------------
     # Day processing
     # ------------------------------------------------------------------
 
@@ -744,11 +966,15 @@ class FuturesBacktestEngine:
 
             # --- Signal generation ---
             if open_position is not None:
+                self._signal_diag["position_open"] += 1
                 continue  # Already in a position
             if ct >= self._no_entry_after:
+                self._signal_diag["no_entry_after"] += 1
                 continue
 
-            signal = evaluator.evaluate(candle)
+            self._signal_diag["total_candles"] += 1
+            signal, diag_reason = self._evaluate_with_reason_s1v2(candle)
+            self._signal_diag[diag_reason] += 1
             if signal is None:
                 continue
 
@@ -757,6 +983,7 @@ class FuturesBacktestEngine:
                 signal, shared_state, config, candle.candle_time, regime_adapter,
             )
             if not allowed:
+                self._signal_diag["risk_gate_blocked"] += 1
                 continue
 
             # Position sizing (lot-based)
@@ -772,6 +999,7 @@ class FuturesBacktestEngine:
                 margin_rate=self._margin_rate,
             )
             if sizing is None:
+                self._signal_diag["sizing_failed"] += 1
                 continue
             num_lots, total_qty = sizing
 
@@ -877,11 +1105,15 @@ class FuturesBacktestEngine:
 
             # --- Signal generation ---
             if open_position is not None:
+                self._signal_diag["position_open"] += 1
                 continue
             if ct >= self._no_entry_after:
+                self._signal_diag["no_entry_after"] += 1
                 continue
 
-            signal = evaluator.evaluate(candle, bar_idx)
+            self._signal_diag["total_candles"] += 1
+            signal, diag_reason = self._evaluate_with_reason_s1v3(candle, bar_idx)
+            self._signal_diag[diag_reason] += 1
             if signal is None:
                 continue
 
@@ -890,6 +1122,7 @@ class FuturesBacktestEngine:
                 signal, shared_state, config, candle.candle_time, regime_adapter,
             )
             if not allowed:
+                self._signal_diag["risk_gate_blocked"] += 1
                 continue
 
             # Position sizing
@@ -905,6 +1138,7 @@ class FuturesBacktestEngine:
                 margin_rate=self._margin_rate,
             )
             if sizing is None:
+                self._signal_diag["sizing_failed"] += 1
                 continue
             num_lots, total_qty = sizing
 
@@ -994,6 +1228,9 @@ class FuturesBacktestEngine:
                     net_pnl=day_net,
                     regime=regime_adapter.current_regime().value,
                 ))
+
+        # Signal diagnostic summary
+        self._log_signal_diagnostics()
 
         return self._build_result(all_trades, daily_results, date_from, date_to)
 
