@@ -79,9 +79,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | B15 fix | **2026-03-16** — Max positions race condition fixed. Defense-in-depth: Layer 1 (pending_signals counter in Gate 4), Layer 2 (hard gate in execution engine), Layer 3 (capital ceiling check). Session 08 scenario (5 simultaneous signals with 1 open) now correctly limited to 3 new positions. Tests: 515→523. |
 | ASPS Restructure | **2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B (Engine + Tools), HEAVY tier. Engine modules moved to `core/` (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector). Subdirectory CLAUDE.md files for skill routing. Root CLAUDE.md rewritten (<200 lines). ADRs, runbooks, and specs directories created. Tests: 499 passed. Branch: `refactor/asps-restructure`. |
 | Backtester | Operational. 2.75M candles (52 symbols × 5 intervals). First runs complete. S1 fixed/trailing/partial all show negative expectancy. Parameter optimization confirms no profitable configuration exists for current S1 entry logic. |
-| Strategy redesign | S1v2 (trend pullback) + S1v3 (mean reversion) spec locked in TradeOS-03. Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. Pending backtester implementation. |
+| Strategy redesign | S1v2 (killed — 5min: 18.5% WR, 15min: 0% WR) + S1v3 (killed — 15min: 0% WR, 5min: 6.2% WR). Root cause: NIFTY 50 intraday equities lack sufficient range for any strategy to produce asymmetric returns within same-day MIS constraints. Strategic pivot needed. |
 | Mode | `paper` — never change to `live` without explicit instruction |
-| Active strategy | S1 (deprecated). S1v2 (killed — both timeframes failed). S1v3 in backtester development. |
+| Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
 | Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
@@ -119,6 +119,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 23. **S1v2 killed** — Both 5min (run #9: 108 trades, 18.5% WR, -₹36,158) and 15min (run #10: 12 trades, 0% WR, -₹6,900) failed. EMA pullback + ADX trend filter does not produce viable signals on intraday NSE equities. Strategy abandoned.
 24. **S1v3 Mean Reversion implementation** — Kotegawa-inspired panic buy + BB oversold + VWAP target. 15min single-timeframe. All parameters from config. Fixed VWAP target at entry. Reversal timeout 5 bars. Min R:R 2.0.
 25. **S1v3 configurable interval** — S1v3 on 15min produced 79 trades with 0% WR (100% EOD exits). Price dips but never reverts to VWAP by close on 15min. Added `strategy.s1v3.interval` config (`"5min"` or `"15min"`, default `"5min"`). Backtester loads candles and warmup at configured interval. No strategy logic changes — just data granularity.
+26. **S1v3 5min failed** — 614 trades, 6.2% WR, -₹2.48L, profit factor 0.06. 75.6% EOD exit. Large-caps don't revert to VWAP on any intraday timeframe.
+27. **All intraday equity strategies exhausted** — S1 (EMA crossover), S1v2 (trend pullback), S1v3 (mean reversion) all failed across 5min and 15min timeframes. Root cause is market structure, not strategy logic. NIFTY 50 large-caps lack sufficient intraday range for profitable same-day exits.
+28. **Strategic pivot required** — Session 04 must address market structure: (A) NIFTY futures (recommended — leverage provides range), (B) NSE 500 mid-caps (more volatile), (C) Swing trading/CNC (hold 2-6 days), (D) Options strategies.
 
 ---
 
@@ -170,12 +173,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **S1v2 backtester implementation** — Implement s1v2_trend_pullback strategy class in backtester. Add ADX, Bollinger Bands, EMA10, EMA20 indicators. Test against 198-day dataset. CC prompt ready.
-2. **S1v3 backtester implementation** — Implement s1v3_mean_reversion strategy class in backtester. Test against 198-day dataset. CC prompt ready.
-3. **Strategy comparison** — Run S1 vs S1v2 vs S1v3 comparison. Apply success criteria. Deploy winner to paper trading.
-4. **Continue paper trading** — S1 continues for infrastructure validation. Session 10 on next trading day.
-5. **Token automation verification** — PYTHONPATH fix deployed, first real cron test pending.
-6. Futures gate: 10/10 trades ✓, 2/3 clean sessions, P&L verified ✓, 1+ winner ✓ — 3/4 gates met.
+1. **Strategic pivot decision (FORGE session)** — Choose new market/instrument: NIFTY futures (recommended), NSE 500 mid-caps, swing trading, or options. Nemawashi first — research before building.
+2. **Continue S1 paper trading** — Infrastructure validation continues regardless of strategy pivot.
+3. **Token automation** — Verify cron works on next trading day.
+4. **Preserve backtester infrastructure** — S1v2/S1v3 code stays. Indicators (ADX, BB, EMA10/20), multi-TF support, optimizer, and configurable intervals are reusable for future strategies.
+5. **Commit VPS config reset** — `git checkout -- config/settings.yaml` on VPS to restore committed defaults.
 
 ---
 
@@ -188,6 +190,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | Backtester VWAP Fix | KiteConnect historical_data returns OHLCV but not VWAP. Backtester was setting `vwap=close`, making `close > vwap` always False — zero signals. Fix: `_compute_vwap_for_day()` computes running VWAP per-stock per-day from `(H+L+C)/3 × volume`. Resets each day. No live code changes. Tests: 577. | Backtester now generates signals correctly. |
 | 2026-03-17 | Session 09 + Backtester | Session 09: 5 trades (1W/4L), -₹3,196 net, 36 signals (31 regime-blocked). Backtester: 2.75M candles downloaded, first full backtest run. S1 loses money across ALL parameter combinations — fixed exits (-₹1.16L/51d), trailing (-₹1.85L), partial (-₹1.83L). ATR sweep 1.0-4.0× all negative. RSI sweep 40-65 all negative. Volume ratio sweep pending. Signal quality is the core issue, not exit strategy. | Critical finding — S1 needs architectural redesign before live trading. |
 | 2026-03-17 | TradeOS-03 Strategy Redesign | Researched 7 proven short-term traders. Designed S1v2 (trend pullback) + S1v3 (mean reversion). 18 decisions locked. Spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. | Spec locked. CC prompts for backtester implementation ready. |
+| 2026-03-17 | TradeOS-03 Complete | Researched 7 traders. Built S1v2 + S1v3. Both killed: NIFTY 50 lacks intraday range. Backtest runs #9-#15. +61 tests (579→640). 7 CC prompts. Strategic pivot to futures/mid-caps/swing recommended. | All intraday equity strategies exhausted. Market structure pivot needed. |
 
 ---
 
@@ -212,4 +215,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — S1v3 configurable interval added (CC007). Default 5min for faster reversion capture. S1v3 15min run showed 79 trades, 0% WR. Tests: 640 passing.
+**2026-03-17** — TradeOS-03 complete. S1v2 killed (runs #9-#10). S1v3 killed (runs #11-#15). All intraday equity strategies failed — NIFTY 50 lacks sufficient range. Strategic pivot to NIFTY futures recommended for Session 04. Tests: 640 passing.
