@@ -14,7 +14,7 @@ Repo: `arushai-hq/tradeOS` | Phase 1: S1 Intraday Momentum | Mode: `paper`
 ## Commands
 
 ```bash
-tradeos test -x -q               # Run tests (579 passing)
+tradeos test -x -q               # Run tests (690 passing)
 tradeos start                    # Start trading in tmux
 tradeos stop                     # Graceful shutdown
 tradeos preflight                # Pre-market health check
@@ -27,7 +27,7 @@ python -m pytest tests/ -v       # Direct pytest
 ```
 main.py              D9 session lifecycle entry point
 core/                Trading engine (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector)
-tools/               CLI tools: session_report, HAWK AI engine, data_downloader, futures_data_downloader, backtester, db_backfill
+tools/               CLI tools: session_report, HAWK AI engine, data_downloader, futures_data_downloader, backtester, futures_backtester, db_backfill
 scripts/             Automation: token_cron, token_server, log_rotation
 utils/               Shared: telegram_notifier, time_utils, position_helpers, progress spinner
 config/              settings.yaml (committed) + secrets.yaml (gitignored)

@@ -269,6 +269,32 @@ futures:
     lookback_months: 18
     oi: true
     continuous: true
+  backtest:
+    initial_capital: 1000000       # ₹10L
+    margin_rate: 0.12              # NRML margin (conservative)
+    risk_per_trade_pct: 0.015      # 1.5% of available capital
+    max_positions: 1               # Single instrument, 1 position at a time
+    no_entry_after: "14:45"
+    hard_exit_time: "15:10"
+    reward_ratio: 2.0
+    slippage: 0.001
+    default_interval: "15min"
+  strategies:
+    s1v2:
+      timeframe_mode: "single"     # single (15min only) or multi (5min+15min)
+      ema_fast: 10
+      ema_slow: 20
+      adx_threshold: 20
+      pullback_candles: 3
+      atr_period: 14
+      atr_stop_multiplier: 1.5
+    s1v3:
+      interval: "15min"
+      rsi_period: 14
+      rsi_oversold: 30
+      rsi_overbought: 70
+      bb_period: 20
+      bb_std: 2.0
 
 # Token automation — daily Zerodha token refresh
 token_automation:

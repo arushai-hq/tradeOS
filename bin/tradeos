@@ -397,7 +397,7 @@ cmd_data() {
 cmd_futures() {
     local subcmd="${1:-}"
     if [ -z "$subcmd" ]; then
-        echo "Usage: tradeos futures <download|status> [args...]"
+        echo "Usage: tradeos futures <download|status|backtest> [args...]"
         exit 1
     fi
     shift
@@ -412,9 +412,12 @@ cmd_futures() {
         status)
             "$PYTHON" tools/futures_data_downloader.py status "$@"
             ;;
+        backtest)
+            "$PYTHON" tools/futures_backtester.py "$@"
+            ;;
         *)
             echo "$(_red "Unknown futures command"): $subcmd"
-            echo "Usage: tradeos futures <download|status> [args...]"
+            echo "Usage: tradeos futures <download|status|backtest> [args...]"
             exit 1
             ;;
     esac
@@ -969,6 +972,16 @@ FUTURES DATA
   tradeos futures download --interval 15min --days 548   Download 15min futures candles
   tradeos futures download --instrument NIFTY            Single instrument
   tradeos futures status                                 Show futures download coverage
+
+FUTURES BACKTEST
+  tradeos futures backtest run --instrument NIFTY --strategy s1v2
+  tradeos futures backtest run --instrument NIFTY --strategy s1v3 --interval 15min
+  tradeos futures backtest run --instrument BANKNIFTY --strategy s1v2 --from 2025-01-01 --to 2026-03-16
+  tradeos futures backtest run --instrument NIFTY --strategy s1v2 --exit-mode trailing
+  tradeos futures backtest compare --instrument NIFTY --strategy s1v2 --modes fixed,trailing,partial
+  tradeos futures backtest optimize --instrument NIFTY --strategy s1v2 --param atr_mult --range 1.0:0.5:3.0
+  tradeos futures backtest show --last-run               Show most recent futures run
+  tradeos futures backtest show --run-id 5               Show specific futures run
 
 BACKTEST
   tradeos backtest run --from 2025-09-01 --to 2026-03-16

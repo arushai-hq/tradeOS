@@ -105,6 +105,18 @@ All operations go through the `tradeos` command. Set `TRADEOS_DIR` to override t
 | `tradeos futures download --instrument NIFTY` | Single instrument |
 | `tradeos futures status` | Show futures download coverage |
 
+### Futures Backtesting
+
+| Command | Description |
+|---------|-------------|
+| `tradeos futures backtest run --instrument NIFTY --strategy s1v2` | Run S1v2 futures backtest on NIFTY |
+| `tradeos futures backtest run --instrument BANKNIFTY --strategy s1v3 --interval 15min` | S1v3 on BANKNIFTY |
+| `tradeos futures backtest run --instrument NIFTY --strategy s1v2 --exit-mode trailing` | Trailing stop mode |
+| `tradeos futures backtest compare --instrument NIFTY --strategy s1v2 --modes fixed,trailing,partial` | Compare exit modes |
+| `tradeos futures backtest optimize --instrument NIFTY --strategy s1v2 --param atr_mult --range 1.0:0.5:3.0` | Parameter sweep |
+| `tradeos futures backtest show --last-run` | Show most recent futures run |
+| `tradeos futures backtest show --run-id 5` | Show specific run by ID |
+
 ### Backtesting
 
 | Command | Description |
