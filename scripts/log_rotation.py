@@ -26,7 +26,8 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 LOGS_DIR = ROOT / "logs"
 SETTINGS_FILE = ROOT / "config" / "settings.yaml"
 

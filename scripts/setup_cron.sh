@@ -8,7 +8,7 @@ VENV_PYTHON="$TRADEOS_DIR/.venv/bin/python"
 # If VPS timezone changes, these cron entries must be recalculated.
 
 # Token auth: Mon-Fri at 07:00 IST
-CRON_CMD="0 7 * * 1-5 cd $TRADEOS_DIR && $VENV_PYTHON scripts/token_cron.py >> logs/token_cron.log 2>&1"
+CRON_CMD="0 7 * * 1-5 cd $TRADEOS_DIR && PYTHONPATH=$TRADEOS_DIR $VENV_PYTHON scripts/token_cron.py >> logs/token_cron.log 2>&1"
 
 echo "=== TradeOS Token Cron Setup ==="
 
@@ -26,7 +26,7 @@ echo ""
 echo "=== Log Rotation Cron Setup ==="
 
 # Log rotation: Sunday at 02:00 IST
-LOG_CRON_CMD="0 2 * * 0 cd $TRADEOS_DIR && $VENV_PYTHON scripts/log_rotation.py >> logs/rotation.log 2>&1"
+LOG_CRON_CMD="0 2 * * 0 cd $TRADEOS_DIR && PYTHONPATH=$TRADEOS_DIR $VENV_PYTHON scripts/log_rotation.py >> logs/rotation.log 2>&1"
 
 if crontab -l 2>/dev/null | grep -q "log_rotation.py"; then
     echo "Log rotation cron already exists. Removing old entry first..."

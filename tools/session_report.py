@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 # ---------------------------------------------------------------------------
 # ANSI stripping + line parser
