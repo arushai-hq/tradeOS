@@ -56,7 +56,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **618 passing, 0 failures, 12 skipped** |
+| Tests | **638 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -81,7 +81,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Backtester | Operational. 2.75M candles (52 symbols × 5 intervals). First runs complete. S1 fixed/trailing/partial all show negative expectancy. Parameter optimization confirms no profitable configuration exists for current S1 entry logic. |
 | Strategy redesign | S1v2 (trend pullback) + S1v3 (mean reversion) spec locked in TradeOS-03. Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. Pending backtester implementation. |
 | Mode | `paper` — never change to `live` without explicit instruction |
-| Active strategy | S1 (deprecated — infrastructure validation only). S1v2 + S1v3 in backtester development. |
+| Active strategy | S1 (deprecated). S1v2 (killed — both timeframes failed). S1v3 in backtester development. |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
 | Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
@@ -116,6 +116,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 20. **Backtester min_risk_floor override** — Live position sizer uses ₹1,000 min_risk_floor. On 5min NIFTY 50 stocks, per-trade risk is ₹200-400 — always below ₹1,000. Backtester overrides to ₹200 (covers round-trip commission ₹40) via `config/settings.yaml` → `backtester.min_risk_floor: 200`. No `core/` changes — override passed as kwarg to `position_sizer.calculate()`.
 21. **S1v2 5min timeframe failed** — 108 trades, -₹36,158, 18.5% win rate, profit factor 0.23. 5min ATR too small for NIFTY 50 large-caps. Targets unreachable before stops hit. Switching to 15min single-timeframe mode.
 22. **S1v2 15min single-timeframe mode** — All indicators and entries on 15min. Config: `strategy.s1v2.timeframe_mode: single`. Time stop: 20 bars × 15min = 300min. Multi-TF mode preserved via `timeframe_mode: multi`.
+23. **S1v2 killed** — Both 5min (run #9: 108 trades, 18.5% WR, -₹36,158) and 15min (run #10: 12 trades, 0% WR, -₹6,900) failed. EMA pullback + ADX trend filter does not produce viable signals on intraday NSE equities. Strategy abandoned.
+24. **S1v3 Mean Reversion implementation** — Kotegawa-inspired panic buy + BB oversold + VWAP target. 15min single-timeframe. All parameters from config. Fixed VWAP target at entry. Reversal timeout 5 bars. Min R:R 2.0.
 
 ---
 
@@ -209,4 +211,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — S1v2 5min backtest failed (run #9: -₹36,158, 18.5% WR). 15min single-timeframe mode implemented (CC005). Re-run pending. Tests: 618 passing.
+**2026-03-17** — S1v2 killed (both 5min and 15min failed). S1v3 mean reversion backtester implemented (CC006). First S1v3 backtest run pending. Tests: 638 passing.
