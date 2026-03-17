@@ -1,6 +1,6 @@
 # tools/ — CLI Tools and Utilities
 
-Session reports, HAWK AI engine, database backfill utilities.
+Session reports, HAWK AI engine, historical data downloader, database backfill utilities.
 
 ## Skills
 
@@ -16,6 +16,9 @@ tradeos report auto              # EOD auto-report
 tradeos hawk run --run evening   # HAWK evening analysis
 tradeos hawk run --run morning   # HAWK morning update
 tradeos hawk eval                # Evaluate yesterday's picks
+tradeos data download --all      # Download all historical candles
+tradeos data download --interval 15min --days 1095
+tradeos data status              # Show download coverage
 ```
 
 ## Conventions

@@ -31,7 +31,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `tools/session_report.py` | Standalone CLI session report — parses structlog, outputs signal/trade/P&L/regime/health tables. Supports `--export csv/xlsx/all` |
 | `core/risk_manager/position_sizer.py` | 3-layer slot-based sizing: risk-based → capital cap → viability floors (min_risk ₹1K, min_value ₹15K) |
 | `tools/hawk_engine/` | HAWK AI Market Intelligence Engine. Multi-model consensus (4 LLMs via OpenRouter). Evening + morning runs. Data: KiteConnect (primary) → nsetools/nsepython (fallback). Shared KiteConnect instance per run. Output: JSON + Telegram. Eval scorer: `tools/hawk_eval.py`. |
-| `migrations/` | SQL migration files. `001_create_sessions_table.sql`. Auto-created at startup if missing. |
+| `migrations/` | SQL migration files. `001_create_sessions_table.sql`, `002_backtest_tables.sql`. Auto-created at startup if missing. |
+| `tools/data_downloader.py` | Historical data downloader. KiteConnect candles → backtest_candles DB. 5 intervals (5min, 15min, 30min, 1hour, day). Resume, rate limiting, ON CONFLICT idempotent. CLI: `tradeos data download/status`. |
 | `tools/db_backfill_session07.py` | One-time data fix for Session 07 trades (incorrect P&L + exit_reason from pre-B12 code). |
 | `scripts/token_server.py` | HTTP callback server (0.0.0.0:7291). Captures Zerodha request_token, exchanges for access_token, writes to secrets.yaml, confirms via Telegram, auto-shuts down. Auto-starts main.py in named tmux session (weekdays only). |
 | `scripts/token_cron.py` | Daily cron orchestrator. Starts token_server, sends login URL to Telegram, 4-stage escalation (07:00, 07:30, 08:00, 08:30 IST), kills server at 08:45 if no auth. |
@@ -54,7 +55,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **524 passing, 0 failures, 12 skipped** |
+| Tests | **551 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -184,6 +185,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
 | 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
 | 2026-03-16 | CLI Progress Indicators | `utils/progress.py`: reusable spinner utility (braille animation, NO_COLOR, isatty). Integrated into HAWK evening/consensus (data collection + per-model LLM), session_report (log parsing, DB queries, exports), token_cron (server start, escalation). HAWK consensus alphabetical sort already implemented — verified, no changes needed. Tests: 539. | CLI UX improved across all long-running commands. |
+| 2026-03-17 | Backtester Data Infrastructure | 4 DB tables (backtest_candles, backtest_metadata, backtest_runs, backtest_trades) in `migrations/002_backtest_tables.sql`. Auto-create at startup. `tools/data_downloader.py`: KiteConnect historical candle downloader with 5 intervals, resume, rate limiting, ON CONFLICT idempotent. CLI: `tradeos data download/status`. PYTHONPATH fix for CLI/cron. Tests: 551. | Data layer ready for backtester engine. |
 
 ---
 
@@ -208,4 +210,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-16** — CLI progress indicators added to all long-running commands (HAWK, session_report, token_cron). 539 tests passing.
+**2026-03-17** — Backtester data infrastructure: 4 DB tables, data downloader CLI, PYTHONPATH fix. 551 tests passing.
