@@ -694,8 +694,8 @@ class FuturesBacktestEngine:
         time_stop = evaluator.effective_time_stop_bars
 
         for candle in candles:
-            # Feed into evaluator buffer
-            evaluator.feed_15min_candle(candle)
+            # NOTE: Do NOT call feed_15min_candle() here — evaluate() already
+            # appends the candle to the evaluator's internal buffer.
             self._candle_buffer.append(candle)
             if len(self._candle_buffer) > 200:
                 self._candle_buffer = self._candle_buffer[-200:]
@@ -844,12 +844,8 @@ class FuturesBacktestEngine:
         day_trades: list[BacktestTrade] = []
 
         for bar_idx, candle in enumerate(candles):
-            # Feed into evaluator
-            evaluator._candles_15min[self._instrument].append(candle)
-            buf = evaluator._candles_15min[self._instrument]
-            if len(buf) > 200:
-                evaluator._candles_15min[self._instrument] = buf[-200:]
-
+            # NOTE: Do NOT append to evaluator._candles_15min here — evaluate()
+            # already appends the candle to the internal buffer.
             self._candle_buffer.append(candle)
             if len(self._candle_buffer) > 200:
                 self._candle_buffer = self._candle_buffer[-200:]
@@ -965,11 +961,27 @@ class FuturesBacktestEngine:
         all_trades: list[BacktestTrade] = []
         daily_results: list[DailyResult] = []
 
-        for day in days:
+        for day_idx, day in enumerate(days):
             if self._strategy_name == "s1v3":
                 day_trades = await self._process_day_s1v3(day, regime_adapter)
             else:
                 day_trades = await self._process_day_s1v2(day, regime_adapter)
+
+            # Diagnostic log for first trading day
+            if day_idx == 0:
+                buf_key = self._instrument
+                if self._strategy_name == "s1v3":
+                    buf_len = len(self._evaluator._candles_15min.get(buf_key, []))
+                else:
+                    buf_len = len(self._evaluator._candles_15min.get(buf_key, []))
+                log.info(
+                    "futures_backtest_day1_diag",
+                    day=str(day),
+                    instrument=self._instrument,
+                    strategy=self._strategy_name,
+                    candle_buffer_len=buf_len,
+                    trades_generated=len(day_trades),
+                )
 
             if day_trades:
                 all_trades.extend(day_trades)
