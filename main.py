@@ -1210,6 +1210,98 @@ async def _ensure_sessions_table(db_pool: asyncpg.Pool) -> None:
         log.error("sessions_table_check_failed", error=str(exc))
 
 
+_BACKTEST_TABLES_SQL = """\
+CREATE TABLE IF NOT EXISTS backtest_candles (
+    instrument_token   INTEGER        NOT NULL,
+    symbol             TEXT           NOT NULL,
+    interval           TEXT           NOT NULL,
+    open               NUMERIC(12,2)  NOT NULL,
+    high               NUMERIC(12,2)  NOT NULL,
+    low                NUMERIC(12,2)  NOT NULL,
+    close              NUMERIC(12,2)  NOT NULL,
+    volume             BIGINT         NOT NULL,
+    oi                 BIGINT,
+    candle_time        TIMESTAMPTZ    NOT NULL,
+    session_date       DATE           NOT NULL,
+    PRIMARY KEY (instrument_token, interval, candle_time),
+    CONSTRAINT chk_interval CHECK (
+        interval IN ('5min', '15min', '30min', '1hour', 'day')
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_bt_candles_symbol_interval_time
+    ON backtest_candles (symbol, interval, candle_time);
+CREATE INDEX IF NOT EXISTS idx_bt_candles_session_interval
+    ON backtest_candles (session_date, interval);
+CREATE TABLE IF NOT EXISTS backtest_metadata (
+    id                 SERIAL         PRIMARY KEY,
+    symbol             TEXT           NOT NULL,
+    instrument_token   INTEGER        NOT NULL,
+    interval           TEXT           NOT NULL,
+    date_from          DATE           NOT NULL,
+    date_to            DATE           NOT NULL,
+    rows_downloaded    INTEGER,
+    downloaded_at      TIMESTAMPTZ    DEFAULT NOW(),
+    CONSTRAINT uq_bt_metadata_symbol_interval UNIQUE (symbol, interval)
+);
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id                 SERIAL         PRIMARY KEY,
+    strategy           TEXT           NOT NULL,
+    params             JSONB          NOT NULL,
+    exit_mode          TEXT,
+    date_from          DATE           NOT NULL,
+    date_to            DATE           NOT NULL,
+    total_trades       INTEGER,
+    win_rate           NUMERIC(6,2),
+    gross_pnl          NUMERIC(14,2),
+    total_charges      NUMERIC(14,2),
+    net_pnl            NUMERIC(14,2),
+    max_drawdown       NUMERIC(14,2),
+    max_drawdown_pct   NUMERIC(8,4),
+    sharpe_ratio       NUMERIC(8,4),
+    profit_factor      NUMERIC(8,4),
+    avg_win            NUMERIC(12,2),
+    avg_loss           NUMERIC(12,2),
+    expectancy         NUMERIC(12,2),
+    created_at         TIMESTAMPTZ    DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS backtest_trades (
+    id                 SERIAL         PRIMARY KEY,
+    run_id             INTEGER        NOT NULL REFERENCES backtest_runs(id),
+    symbol             TEXT           NOT NULL,
+    direction          TEXT           NOT NULL,
+    entry_time         TIMESTAMPTZ,
+    exit_time          TIMESTAMPTZ,
+    entry_price        NUMERIC(12,2),
+    exit_price         NUMERIC(12,2),
+    exit_reason        TEXT,
+    qty                INTEGER        NOT NULL,
+    gross_pnl          NUMERIC(12,2),
+    charges            NUMERIC(10,2),
+    net_pnl            NUMERIC(12,2),
+    regime             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bt_trades_run_symbol
+    ON backtest_trades (run_id, symbol);
+"""
+
+
+async def _ensure_backtest_tables(db_pool: asyncpg.Pool) -> None:
+    """Auto-create backtest tables if they don't exist (self-healing migration)."""
+    try:
+        async with db_pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'backtest_candles')"
+            )
+            if not exists:
+                await conn.execute(_BACKTEST_TABLES_SQL)
+                log.info("backtest_tables_created")
+            else:
+                log.debug("backtest_tables_exist")
+    except Exception as exc:
+        log.error("backtest_tables_check_failed", error=str(exc))
+
+
 async def main(
     kite: KiteConnect,
     config: dict,
@@ -1270,8 +1362,9 @@ async def main(
 
     # Phase 1: Start engines in dependency order
     async with asyncpg.create_pool(db_dsn) as db_pool:
-        # Auto-create sessions table if missing (self-healing migration)
+        # Auto-create tables if missing (self-healing migration)
         await _ensure_sessions_table(db_pool)
+        await _ensure_backtest_tables(db_pool)
 
         # Regime detector: initialize before engines start
         from core.regime_detector import RegimeDetector
