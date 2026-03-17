@@ -45,6 +45,18 @@ strategy:
     swing_lookback: 5          # Candles for swing high/low
     min_stop_pct: 0.02         # 2.0% minimum stop distance from entry
 
+  s1v2:
+    ema_trend_period: 10        # Directional filter EMA (15min)
+    ema_pullback_period: 20     # Pullback detection EMA (5min)
+    adx_period: 14              # ADX period (15min)
+    adx_threshold: 25           # Trend confirmation threshold
+    atr_period: 14              # ATR for target calc (5min)
+    atr_target_mult: 2.5        # Target = entry ± 2.5×ATR
+    volume_ratio_min: 1.5       # Trigger bar vol / SMA(20) threshold
+    volume_sma_period: 20       # Volume SMA lookback
+    rr_min: 3.0                 # Minimum risk:reward ratio
+    time_stop_bars: 30          # Max bars in trade (5min = 150min)
+
 trading_hours:
   market_open: "09:15"
   market_close: "15:30"
