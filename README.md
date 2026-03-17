@@ -246,14 +246,23 @@ Current: **524 passing**, 12 skipped, 0 failures.
 
 | Item | Status |
 |------|--------|
-| S1 Intraday Momentum | Active (paper trading) |
-| Paper sessions | 7 completed (2 trades, +1,390 net P&L) |
+| S1 Intraday Momentum | DEPRECATED — negative expectancy confirmed via backtester |
+| S1v2 Trend Pullback | In development — backtester implementation pending |
+| S1v3 Mean Reversion | In development — backtester implementation pending |
+| Paper sessions | 9 completed (13 trades, -₹1,762 cumulative net P&L) |
 | HAWK AI Engine | Active (evening + morning runs) |
+| Backtester | Operational — 2.75M candles, optimizer, compare modes |
 | CLI | v0.2.0 (25+ subcommands) |
 | Infrastructure | TimescaleDB + Docker + Nginx + SSL + cron |
-| Tests | 524 passing |
+| Tests | 579 passing |
 | VPS | Rocky Linux 9.7 |
 | Mode | `paper` (never auto-switched to live) |
+
+### Strategy Status
+
+- **S1 (EMA Crossover Momentum):** Deprecated — negative expectancy confirmed via backtester. Running for infrastructure validation only.
+- **S1v2 (Trend Pullback):** In development — backtester implementation pending. See `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`.
+- **S1v3 (Mean Reversion):** In development — backtester implementation pending. See `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`.
 
 ---
 

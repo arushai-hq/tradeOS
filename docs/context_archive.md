@@ -59,6 +59,28 @@ This file is append-only. Current state lives in TradeOS_context.md (repo root).
 
 ---
 
+## Archived Session Log — 2026-03-11 to 2026-03-16
+
+| Date | Session | Summary | Outcome |
+|------|---------|---------|---------|
+| 2026-03-11 | Config Extraction | Capital 5L→10L, Option C stop floor 2%, all S1 params to config (`9d9f595`, `96de8fa`). Tests: 340→353. | Full playground mode — every parameter tunable from config. |
+| 2026-03-11 | Session 05 + HAWK | Session 05: system health PASS, 0 trades (sizer rejected all — pre-fix). T1-T3 Telegram bugs fixed (`86c67ea`). Stop floor 2% + ₹10L capital applied (`9d9f595`). All S1 params to config (`96de8fa`). HAWK first run: 15 picks on feature/hawk. Tests: 353→361 (main). | S1 ready for Session 06. HAWK pipeline proven. |
+| 2026-03-12 | Session 06 + HAWK | Config tuning: volume_ratio_min 1.5→1.2 (`26d840e`), no_entry_after 14:30→14:45 (`42fd4d5`). HAWK evaluator built (`e4fd409`). Bhavcopy embed fix (`41886c2`). Day 1 eval: 73.3% direction (11/15), HIGH 100% (4/4). Tests: 361 (main), 407 (feature/hawk). | Config tuned. HAWK eval pipeline complete. |
+| 2026-03-12 | Merge + Consensus | feature/hawk merged into main (`094e04a`). 439 tests. HAWK multi-model consensus built (Claude+Gemini+GPT-5.4+Kimi). Day 2: 12 unanimous picks, $0.23/run. Model comparison completed. | Unified codebase. Session 07 ready. |
+| 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
+| 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
+| 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
+| 2026-03-14 | Token Automation + Infra + CLI + Audit | Nginx + Let's Encrypt (port 11443), token automation with auto-start, production logging, log rotation, session report DB+verify modes, tradeos CLI (25+ commands, color-coded), README.md + CLAUDE.md. Codebase audit: 2 criticals fixed (signal_id chain, structlog field names), 5 warnings resolved. Tests: 453→499. | Weekend complete. CLEAR FOR MONDAY. |
+| 2026-03-15 | ASPS Restructure | Full ASPS v1.0.0 compliance — engine modules moved to `core/`, subdirectory CLAUDE.md files (core/, tools/, docker/, scripts/, tests/), root CLAUDE.md rewritten (132 lines), ADRs (position sizing, token automation) + runbooks (daily trading) + specs directory created. Tests: 499 passed. | `refactor/asps-restructure` branch ready for review. |
+| 2026-03-16 | Nginx + Cron Fix | Fix 1: Nginx `proxy_pass` changed from `host.docker.internal:7291` to VPS public IP `72.62.226.215:7291` — `host.docker.internal` resolved to docker0 bridge (172.17.0.1) unreachable from tradeos_network (172.20.0.0/16), causing 504 Gateway Timeout on Zerodha OAuth callbacks. Fix 2: Cron timing in `setup_cron.sh` corrected — VPS clock runs IST, old entries used UTC-converted times (01:30 instead of 07:00). Token cron: `0 7 * * 1-5`, log rotation: `0 2 * * 0`. Commits: `3ad86b3`, `c603856`. | Merged to main. OAuth callback flow verified. |
+| 2026-03-16 | Session 08 + Report Fix | Session 08: 6 trades (5W/1L), +₹44 net, 15 signals, all DB writes verified, LOG=DB match on all trades. B12-B14 fixes confirmed working. Report formatting fix: fixed-width columns for signal/trade tables, HH:MM:SS timestamps, ANSI color for P&L, verify mode now compares gross vs gross (was comparing LOG gross against DB net). Tests: 499 passed. | Futures gate: 10/10 trades, 2/3 sessions, P&L verified, 1+ winner — 3/4 gates met. |
+| 2026-03-16 | Report + B15 Fix | Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). B15 max positions race condition: defense-in-depth with 3 layers — pending_signals counter (Gate 4), hard gate (execution engine), capital ceiling. Session 08 showed 6 positions with max=4 due to async fill delay. Tests: 515→523. | B15 resolved. Race condition eliminated. |
+| 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
+| 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
+| 2026-03-16 | CLI Progress Indicators | `utils/progress.py`: reusable spinner utility (braille animation, NO_COLOR, isatty). Integrated into HAWK evening/consensus (data collection + per-model LLM), session_report (log parsing, DB queries, exports), token_cron (server start, escalation). HAWK consensus alphabetical sort already implemented — verified, no changes needed. Tests: 539. | CLI UX improved across all long-running commands. |
+
+---
+
 ## Archived Completed Work
 
 <!-- Historical completed work items move here periodically -->

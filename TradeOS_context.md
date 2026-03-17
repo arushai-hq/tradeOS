@@ -45,7 +45,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `docs/decisions/` | Architecture Decision Records (ADR-001: position sizing, ADR-002: token automation) |
 | `docs/runbooks/` | Operational procedures (daily-trading.md) |
 
-**Strategy:** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI 55–70 (LONG) / 30–45 (SHORT) + volume ratio ≥ 1.5x
+**Strategy (current):** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI + volume ratio. **DEPRECATED** — negative expectancy confirmed via backtester across all parameter combinations. Kept running for infrastructure validation only.
+**Strategy (in development):** S1v2 Trend Pullback (Raschke/Schwartz/PTJ hybrid) + S1v3 Mean Reversion (Kotegawa-inspired). Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`
 **Watchlist:** 50 NIFTY 50 stocks in `config/settings.yaml` (expanded 2026-03-16)
 **Candle interval:** 15 minutes | **Trade window:** 09:15–15:00 IST | **Hard exit:** 15:00 IST
 
@@ -55,7 +56,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **551 passing, 0 failures, 12 skipped** |
+| Tests | **579 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -78,8 +79,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | B15 fix | **2026-03-16** — Max positions race condition fixed. Defense-in-depth: Layer 1 (pending_signals counter in Gate 4), Layer 2 (hard gate in execution engine), Layer 3 (capital ceiling check). Session 08 scenario (5 simultaneous signals with 1 open) now correctly limited to 3 new positions. Tests: 515→523. |
 | ASPS Restructure | **2026-03-15** — ASPS v1.0.0 restructure complete. Pattern B (Engine + Tools), HEAVY tier. Engine modules moved to `core/` (data_engine, strategy_engine, execution_engine, risk_manager, regime_detector). Subdirectory CLAUDE.md files for skill routing. Root CLAUDE.md rewritten (<200 lines). ADRs, runbooks, and specs directories created. Tests: 499 passed. Branch: `refactor/asps-restructure`. |
 | Backtester | Operational. 2.75M candles (52 symbols × 5 intervals). First runs complete. S1 fixed/trailing/partial all show negative expectancy. Parameter optimization confirms no profitable configuration exists for current S1 entry logic. |
+| Strategy redesign | S1v2 (trend pullback) + S1v3 (mean reversion) spec locked in TradeOS-03. Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. Pending backtester implementation. |
 | Mode | `paper` — never change to `live` without explicit instruction |
-| Active strategy | S1 only |
+| Active strategy | S1 (deprecated — infrastructure validation only). S1v2 + S1v3 in backtester development. |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
 | Paper Session 02 | Complete — signal pipeline validated |
 | Paper Session 03 | Complete — debrief complete. 9 signals generated, 3 converted to positions. 6 bugs found (2 critical, 3 high, 1 medium). Zero P&L tracked — tracker bug. First session with live signal generation and position entry. |
@@ -106,6 +108,10 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 12. **Option C stop floor** — Minimum 2% stop distance enforced when swing-based stops are tighter. Paper capital increased ₹5L→₹10L for realistic testing. All 10 S1 strategy parameters (EMA periods, RSI thresholds, volume ratio, RR ratio, swing lookback, min stop %) now configurable via settings.yaml. Zero hardcoded numbers in signal generation.
 13. **HAWK multi-model consensus** — 4 LLMs (Claude, Gemini, GPT-5.4, Kimi) run on same data. Picks scored: UNANIMOUS (4/4), STRONG (3/4), MAJORITY (2/4), SINGLE (1/4). $0.23/run, ~$10/month. All 4 models selected after side-by-side comparison — 80% pick overlap confirmed.
 14. **S1 strategy validation failed backtesting** — Negative expectancy across all exit modes and parameter sweeps (Jan 2025 - Mar 2026). Entry logic (EMA crossover + RSI + VWAP + volume) generates too many false signals. Architectural redesign required before live capital deployment. Paper trading continues for infrastructure validation.
+15. **S1v2 Trend Pullback design** — Raschke "Holy Grail" + Schwartz 10-EMA filter + PTJ risk management. Multi-timeframe: 15min trend filter (10-EMA direction + ADX>25), 5min entry (first pullback to 20-EMA then reclaim, volume>1.5×avg). Target: 2.5×ATR. Stop: pullback low/high. R:R gate: minimum 3:1. Time stop: 150min. Full spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`.
+16. **S1v3 Mean Reversion design** — Kotegawa-inspired panic buy + Bollinger Band oversold + VWAP target. 15min chart only. Trigger: stock drops >2×ATR from day high, RSI<30, price at/below lower BB(20,2), first green reversal candle with volume>1.5×avg. Target: VWAP. Stop: intraday low. R:R gate: minimum 2:1. Valid window: 09:30–14:30 IST. Both LONG and SHORT directions.
+17. **Backtester strategy implementation** — Two separate strategy classes (s1v2_trend_pullback.py, s1v3_mean_reversion.py). New indicators required: EMA(10), EMA(20), ADX(14), Bollinger Bands(20,2). Shared position pool (6 max). Success criteria: positive P&L, win rate ≥40%, profit factor ≥1.3, max drawdown ≤15%, avg R:R ≥2.0, minimum 50 trades.
+18. **Strategy research methodology** — Derived from studying 7 proven short-term traders. Key principles extracted: (a) enter on pullback/reversal not exhausted momentum, (b) asymmetric R:R minimum 3:1, (c) regime awareness — don't trade choppy markets, (d) fast exits via price stop + time stop, (e) directional filter — never trade against prevailing trend.
 
 ---
 
@@ -157,14 +163,12 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **Session 09** — Next trading day. Continue S1 paper trading toward futures gate (need 3rd clean session).
-2. Trailing stop data gate review — deferred, insufficient trades hitting 2R to validate.
-3. ~~DB trade history~~ — **DONE**. TimescaleDB tables live, dual-write active.
-4. ~~Token semi-automation~~ — **DONE**. Tested 2026-03-14.
-5. ~~Verify P&L comparison bug~~ — **DONE**. Now compares gross vs gross (like-for-like).
-6. Install certbot renewal cron on VPS (setup_ssl.sh handles this).
-7. Futures gate: 10/10 trades ✓, 2/3 clean sessions, P&L verified ✓, 1+ winner ✓ — 3/4 gates met, need 1 more clean session.
-8. ~~Watchlist expansion~~ — **DONE**. Expanded to 50 NIFTY 50 stocks (2026-03-16). TATAMOTORS → TMPV.
+1. **S1v2 backtester implementation** — Implement s1v2_trend_pullback strategy class in backtester. Add ADX, Bollinger Bands, EMA10, EMA20 indicators. Test against 198-day dataset. CC prompt ready.
+2. **S1v3 backtester implementation** — Implement s1v3_mean_reversion strategy class in backtester. Test against 198-day dataset. CC prompt ready.
+3. **Strategy comparison** — Run S1 vs S1v2 vs S1v3 comparison. Apply success criteria. Deploy winner to paper trading.
+4. **Continue paper trading** — S1 continues for infrastructure validation. Session 10 on next trading day.
+5. **Token automation verification** — PYTHONPATH fix deployed, first real cron test pending.
+6. Futures gate: 10/10 trades ✓, 2/3 clean sessions, P&L verified ✓, 1+ winner ✓ — 3/4 gates met.
 
 ---
 
@@ -172,25 +176,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Date | Session | Summary | Outcome |
 |------|---------|---------|---------|
-| 2026-03-11 | Config Extraction | Capital 5L→10L, Option C stop floor 2%, all S1 params to config (`9d9f595`, `96de8fa`). Tests: 340→353. | Full playground mode — every parameter tunable from config. |
-| 2026-03-11 | Session 05 + HAWK | Session 05: system health PASS, 0 trades (sizer rejected all — pre-fix). T1-T3 Telegram bugs fixed (`86c67ea`). Stop floor 2% + ₹10L capital applied (`9d9f595`). All S1 params to config (`96de8fa`). HAWK first run: 15 picks on feature/hawk. Tests: 353→361 (main). | S1 ready for Session 06. HAWK pipeline proven. |
-| 2026-03-12 | Session 06 + HAWK | Config tuning: volume_ratio_min 1.5→1.2 (`26d840e`), no_entry_after 14:30→14:45 (`42fd4d5`). HAWK evaluator built (`e4fd409`). Bhavcopy embed fix (`41886c2`). Day 1 eval: 73.3% direction (11/15), HIGH 100% (4/4). Tests: 361 (main), 407 (feature/hawk). | Config tuned. HAWK eval pipeline complete. |
-| 2026-03-12 | Merge + Consensus | feature/hawk merged into main (`094e04a`). 439 tests. HAWK multi-model consensus built (Claude+Gemini+GPT-5.4+Kimi). Day 2: 12 unanimous picks, $0.23/run. Model comparison completed. | Unified codebase. Session 07 ready. |
-| 2026-03-13 | Session 07 + HAWK Day 3 | FIRST TRADES: SUNPHARMA SHORT +₹1,361, TITAN SHORT +₹30. Session +₹1,390 net. B12-B14 found and fixed (`af8a007`): gross P&L, Telegram fields, exit reason. `resolve_position_fields` utility. HAWK Day 2 eval: SHORT 100% (8/8). Day 3: 8 unanimous SHORT. Tests: 439→453. | Milestone — first profitable session. 2/10 trades toward futures gate. |
-| 2026-03-13 | Weekend Plan | DB trade history design (TimescaleDB, dual-write) and token semi-automation (Telegram + callback server) prioritized for weekend. Production readiness roadmap brainstormed (4 phases). | New session starting for implementation. |
-| 2026-03-13 | DB Trade History | D1 signal status updates, D3 sessions table, D4 backfill script, D5 dead code cleanup. 5 commits on feature/db-trade-history. Tests: 453→464. | Pending VPS deploy + merge to main. |
-| 2026-03-14 | Token Automation + Infra + CLI + Audit | Nginx + Let's Encrypt (port 11443), token automation with auto-start, production logging, log rotation, session report DB+verify modes, tradeos CLI (25+ commands, color-coded), README.md + CLAUDE.md. Codebase audit: 2 criticals fixed (signal_id chain, structlog field names), 5 warnings resolved. Tests: 453→499. | Weekend complete. CLEAR FOR MONDAY. |
-| 2026-03-15 | ASPS Restructure | Full ASPS v1.0.0 compliance — engine modules moved to `core/`, subdirectory CLAUDE.md files (core/, tools/, docker/, scripts/, tests/), root CLAUDE.md rewritten (132 lines), ADRs (position sizing, token automation) + runbooks (daily trading) + specs directory created. Tests: 499 passed. | `refactor/asps-restructure` branch ready for review. |
-| 2026-03-16 | Nginx + Cron Fix | Fix 1: Nginx `proxy_pass` changed from `host.docker.internal:7291` to VPS public IP `72.62.226.215:7291` — `host.docker.internal` resolved to docker0 bridge (172.17.0.1) unreachable from tradeos_network (172.20.0.0/16), causing 504 Gateway Timeout on Zerodha OAuth callbacks. Fix 2: Cron timing in `setup_cron.sh` corrected — VPS clock runs IST, old entries used UTC-converted times (01:30 instead of 07:00). Token cron: `0 7 * * 1-5`, log rotation: `0 2 * * 0`. Commits: `3ad86b3`, `c603856`. | Merged to main. OAuth callback flow verified. |
-| 2026-03-16 | Session 08 + Report Fix | Session 08: 6 trades (5W/1L), +₹44 net, 15 signals, all DB writes verified, LOG=DB match on all trades. B12-B14 fixes confirmed working. Report formatting fix: fixed-width columns for signal/trade tables, HH:MM:SS timestamps, ANSI color for P&L, verify mode now compares gross vs gross (was comparing LOG gross against DB net). Tests: 499 passed. | Futures gate: 10/10 trades, 2/3 sessions, P&L verified, 1+ winner — 3/4 gates met. |
-| 2026-03-16 | Report + B15 Fix | Report: Capital + Charges columns, Indian number formatting (₹X,XX,XXX). B15 max positions race condition: defense-in-depth with 3 layers — pending_signals counter (Gate 4), hard gate (execution engine), capital ceiling. Session 08 showed 6 positions with max=4 due to async fill delay. Tests: 515→523. | B15 resolved. Race condition eliminated. |
-| 2026-03-16 | OSD v1.9.0 Compliance | Full 29-standard audit. Created: CHANGELOG.md, data-inventory.md, tradeos-infrastructure.md, rollback-procedure.md, secrets.example.yaml. Git tag v0.5.0. Flaky test fixed. Tests: 524. | 15 PASS, 12 PARTIAL, 2 N/A. |
-| 2026-03-16 | HAWK Fix + Watchlist Expansion | HAWK data collectors: KiteConnect primary, shared instance, nsetools/nsepython fallback. FII/DII graceful degradation (nse_fii removed). Watchlist: 20→50 NIFTY 50 stocks. TATAMOTORS→TMPV (demerger). All 50 tokens from live API. Helper: `scripts/fetch_instrument_tokens.py`. Tests: 533. | HAWK data reliable. Full NIFTY 50 coverage. |
-| 2026-03-16 | CLI Progress Indicators | `utils/progress.py`: reusable spinner utility (braille animation, NO_COLOR, isatty). Integrated into HAWK evening/consensus (data collection + per-model LLM), session_report (log parsing, DB queries, exports), token_cron (server start, escalation). HAWK consensus alphabetical sort already implemented — verified, no changes needed. Tests: 539. | CLI UX improved across all long-running commands. |
 | 2026-03-17 | Backtester Data Infrastructure | 4 DB tables (backtest_candles, backtest_metadata, backtest_runs, backtest_trades) in `migrations/002_backtest_tables.sql`. Auto-create at startup. `tools/data_downloader.py`: KiteConnect historical candle downloader with 5 intervals, resume, rate limiting, ON CONFLICT idempotent. CLI: `tradeos data download/status`. PYTHONPATH fix for CLI/cron. Tests: 551. | Data layer ready for backtester engine. |
 | 2026-03-17 | Core Backtester Engine | `tools/backtester.py`: replays historical candles through exact S1 pipeline (IndicatorEngine, SignalGenerator, PositionSizer, ChargeCalculator, classify_regime). BacktestRiskGate adapts Gates 4-7 with candle_time. Three exit modes: fixed, trailing (ATR), partial (50% at 1R). Optimizer (param sweep), compare (exit mode comparison). DB storage + rich terminal report. CLI: `tradeos backtest run/optimize/compare/show`. Tests: 576. | Backtester complete. Ready for live data download + first run. |
 | 2026-03-17 | Backtester VWAP Fix | KiteConnect historical_data returns OHLCV but not VWAP. Backtester was setting `vwap=close`, making `close > vwap` always False — zero signals. Fix: `_compute_vwap_for_day()` computes running VWAP per-stock per-day from `(H+L+C)/3 × volume`. Resets each day. No live code changes. Tests: 577. | Backtester now generates signals correctly. |
 | 2026-03-17 | Session 09 + Backtester | Session 09: 5 trades (1W/4L), -₹3,196 net, 36 signals (31 regime-blocked). Backtester: 2.75M candles downloaded, first full backtest run. S1 loses money across ALL parameter combinations — fixed exits (-₹1.16L/51d), trailing (-₹1.85L), partial (-₹1.83L). ATR sweep 1.0-4.0× all negative. RSI sweep 40-65 all negative. Volume ratio sweep pending. Signal quality is the core issue, not exit strategy. | Critical finding — S1 needs architectural redesign before live trading. |
+| 2026-03-17 | TradeOS-03 Strategy Redesign | Researched 7 proven short-term traders. Designed S1v2 (trend pullback) + S1v3 (mean reversion). 18 decisions locked. Spec: `docs/strategy_specs/strategy_spec_s1v2_s1v3.md`. | Spec locked. CC prompts for backtester implementation ready. |
 
 ---
 
@@ -215,4 +205,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-17** — Backtester operational. S1 backtested to -₹4.3L over 198 days. Parameter sweeps confirm no profitable config. Session 09: -₹3,196 (matches backtest prediction). Strategy redesign needed.
+**2026-03-17** — Strategy redesign spec locked (S1v2 trend pullback + S1v3 mean reversion). 18 design decisions captured. Backtester implementation CC prompts pending. S1 deprecated for trading (infrastructure validation only). Tests: 579 passing.
