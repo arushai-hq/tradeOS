@@ -49,7 +49,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `migrations/003_futures_backtest_tables.sql` | backtest_futures_candles (with tradingsymbol + expiry for per-contract intraday) + backtest_futures_metadata tables. |
 
 **Strategy (current):** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI + volume ratio. **DEPRECATED** — negative expectancy confirmed via backtester across all parameter combinations. Kept running for infrastructure validation only.
-**Strategy (in development):** S1v2 Trend Pullback + S1v3 Mean Reversion being validated on NIFTY/BANKNIFTY futures via backtester. Equity versions killed — insufficient intraday range.
+**Strategy (in development):** S1v2/S1v3 killed on both equities and futures. Three new index futures strategies designed: ORB (Opening Range Breakout), VWAP Mean Reversion, MACD+Supertrend. Implementation pending CC010.
 **Watchlist:** 50 NIFTY 50 stocks in `config/settings.yaml` (expanded 2026-03-16)
 **Candle interval:** 15 minutes | **Trade window:** 09:15–15:00 IST | **Hard exit:** 15:00 IST
 
@@ -59,7 +59,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **640 passing, 0 failures, 12 skipped** |
+| Tests | **690 passing, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -86,8 +86,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Mode | `paper` — never change to `live` without explicit instruction |
 | Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
 | Futures pivot | **Decision locked.** NIFTY + BANKNIFTY index futures. Backtest-first approach — validate S1v2/S1v3 on 18 months of futures data before building trading engine. |
-| Futures data | **CC004 complete.** Dual-mode download: day=`continuous=True` (stitched), intraday=`continuous=False` (per-contract). Schema v2: `tradingsymbol` + `expiry` columns, PK `(instrument, tradingsymbol, interval, timestamp)`. Self-healing migration (DROP+RECREATE). 19 tests. Pending VPS deploy + actual download. |
-| Futures backtester | **Pending CC002.** Lot-based sizing, futures charges, single-instrument mode. |
+| Futures data | **COMPLETE.** 21,145 candles. NIFTY + BANKNIFTY. Day (374 continuous, 18mo), 15min (1,325 near-month, ~53 days), 5min (3,975 near-month, ~53 days). Dual-mode download: day=continuous=True, intraday=per-contract. |
+| Futures backtester | **OPERATIONAL.** Lot-based sizer, futures charges, near-month filter, IST timezone fix, signal diagnostics. 690 tests. |
+| S1v2/S1v3 on futures | **KILLED.** Zero signals across 8 runs (NIFTY+BANKNIFTY × S1v2+S1v3 × 5min+15min). Root cause: multi-stock scanner architecture incompatible with single-instrument index futures. ADX filter blocks 90% (S1v2), time window + panic detection too strict (S1v3). |
+| New strategies | **PENDING CC010.** Three index futures strategies designed: ORB (Opening Range Breakout), VWAP Mean Reversion, MACD+Supertrend (blueprint 2.10). All in new `tools/futures_strategies.py` — zero dependency on equity backtester. |
+| Cron issue | Token cron did not fire on 2026-03-18 morning. Manual run succeeded. Debug deferred. |
 | NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
 | NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |
 | Paper Session 01 | Complete — VWAP bug found and fixed |
@@ -137,6 +140,14 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 33. **D30: 18 months historical data (Sep 2024 → Mar 2026)** — Confirmed.
 34. **D31: New `tools/futures_backtester.py`** — Separate from equity backtester — Confirmed.
 35. **D32: Dual-mode futures download** — KiteConnect `continuous=True` only works for `day` interval; intraday fails with `InputException`. Fix: day=continuous (stitched), intraday=per-contract (each contract downloaded separately with `continuous=False`). Schema updated with `tradingsymbol` + `expiry` columns.
+36. **D33: S1v2/S1v3 killed for index futures** — Design mismatch, not parameter problem — Confirmed.
+37. **D34: Keep futures backtester infrastructure, replace strategy layer only** — Confirmed.
+38. **D35: Build three new strategies: ORB + VWAP MR + MACD/Supertrend** — Confirmed.
+39. **D36: ORB range window: both 15min and 30min as config option** — Confirmed.
+40. **D37: ORB stop loss: both range-end and midpoint as config option** — Confirmed.
+41. **D38: All indicator functions self-contained in futures_strategies.py** — Zero imports from equity backtester — Confirmed.
+42. **D39: Backtest decides winner — no pre-selecting strategies** — Confirmed.
+43. **D40: Deep research blueprint reviewed (30 strategies). Only 2.10 (MACD+Supertrend) is pure futures. ORB and VWAP adapted from global index futures research, not blueprint F&O section.** — Confirmed.
 
 ---
 
@@ -188,14 +199,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. ~~**TRADEOS-04-CC001** — Futures data infrastructure~~ ✅ DONE (merged to main)
-2. ~~**TRADEOS-04-CC004** — Fix intraday download (dual-mode continuous/per-contract)~~ ✅ DONE
-3. ~~**TRADEOS-04-CC002** — Futures backtester~~ ✅ DONE — lot-based sizing, futures charges, single-instrument mode, 31 tests
-4. **VPS: Download futures data** — Run `tradeos futures download --all` after CC004 deployed. Self-healing migration will auto-upgrade schema.
-5. **VPS: Run backtests** — Run S1v2 + S1v3 on NIFTY + BANKNIFTY after CC002 deployed. Compare with equity results.
-5. **Decision gate** — If backtest shows positive expectancy → proceed to trading engine adaptation. If not → evaluate strategy modifications or alternative strategies.
-6. **Continue S1 equity paper trading** — Infrastructure validation continues regardless.
-7. **Token automation** — Verify cron continues working.
+1. **TRADEOS-04-CC010** — Build ORB + VWAP MR + MACD/Supertrend strategies in `tools/futures_strategies.py`. Branch: feature/futures-strategies.
+2. **VPS: Run backtests** — After CC010 deployed: `tradeos futures backtest run --instrument NIFTY --strategy orb --interval 5minute`, `tradeos futures backtest run --instrument NIFTY --strategy vwap_mr --interval 5minute`, `tradeos futures backtest run --instrument NIFTY --strategy macd_st --interval 15minute`. Same 3 runs for BANKNIFTY = 6 total runs.
+3. **Decision gate** — Evaluate backtest results. If PF > 1.0 on any combination → proceed to paper trading engine adaptation. If all negative → reassess strategy design.
+4. **Debug cron** — Token cron didn't trigger 2026-03-18 morning. Check token_cron.py logic.
+5. **Continue S1 equity paper trading** — Infrastructure validation.
 
 ---
 
@@ -212,6 +220,8 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | TradeOS-04 | Futures pivot locked. 6 decisions (D26-D31). NIFTY+BANKNIFTY, backtest-first, 18mo data, separate table, separate backtester. CC001 (data infra) + CC002 (backtester) prompts generated. | Strategic pivot — equity → futures. |
 | 2026-03-17 | TradeOS-04 CC001+CC004 | CC001: futures data infra (downloader, migration 003, CLI, 14 tests). CC004: fix intraday — dual-mode (day=continuous, intraday=per-contract), schema v2 (tradingsymbol+expiry), self-healing migration, 19 tests. D32 decision. 659 tests passing. | Futures data pipeline ready for VPS deploy. |
 | 2026-03-17 | TradeOS-04 CC002 | Futures backtester: FuturesChargeCalculator (Zerodha MIS rates), FuturesPositionSizer (lot-based 3-layer), FuturesCapitalTracker (margin-based), FuturesBacktestEngine (single-instrument, S1v2/S1v3, 3 exit modes). CLI: `tradeos futures backtest run/compare/optimize/show`. 31 tests. 690 tests total. Bug fix: `compute_atr` was imported from wrong module. | Futures backtester ready. Next: VPS deploy + run backtests. |
+| 2026-03-18 | TradeOS-04 (Part 1) | Futures data infra (CC001+CC004). 21,145 candles downloaded. Futures backtester (CC002). Near-month filter + timezone + interval fixes (CC005-CC007). Signal diagnostics (CC008-CC009). | Data + backtester operational. |
+| 2026-03-18 | TradeOS-04 (Part 2) | S1v2/S1v3 killed on futures (8 runs, 0 signals). Blueprint review (30 strategies). Three new strategies designed: ORB, VWAP MR, MACD/Supertrend. CC010 prompt ready. | Strategy pivot — multi-stock → single-instrument. |
 
 ---
 
@@ -232,9 +242,10 @@ These rules apply to every TradeOS session regardless of context window or sessi
 11. **CLI Convention** — All operations go through `tradeos <command>` in production. Never call Python scripts directly. New scripts must be registered as tradeos subcommands before deployment.
 12. **Documentation Convention** — README.md and CLAUDE.md must be updated with every feature addition. Every CC prompt must include README.md update requirements. CLAUDE.md contains all session rules and CC conventions for project continuity.
 13. **Futures lot size awareness** — NIFTY lot size: 65. BANKNIFTY lot size: 30. All position sizing in futures must be lot-based (floor division). Lot sizes are configured in `config/settings.yaml` under `futures.instruments` — never hardcoded. Lot sizes change periodically per NSE circulars.
+14. **Strategy independence** — Futures strategies (`tools/futures_strategies.py`) must have ZERO imports from equity backtester (`tools/backtester.py`). Self-contained indicator functions. This prevents the coupling bugs that caused S1v2/S1v3 integration failures (evaluator state dicts, double-feeding candles, missing symbol registration).
 
 ---
 
 ## 11. Last Updated
 
-**2026-03-17** — TradeOS-04. CC001 + CC004 + CC002 complete. Futures data pipeline + backtester. 690 tests. Next: deploy to VPS, run `tradeos futures download --all`, then run backtests (`tradeos futures backtest run --instrument NIFTY --strategy s1v2`).
+**2026-03-18** — TradeOS-04 complete. Futures data + backtester operational. S1v2/S1v3 killed on futures. Three new strategies designed (ORB, VWAP MR, MACD/Supertrend). CC010 ready for execution. 15 decisions (D26-D40). 10 CC prompts (CC001-CC010). Tests: 690.
