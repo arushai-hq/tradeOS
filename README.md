@@ -114,8 +114,13 @@ All operations go through the `tradeos` command. Set `TRADEOS_DIR` to override t
 | `tradeos futures backtest run --instrument NIFTY --strategy s1v2 --exit-mode trailing` | Trailing stop mode |
 | `tradeos futures backtest compare --instrument NIFTY --strategy s1v2 --modes fixed,trailing,partial` | Compare exit modes |
 | `tradeos futures backtest optimize --instrument NIFTY --strategy s1v2 --param atr_mult --range 1.0:0.5:3.0` | Parameter sweep |
+| `tradeos futures backtest run --instrument NIFTY --strategy orb --interval 5minute` | ORB strategy on 5min candles |
+| `tradeos futures backtest run --instrument NIFTY --strategy vwap_mr --interval 5minute` | VWAP Mean Reversion |
+| `tradeos futures backtest run --instrument NIFTY --strategy macd_st --interval 15minute` | MACD + Supertrend (multi-TF) |
 | `tradeos futures backtest show --last-run` | Show most recent futures run |
 | `tradeos futures backtest show --run-id 5` | Show specific run by ID |
+
+**Futures strategies:** `s1v2`, `s1v3` (equity-ported), `orb` (Opening Range Breakout), `vwap_mr` (VWAP Mean Reversion), `macd_st` (MACD + Supertrend)
 
 ### Backtesting
 

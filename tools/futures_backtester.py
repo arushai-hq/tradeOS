@@ -68,6 +68,11 @@ from tools.backtester import (
     print_optimize_report,
     print_compare_report,
 )
+from tools.futures_strategies import (
+    ORBStrategy,
+    VWAPMeanReversionStrategy,
+    MACDSupertrendStrategy,
+)
 from utils.progress import spinner, step_done, step_fail, step_info
 
 log = structlog.get_logger()
@@ -340,12 +345,23 @@ class FuturesBacktestEngine:
         self._reward_ratio = Decimal(str(fut_bt.get("reward_ratio", 2.0)))
 
         # Strategy evaluator
+        self._evaluator = None
+        self._strategy = None
         if strategy_name == "s1v3":
             self._evaluator = S1v3SignalEvaluator(config)
             self._s1v3_warmed_up = False
         elif strategy_name == "s1v2":
             self._evaluator = S1v2SignalEvaluator(config)
             self._s1v2_warmed_up = False
+        elif strategy_name == "orb":
+            self._strategy = ORBStrategy(config)
+        elif strategy_name == "vwap_mr":
+            self._strategy = VWAPMeanReversionStrategy(config)
+            self._vwap_mr_warmed_up = False
+        elif strategy_name == "macd_st":
+            self._strategy = MACDSupertrendStrategy(config)
+            self._macd_st_warmed_up = False
+            self._daily_candles: list[Candle] = []
         else:
             raise ValueError(f"Unknown futures strategy: {strategy_name}")
 
@@ -527,6 +543,57 @@ class FuturesBacktestEngine:
                 vwap=Decimal(str(r["close"])),
                 candle_time=ts,
                 session_date=ts.date() if hasattr(ts, "date") else day,
+                tick_count=0,
+            ))
+        return candles
+
+    async def _load_daily_candles(
+        self, up_to_date: date, lookback: int = 60,
+    ) -> list[Candle]:
+        """Load daily candles for multi-timeframe strategies (macd_st)."""
+        ts_filter = self._tradingsymbol
+        if ts_filter:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = 'day' "
+                    "  AND tradingsymbol = $2 "
+                    "  AND timestamp::date <= $3 "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT $4",
+                    self._instrument, ts_filter, up_to_date, lookback,
+                )
+        else:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT open, high, low, close, volume, oi, timestamp "
+                    "FROM backtest_futures_candles "
+                    "WHERE instrument = $1 AND interval = 'day' "
+                    "  AND timestamp::date <= $2 "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT $3",
+                    self._instrument, up_to_date, lookback,
+                )
+
+        candles: list[Candle] = []
+        for r in reversed(rows):  # Reverse to chronological order
+            ts = r["timestamp"]
+            if ts.tzinfo is None:
+                ts = IST.localize(ts)
+            else:
+                ts = ts.astimezone(IST)
+            candles.append(Candle(
+                instrument_token=0,
+                symbol=self._instrument,
+                open=Decimal(str(r["open"])),
+                high=Decimal(str(r["high"])),
+                low=Decimal(str(r["low"])),
+                close=Decimal(str(r["close"])),
+                volume=int(r["volume"]),
+                vwap=Decimal(str(r["close"])),
+                candle_time=ts,
+                session_date=ts.date() if hasattr(ts, "date") else up_to_date,
                 tick_count=0,
             ))
         return candles
@@ -969,6 +1036,148 @@ class FuturesBacktestEngine:
         log.info("futures_backtest_signal_diagnostics", **d)
 
     # ------------------------------------------------------------------
+    # Diagnostic wrappers — new strategies
+    # ------------------------------------------------------------------
+
+    def _evaluate_with_reason_orb(
+        self, candle: Candle,
+    ) -> tuple:
+        """ORB diagnostic wrapper. Returns (signal, reason_str)."""
+        strategy = self._strategy
+        # Snapshot state before evaluate
+        was_range_formed = strategy._range_formed
+        was_range_invalid = strategy._range_invalid
+        prev_trades = strategy._trades_today
+
+        signal = strategy.evaluate(candle, self._candle_buffer)
+
+        if signal is not None:
+            return signal, "signal_generated"
+
+        ct = candle.candle_time.time()
+        if ct < dt_time(9, 15):
+            return None, "before_market"
+        if not was_range_formed and ct < strategy._range_end_time:
+            return None, "range_forming"
+        if strategy._range_invalid and not was_range_invalid:
+            # Range was just invalidated this candle
+            rh = strategy._range_high or Decimal("0")
+            rl = strategy._range_low or Decimal("0")
+            mid = (rh + rl) / Decimal("2") if (rh + rl) > 0 else Decimal("1")
+            rpct = (rh - rl) / mid if mid != 0 else Decimal("0")
+            if rpct < strategy._min_range_pct:
+                return None, "range_too_narrow"
+            if rpct > strategy._max_range_pct:
+                return None, "range_too_wide"
+            return None, "range_invalid"
+        if strategy._range_invalid:
+            return None, "range_invalid"
+        if strategy._trades_today >= strategy._max_trades_per_day and prev_trades >= strategy._max_trades_per_day:
+            return None, "max_trades_reached"
+        if ct >= strategy._no_entry_after:
+            return None, "after_cutoff"
+        # Must be no breakout or volume insufficient
+        if candle.close > (strategy._range_high or Decimal("999999")) or \
+           candle.close < (strategy._range_low or Decimal("0")):
+            return None, "volume_insufficient"
+        return None, "no_breakout"
+
+    def _evaluate_with_reason_vwap_mr(
+        self, candle: Candle, day_candles_so_far: list[Candle],
+    ) -> tuple:
+        """VWAP MR diagnostic wrapper. Returns (signal, reason_str)."""
+        strategy = self._strategy
+        prev_trades = strategy._trades_today
+
+        signal = strategy.evaluate(candle, self._candle_buffer, day_candles_so_far)
+
+        if signal is not None:
+            return signal, "signal_generated"
+
+        ct = candle.candle_time.time()
+        if ct < dt_time(9, 30) or ct >= strategy._no_entry_after:
+            return None, "after_cutoff"
+        if prev_trades >= strategy._max_trades_per_day:
+            return None, "max_trades_reached"
+        if len(day_candles_so_far) < 3:
+            return None, "insufficient_indicators"
+
+        # Check ADX
+        from tools.futures_strategies import compute_adx
+        adx = compute_adx(self._candle_buffer, strategy._adx_period)
+        if adx is not None and adx >= strategy._adx_max_threshold:
+            return None, "adx_too_high"
+
+        # Check RSI
+        from tools.futures_strategies import compute_rsi
+        rsi = compute_rsi(self._candle_buffer, strategy._rsi_period)
+        if rsi is None:
+            return None, "insufficient_indicators"
+
+        # Check band position
+        from tools.futures_strategies import compute_vwap_with_bands
+        vwap, upper, lower = compute_vwap_with_bands(day_candles_so_far, strategy._band_mult)
+        if not (candle.close <= lower or candle.close >= upper):
+            return None, "not_at_band"
+        if candle.close <= lower and rsi >= strategy._rsi_oversold:
+            return None, "rsi_neutral"
+        if candle.close >= upper and rsi <= strategy._rsi_overbought:
+            return None, "rsi_neutral"
+
+        # Must be distance too small
+        return None, "distance_too_small"
+
+    def _evaluate_with_reason_macd_st(
+        self, candle: Candle,
+    ) -> tuple:
+        """MACD/Supertrend diagnostic wrapper. Returns (signal, reason_str)."""
+        strategy = self._strategy
+        prev_trades = strategy._trades_today
+
+        signal = strategy.evaluate(candle, self._candle_buffer)
+
+        if signal is not None:
+            return signal, "signal_generated"
+
+        ct = candle.candle_time.time()
+        if ct < dt_time(9, 30) or ct >= strategy._no_entry_after:
+            return None, "after_cutoff"
+        if strategy._daily_bias is None:
+            return None, "no_daily_bias"
+        if prev_trades >= strategy._max_trades_per_day:
+            return None, "max_trades_reached"
+
+        # Check EMA filter
+        from tools.futures_strategies import compute_ema
+        closes = [c.close for c in self._candle_buffer]
+        ema50 = compute_ema(closes, strategy._ema_trend_period)
+        if ema50 is None:
+            return None, "insufficient_indicators"
+        if strategy._daily_bias == "LONG" and candle.close <= ema50:
+            return None, "ema_filter_failed"
+        if strategy._daily_bias == "SHORT" and candle.close >= ema50:
+            return None, "ema_filter_failed"
+
+        # Check MACD
+        from tools.futures_strategies import compute_macd
+        macd_result = compute_macd(
+            self._candle_buffer, strategy._macd_fast, strategy._macd_slow, strategy._macd_signal,
+        )
+        if macd_result is None:
+            return None, "insufficient_indicators"
+
+        _ml, _sl, histogram = macd_result
+        if strategy._prev_histogram is None:
+            return None, "insufficient_indicators"
+
+        # Check for crossover vs direction mismatch
+        prev_h = strategy._prev_histogram
+        if (prev_h < 0 and histogram >= 0) or (prev_h > 0 and histogram <= 0):
+            return None, "direction_mismatch"
+
+        return None, "no_macd_crossover"
+
+    # ------------------------------------------------------------------
     # Day processing
     # ------------------------------------------------------------------
 
@@ -1263,6 +1472,402 @@ class FuturesBacktestEngine:
         return day_trades
 
     # ------------------------------------------------------------------
+    # Day processing — new strategies (ORB, VWAP MR, MACD ST)
+    # ------------------------------------------------------------------
+
+    async def _process_day_orb(
+        self, day: date, regime_adapter: BacktestRegimeAdapter,
+    ) -> list[BacktestTrade]:
+        """Simulate one trading day using ORB strategy."""
+        strategy = self._strategy
+        strategy.reset_day()
+
+        candles = await self._load_day_candles(day)
+        if not candles:
+            return []
+        candles = self._compute_vwap_for_day(candles)
+
+        open_position: BacktestPosition | None = None
+        shared_state: dict = {
+            "open_positions": {}, "pending_signals": 0, "kill_switch_level": 0,
+        }
+        config = self._config
+        day_trades: list[BacktestTrade] = []
+
+        for candle in candles:
+            self._candle_buffer.append(candle)
+            if len(self._candle_buffer) > 200:
+                self._candle_buffer = self._candle_buffer[-200:]
+
+            ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+
+            # --- Check exits ---
+            if open_position is not None:
+                trade = None
+                if self._exit_mode == "trailing":
+                    trade = self._check_trailing_exit(open_position, candle)
+                elif self._exit_mode == "partial":
+                    trade = self._check_partial_exit(open_position, candle)
+                else:
+                    trade = self._check_fixed_exit(open_position, candle)
+
+                if trade is not None:
+                    day_trades.append(trade)
+                    open_position = None
+                    shared_state["open_positions"] = {}
+
+            # --- Hard exit ---
+            if ct >= self._hard_exit_time and open_position is not None:
+                trade = self._close_position(open_position, candle.close, candle.candle_time, "HARD_EXIT")
+                day_trades.append(trade)
+                open_position = None
+                shared_state["open_positions"] = {}
+                continue
+
+            # --- Signal generation ---
+            if open_position is not None:
+                self._signal_diag["position_open"] += 1
+                continue
+
+            self._signal_diag["total_candles"] += 1
+            signal, diag_reason = self._evaluate_with_reason_orb(candle)
+            self._signal_diag[diag_reason] += 1
+            if signal is None:
+                continue
+
+            # Risk gate
+            allowed, reason = self._risk_gate.check(
+                signal, shared_state, config, candle.candle_time, regime_adapter,
+            )
+            if not allowed:
+                self._signal_diag["risk_gate_blocked"] += 1
+                continue
+
+            # Position sizing
+            entry_price = self._apply_slippage(
+                signal.theoretical_entry, signal.direction, is_entry=True,
+            )
+            sizing = self._position_sizer.calculate(
+                entry_price=entry_price,
+                stop_loss=signal.stop_loss,
+                available_capital=self._capital_tracker.available_capital,
+                risk_pct=self._risk_pct,
+                lot_size=self._lot_size,
+                margin_rate=self._margin_rate,
+            )
+            if sizing is None:
+                self._signal_diag["sizing_failed"] += 1
+                continue
+            num_lots, total_qty = sizing
+
+            contract_value = Decimal(str(total_qty)) * entry_price
+            self._capital_tracker.open_position(contract_value)
+
+            open_position = BacktestPosition(
+                symbol=self._instrument,
+                instrument_token=0,
+                direction=signal.direction,
+                entry_price=entry_price,
+                entry_time=candle.candle_time,
+                qty=total_qty,
+                stop_loss=signal.stop_loss,
+                target=signal.target,
+                original_stop=signal.stop_loss,
+                regime=regime_adapter.current_regime().value,
+            )
+            shared_state["open_positions"] = {
+                self._instrument: {"direction": signal.direction},
+            }
+
+        # End of day
+        if open_position is not None and candles:
+            last_candle = candles[-1]
+            trade = self._close_position(
+                open_position, last_candle.close, last_candle.candle_time, "HARD_EXIT",
+            )
+            day_trades.append(trade)
+
+        day_trades.extend(self._pending_partial_trades)
+        self._pending_partial_trades = []
+        return day_trades
+
+    async def _process_day_vwap_mr(
+        self, day: date, regime_adapter: BacktestRegimeAdapter,
+    ) -> list[BacktestTrade]:
+        """Simulate one trading day using VWAP Mean Reversion strategy.
+
+        Key difference: allows up to 3 trades per day (re-entry after close).
+        """
+        strategy = self._strategy
+        strategy.reset_day()
+
+        candles = await self._load_day_candles(day)
+        if not candles:
+            return []
+        candles = self._compute_vwap_for_day(candles)
+
+        # Warmup (first day only)
+        if not self._vwap_mr_warmed_up:
+            warmup = await self._load_warmup_candles(day)
+            self._candle_buffer.extend(warmup)
+            self._vwap_mr_warmed_up = True
+
+        open_position: BacktestPosition | None = None
+        shared_state: dict = {
+            "open_positions": {}, "pending_signals": 0, "kill_switch_level": 0,
+        }
+        config = self._config
+        day_trades: list[BacktestTrade] = []
+        day_candles_so_far: list[Candle] = []
+
+        for candle in candles:
+            self._candle_buffer.append(candle)
+            if len(self._candle_buffer) > 200:
+                self._candle_buffer = self._candle_buffer[-200:]
+            day_candles_so_far.append(candle)
+
+            ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+
+            # --- Check exits (allow re-entry) ---
+            if open_position is not None:
+                trade = None
+                if self._exit_mode == "trailing":
+                    trade = self._check_trailing_exit(open_position, candle)
+                elif self._exit_mode == "partial":
+                    trade = self._check_partial_exit(open_position, candle)
+                else:
+                    trade = self._check_fixed_exit(open_position, candle)
+
+                if trade is not None:
+                    day_trades.append(trade)
+                    open_position = None
+                    shared_state["open_positions"] = {}
+                    # Do NOT continue — allow re-entry on same candle iteration
+
+            # --- Hard exit ---
+            if ct >= self._hard_exit_time and open_position is not None:
+                trade = self._close_position(open_position, candle.close, candle.candle_time, "HARD_EXIT")
+                day_trades.append(trade)
+                open_position = None
+                shared_state["open_positions"] = {}
+                continue
+
+            # --- Signal generation ---
+            if open_position is not None:
+                self._signal_diag["position_open"] += 1
+                continue
+
+            self._signal_diag["total_candles"] += 1
+            signal, diag_reason = self._evaluate_with_reason_vwap_mr(candle, day_candles_so_far)
+            self._signal_diag[diag_reason] += 1
+            if signal is None:
+                continue
+
+            # Risk gate
+            allowed, reason = self._risk_gate.check(
+                signal, shared_state, config, candle.candle_time, regime_adapter,
+            )
+            if not allowed:
+                self._signal_diag["risk_gate_blocked"] += 1
+                continue
+
+            # Position sizing
+            entry_price = self._apply_slippage(
+                signal.theoretical_entry, signal.direction, is_entry=True,
+            )
+            sizing = self._position_sizer.calculate(
+                entry_price=entry_price,
+                stop_loss=signal.stop_loss,
+                available_capital=self._capital_tracker.available_capital,
+                risk_pct=self._risk_pct,
+                lot_size=self._lot_size,
+                margin_rate=self._margin_rate,
+            )
+            if sizing is None:
+                self._signal_diag["sizing_failed"] += 1
+                continue
+            num_lots, total_qty = sizing
+
+            contract_value = Decimal(str(total_qty)) * entry_price
+            self._capital_tracker.open_position(contract_value)
+
+            open_position = BacktestPosition(
+                symbol=self._instrument,
+                instrument_token=0,
+                direction=signal.direction,
+                entry_price=entry_price,
+                entry_time=candle.candle_time,
+                qty=total_qty,
+                stop_loss=signal.stop_loss,
+                target=signal.target,
+                original_stop=signal.stop_loss,
+                regime=regime_adapter.current_regime().value,
+            )
+            shared_state["open_positions"] = {
+                self._instrument: {"direction": signal.direction},
+            }
+
+        # End of day
+        if open_position is not None and candles:
+            last_candle = candles[-1]
+            trade = self._close_position(
+                open_position, last_candle.close, last_candle.candle_time, "HARD_EXIT",
+            )
+            day_trades.append(trade)
+
+        day_trades.extend(self._pending_partial_trades)
+        self._pending_partial_trades = []
+        return day_trades
+
+    async def _process_day_macd_st(
+        self, day: date, regime_adapter: BacktestRegimeAdapter,
+    ) -> list[BacktestTrade]:
+        """Simulate one trading day using MACD + Supertrend strategy.
+
+        Multi-timeframe: daily Supertrend for bias, intraday MACD for entries.
+        Allows up to 2 trades per day.
+        """
+        strategy = self._strategy
+        strategy.reset_day()
+
+        # Set daily bias from daily candles up to this day
+        daily_slice = [c for c in self._daily_candles if c.session_date <= day]
+        bias = strategy.set_daily_bias(daily_slice)
+        if bias is None:
+            return []
+
+        candles = await self._load_day_candles(day)
+        if not candles:
+            return []
+        candles = self._compute_vwap_for_day(candles)
+
+        # Warmup (first day only)
+        if not self._macd_st_warmed_up:
+            warmup = await self._load_warmup_candles(day, count=200)
+            self._candle_buffer.extend(warmup)
+            self._macd_st_warmed_up = True
+
+        open_position: BacktestPosition | None = None
+        shared_state: dict = {
+            "open_positions": {}, "pending_signals": 0, "kill_switch_level": 0,
+        }
+        config = self._config
+        day_trades: list[BacktestTrade] = []
+
+        for candle in candles:
+            self._candle_buffer.append(candle)
+            if len(self._candle_buffer) > 200:
+                self._candle_buffer = self._candle_buffer[-200:]
+
+            ct = candle.candle_time.time() if hasattr(candle.candle_time, "time") else candle.candle_time
+
+            # --- Check exits ---
+            if open_position is not None:
+                # Supertrend trailing mode: update stop to intraday Supertrend
+                if strategy._exit_mode == "supertrend_trail":
+                    from tools.futures_strategies import compute_supertrend as _st
+                    st_result = _st(
+                        self._candle_buffer,
+                        strategy._st_intraday_period,
+                        strategy._st_intraday_mult,
+                    )
+                    if st_result is not None:
+                        st_val, _ = st_result
+                        # Only tighten stop, never widen
+                        if open_position.direction == "LONG" and st_val > open_position.stop_loss:
+                            open_position.stop_loss = st_val
+                        elif open_position.direction == "SHORT" and st_val < open_position.stop_loss:
+                            open_position.stop_loss = st_val
+
+                trade = None
+                if self._exit_mode == "trailing":
+                    trade = self._check_trailing_exit(open_position, candle)
+                elif self._exit_mode == "partial":
+                    trade = self._check_partial_exit(open_position, candle)
+                else:
+                    trade = self._check_fixed_exit(open_position, candle)
+
+                if trade is not None:
+                    day_trades.append(trade)
+                    open_position = None
+                    shared_state["open_positions"] = {}
+
+            # --- Hard exit ---
+            if ct >= self._hard_exit_time and open_position is not None:
+                trade = self._close_position(open_position, candle.close, candle.candle_time, "HARD_EXIT")
+                day_trades.append(trade)
+                open_position = None
+                shared_state["open_positions"] = {}
+                continue
+
+            # --- Signal generation ---
+            if open_position is not None:
+                self._signal_diag["position_open"] += 1
+                continue
+
+            self._signal_diag["total_candles"] += 1
+            signal, diag_reason = self._evaluate_with_reason_macd_st(candle)
+            self._signal_diag[diag_reason] += 1
+            if signal is None:
+                continue
+
+            # Risk gate
+            allowed, reason = self._risk_gate.check(
+                signal, shared_state, config, candle.candle_time, regime_adapter,
+            )
+            if not allowed:
+                self._signal_diag["risk_gate_blocked"] += 1
+                continue
+
+            # Position sizing
+            entry_price = self._apply_slippage(
+                signal.theoretical_entry, signal.direction, is_entry=True,
+            )
+            sizing = self._position_sizer.calculate(
+                entry_price=entry_price,
+                stop_loss=signal.stop_loss,
+                available_capital=self._capital_tracker.available_capital,
+                risk_pct=self._risk_pct,
+                lot_size=self._lot_size,
+                margin_rate=self._margin_rate,
+            )
+            if sizing is None:
+                self._signal_diag["sizing_failed"] += 1
+                continue
+            num_lots, total_qty = sizing
+
+            contract_value = Decimal(str(total_qty)) * entry_price
+            self._capital_tracker.open_position(contract_value)
+
+            open_position = BacktestPosition(
+                symbol=self._instrument,
+                instrument_token=0,
+                direction=signal.direction,
+                entry_price=entry_price,
+                entry_time=candle.candle_time,
+                qty=total_qty,
+                stop_loss=signal.stop_loss,
+                target=signal.target,
+                original_stop=signal.stop_loss,
+                regime=regime_adapter.current_regime().value,
+            )
+            shared_state["open_positions"] = {
+                self._instrument: {"direction": signal.direction},
+            }
+
+        # End of day
+        if open_position is not None and candles:
+            last_candle = candles[-1]
+            trade = self._close_position(
+                open_position, last_candle.close, last_candle.candle_time, "HARD_EXIT",
+            )
+            day_trades.append(trade)
+
+        day_trades.extend(self._pending_partial_trades)
+        self._pending_partial_trades = []
+        return day_trades
+
+    # ------------------------------------------------------------------
     # Main run loop
     # ------------------------------------------------------------------
 
@@ -1288,19 +1893,31 @@ class FuturesBacktestEngine:
         all_trades: list[BacktestTrade] = []
         daily_results: list[DailyResult] = []
 
+        # Pre-load daily candles for macd_st (multi-timeframe)
+        if self._strategy_name == "macd_st":
+            cfg_st = self._config.get("strategy", {}).get("macd_st", {})
+            lookback = int(cfg_st.get("daily_candle_lookback", 60))
+            self._daily_candles = await self._load_daily_candles(days[0], lookback)
+
         for day_idx, day in enumerate(days):
             if self._strategy_name == "s1v3":
                 day_trades = await self._process_day_s1v3(day, regime_adapter)
+            elif self._strategy_name == "orb":
+                day_trades = await self._process_day_orb(day, regime_adapter)
+            elif self._strategy_name == "vwap_mr":
+                day_trades = await self._process_day_vwap_mr(day, regime_adapter)
+            elif self._strategy_name == "macd_st":
+                day_trades = await self._process_day_macd_st(day, regime_adapter)
             else:
                 day_trades = await self._process_day_s1v2(day, regime_adapter)
 
             # Diagnostic log for first trading day
             if day_idx == 0:
                 buf_key = self._instrument
-                if self._strategy_name == "s1v3":
+                if self._evaluator is not None:
                     buf_len = len(self._evaluator._candles_15min.get(buf_key, []))
                 else:
-                    buf_len = len(self._evaluator._candles_15min.get(buf_key, []))
+                    buf_len = len(self._candle_buffer)
                 log.info(
                     "futures_backtest_day1_diag",
                     day=str(day),
@@ -1790,7 +2407,7 @@ def main():
     # --- run ---
     run_p = subparsers.add_parser("run", help="Run a single futures backtest")
     run_p.add_argument("--instrument", required=True, help="NIFTY or BANKNIFTY")
-    run_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3"])
+    run_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3", "orb", "vwap_mr", "macd_st"])
     run_p.add_argument("--interval", default=None, help="Candle interval (default: from config)")
     run_p.add_argument("--from", dest="from_date", type=_parse_date, default=None)
     run_p.add_argument("--to", dest="to_date", type=_parse_date, default=None)
@@ -1803,7 +2420,7 @@ def main():
     # --- compare ---
     cmp_p = subparsers.add_parser("compare", help="Compare exit modes")
     cmp_p.add_argument("--instrument", required=True)
-    cmp_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3"])
+    cmp_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3", "orb", "vwap_mr", "macd_st"])
     cmp_p.add_argument("--interval", default=None)
     cmp_p.add_argument("--from", dest="from_date", type=_parse_date, default=None)
     cmp_p.add_argument("--to", dest="to_date", type=_parse_date, default=None)
@@ -1813,7 +2430,7 @@ def main():
     # --- optimize ---
     opt_p = subparsers.add_parser("optimize", help="Parameter sweep")
     opt_p.add_argument("--instrument", required=True)
-    opt_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3"])
+    opt_p.add_argument("--strategy", default="s1v2", choices=["s1v2", "s1v3", "orb", "vwap_mr", "macd_st"])
     opt_p.add_argument("--interval", default=None)
     opt_p.add_argument("--from", dest="from_date", type=_parse_date, default=None)
     opt_p.add_argument("--to", dest="to_date", type=_parse_date, default=None)
