@@ -59,7 +59,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 | Item | Status |
 |------|--------|
-| Tests | **690 passing, 0 failures, 12 skipped** |
+| Tests | **723 passed, 0 failures, 12 skipped** |
 | Capital | Paper trading capital: ₹10,00,000. Slot capital: ₹1,50,000. Risk/trade: ₹2,250. |
 | S1 allocation | 90% (₹9,00,000). Max positions: 6. S2=5%, S3=3%, S4=2%. |
 | S1 config | All S1 strategy parameters extracted to config/settings.yaml (10 params). Current tuned values: volume_ratio_min 1.2, no_entry_after 14:45, min_stop_pct 0.02. Stop floor at 2% prevents sizer rejection on tight swing stops. |
@@ -89,7 +89,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Futures data | **COMPLETE.** 21,145 candles. NIFTY + BANKNIFTY. Day (374 continuous, 18mo), 15min (1,325 near-month, ~53 days), 5min (3,975 near-month, ~53 days). Dual-mode download: day=continuous=True, intraday=per-contract. |
 | Futures backtester | **OPERATIONAL.** Lot-based sizer, futures charges, near-month filter, IST timezone fix, signal diagnostics. 723 tests. |
 | S1v2/S1v3 on futures | **KILLED.** Zero signals across 8 runs (NIFTY+BANKNIFTY × S1v2+S1v3 × 5min+15min). Root cause: multi-stock scanner architecture incompatible with single-instrument index futures. ADX filter blocks 90% (S1v2), time window + panic detection too strict (S1v3). |
-| New strategies | **IMPLEMENTED (CC010).** Three index futures strategies: ORB, VWAP MR, MACD+Supertrend. Self-contained indicators (8 functions). Wired into futures backtester with diagnostic wrappers. 33 tests. Config in `futures.strategies.{orb,vwap_mr,macd_st}`. |
+| New strategies | **BUILT (CC010).** `tools/futures_strategies.py` — 805 lines, 8 self-contained indicators, 3 strategy classes (ORBStrategy, VWAPMeanReversionStrategy, MACDSupertrendStrategy). Zero imports from equity backtester. Tests: 33 in `test_futures_strategies.py`. |
+| ORB backtest | **41 trades (NIFTY), 37 trades (BANKNIFTY).** Win rate ~38%. PROBLEM: R:R inverted — avg loss 2.7× avg win. PF 0.23-0.24. Midpoint stop variant worse (PF 0.23-0.28, win rate dropped to 22-27%). Root cause: full range stop too wide, target too tight, no directional filter in persistent downtrend. `range_invalid` filtering 32-37% of days. |
+| VWAP MR backtest | **21 trades (NIFTY), 30 trades (BANKNIFTY).** Catastrophic — 9.5-10% win rate, PF 0.04-0.07, max drawdown 41%. Root cause: 53-day sample is a persistent bear market (NIFTY 26K→23.4K). Mean reversion fails in trends. ADX filter may not be working correctly. |
+| MACD/ST backtest | **0 trades both instruments.** Day 1 diagnostic shows `candle_buffer_len=0` — daily candles not loading into strategy. Bug in `_load_daily_candles()` or Supertrend computation. |
+| Market regime caveat | ALL 53 days show `high_volatility` regime. Results biased by persistent downtrend. Cannot validate long strategies or mean reversion in this sample. |
 | Cron issue | Token cron did not fire on 2026-03-18 morning. Manual run succeeded. Debug deferred. |
 | NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
 | NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |
@@ -148,6 +152,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 41. **D38: All indicator functions self-contained in futures_strategies.py** — Zero imports from equity backtester — Confirmed.
 42. **D39: Backtest decides winner — no pre-selecting strategies** — Confirmed.
 43. **D40: Deep research blueprint reviewed (30 strategies). Only 2.10 (MACD+Supertrend) is pure futures. ORB and VWAP adapted from global index futures research, not blueprint F&O section.** — Confirmed.
+44. **D41: ORB parameter optimization priority for Session 05** — Widen max_range_pct to 1.0%, add directional filter (prev day vs 20-EMA), try trailing stop, try 30min window — Confirmed.
 
 ---
 
@@ -180,6 +185,11 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | D2: System events expansion | SESSION_START, SESSION_END, KILL_SWITCH, REGIME_CHANGE, HARD_EXIT not yet captured | Medium |
 | HAWK: evaluator shows "?" for consensus conviction | Evaluator not parsing consensus conviction field | Medium |
 | HAWK: morning run looks for today's evening file | Should look for yesterday's evening file | Medium |
+| ORB R:R inversion | avg loss 2.7× avg win. Fix: directional filter + wider max_range_pct + trailing stop | HIGH |
+| MACD/ST zero signals | daily candle loading bug. `candle_buffer_len=0`. Fix: debug `_load_daily_candles()` query | HIGH |
+| VWAP MR ADX filter leak | 21-30 trades in persistent downtrend despite ADX < 25 filter. Verify ADX computation and threshold | MEDIUM |
+| Token cron | didn't fire 2026-03-18 morning. Manual run succeeded. Debug `scripts/token_cron.py` | MEDIUM |
+| range_invalid | filtering 32-37% of days. `max_range_pct` at 0.6% too restrictive for volatile market. Try 1.0% | MEDIUM |
 
 ---
 
@@ -190,7 +200,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 - **S3 positional strategy** — Multi-day swing trades. Allocation placeholder: 10%. Design pending S1 validation.
 - **S4 event strategy** — Earnings/macro event-driven trades. Allocation placeholder: 5%. Design pending S2.
 - **Admin dashboard** — Mobile/iPad SaaS; session P&L, signal log, regime status. Build after 3–4 sessions.
-- **Futures paper trading** — Gated on: positive expectancy in futures backtest (S1v2 or S1v3 on NIFTY or BANKNIFTY). Infrastructure: lot-aware position sizer, expiry management, margin monitoring. Phase 1: data download + backtest (in progress). Phase 2: paper trading engine adaptation (gated on backtest results).
+- **Futures paper trading** — Gated on: positive expectancy in at least one futures backtest. Current best: ORB with 41 trades but negative expectancy (PF 0.23). Next: parameter optimization in Session 05. If ORB optimization achieves PF > 1.0 → proceed to trading engine adaptation for futures.
 - **Commodities** — Deferred until futures infrastructure built and validated.
 - **Production readiness** — Phased: (1) DB + token automation + log rotation + systemd, (2) Docker Compose + FastAPI + basic WebUI, (3) encrypted secrets + VPS hardening + monitoring, (4) full WebUI + HAWK UI + mobile. Phase 1 progress — DB trade history complete, token automation complete, production logging complete, log rotation complete, tradeos CLI complete. Remaining Phase 1: systemd service (optional — tmux auto-start working).
 - **`tradeos` CLI packaging roadmap** — Phase A: bash shim with subcommands (done). Phase B: Python Click CLI with argument validation. Phase C: `pyproject.toml` with `console_scripts` entry point. Phase D: systemd service files generated by CLI. Phase E: RPM/DEB packaging. Phase F: universal installer script (`curl | bash`).
@@ -199,11 +209,12 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 
 ## 8. Immediate Next Actions
 
-1. **TRADEOS-04-CC010** — Build ORB + VWAP MR + MACD/Supertrend strategies in `tools/futures_strategies.py`. Branch: feature/futures-strategies.
-2. **VPS: Run backtests** — After CC010 deployed: `tradeos futures backtest run --instrument NIFTY --strategy orb --interval 5minute`, `tradeos futures backtest run --instrument NIFTY --strategy vwap_mr --interval 5minute`, `tradeos futures backtest run --instrument NIFTY --strategy macd_st --interval 15minute`. Same 3 runs for BANKNIFTY = 6 total runs.
-3. **Decision gate** — Evaluate backtest results. If PF > 1.0 on any combination → proceed to paper trading engine adaptation. If all negative → reassess strategy design.
-4. **Debug cron** — Token cron didn't trigger 2026-03-18 morning. Check token_cron.py logic.
-5. **Continue S1 equity paper trading** — Infrastructure validation.
+1. **ORB optimization** — Widen `max_range_pct` to 0.01. Add directional filter (previous day close vs 20-EMA). Try trailing stop mode. Try 30min range window. Config changes + small CC prompt for directional filter.
+2. **Debug MACD/ST** — Fix daily candle loading. Check `_load_daily_candles()` query in `futures_backtester.py`. Verify Supertrend computation on daily data.
+3. **Verify VWAP MR ADX filter** — Log ADX values per signal. Check if threshold is appropriate for index futures.
+4. **Debug token cron** — `scripts/token_cron.py` didn't fire 2026-03-18. Check date validation logic.
+5. **Decision gate** — If ORB optimization yields PF > 1.0 → adapt execution engine for futures paper trading. If not → evaluate additional strategies or longer data sample.
+6. **Continue S1 equity paper trading** — Infrastructure validation.
 
 ---
 
@@ -220,9 +231,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | TradeOS-04 | Futures pivot locked. 6 decisions (D26-D31). NIFTY+BANKNIFTY, backtest-first, 18mo data, separate table, separate backtester. CC001 (data infra) + CC002 (backtester) prompts generated. | Strategic pivot — equity → futures. |
 | 2026-03-17 | TradeOS-04 CC001+CC004 | CC001: futures data infra (downloader, migration 003, CLI, 14 tests). CC004: fix intraday — dual-mode (day=continuous, intraday=per-contract), schema v2 (tradingsymbol+expiry), self-healing migration, 19 tests. D32 decision. 659 tests passing. | Futures data pipeline ready for VPS deploy. |
 | 2026-03-17 | TradeOS-04 CC002 | Futures backtester: FuturesChargeCalculator (Zerodha MIS rates), FuturesPositionSizer (lot-based 3-layer), FuturesCapitalTracker (margin-based), FuturesBacktestEngine (single-instrument, S1v2/S1v3, 3 exit modes). CLI: `tradeos futures backtest run/compare/optimize/show`. 31 tests. 690 tests total. Bug fix: `compute_atr` was imported from wrong module. | Futures backtester ready. Next: VPS deploy + run backtests. |
-| 2026-03-18 | TradeOS-04 (Part 1) | Futures data infra (CC001+CC004). 21,145 candles downloaded. Futures backtester (CC002). Near-month filter + timezone + interval fixes (CC005-CC007). Signal diagnostics (CC008-CC009). | Data + backtester operational. |
-| 2026-03-18 | TradeOS-04 (Part 2) | S1v2/S1v3 killed on futures (8 runs, 0 signals). Blueprint review (30 strategies). Three new strategies designed: ORB, VWAP MR, MACD/Supertrend. CC010 prompt ready. | Strategy pivot — multi-stock → single-instrument. |
-| 2026-03-18 | TradeOS-04 CC010 | Three index futures strategies implemented: ORB (Opening Range Breakout), VWAP MR (VWAP Mean Reversion), MACD+Supertrend (multi-TF). 8 self-contained indicator functions. Wired into futures backtester (3 process_day methods, 3 diagnostic wrappers, daily candle loader). Config for all 3. 33 new tests. 723 total. | Strategies ready for backtesting on VPS. |
+| 2026-03-18 | TradeOS-04 | Futures pivot complete. Data infra (21,145 candles). Backtester operational. S1v2/S1v3 killed (0 signals, 8 runs). Three new strategies built (ORB, VWAP MR, MACD/ST). 14 backtest runs (#21-#36). ORB best: 41 trades, 39% WR, PF 0.23 (R:R inverted). VWAP MR catastrophic in bear market. MACD/ST zero signals (bug). 11 CC prompts, 15 decisions (D26-D41), tests 640→723. | Infrastructure solid. Strategy optimization needed. |
 
 ---
 
@@ -249,4 +258,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-18** — TradeOS-04 CC010 complete. Three index futures strategies implemented: ORB, VWAP MR, MACD+Supertrend. 8 self-contained indicators, 33 new tests. Total: 723 tests. Ready for VPS backtesting.
+**2026-03-18** — TradeOS-04 complete. Three futures strategies built and backtested (14 runs). ORB generates signals but R:R inverted (PF 0.23). VWAP MR failed in bear market. MACD/ST has daily candle bug. Session 05: optimize ORB parameters, debug MACD/ST. Tests: 723.
