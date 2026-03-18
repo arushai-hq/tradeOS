@@ -298,6 +298,41 @@ futures:
       bb_period: 20
       bb_std: 2.0
       panic_atr_multiplier: 1.5    # Index panic moves smaller than single stocks
+    orb:
+      range_minutes: 15              # 15 = 09:30 end, 30 = 09:45 end
+      min_range_pct: 0.0015          # Skip if range < 0.15% of price
+      max_range_pct: 0.006           # Skip if range > 0.60% of price
+      volume_ratio_min: 1.2          # Breakout vol / SMA(20)
+      stop_mode: "range_end"         # "range_end" or "midpoint"
+      target_multiplier: 1.5         # Target = range_width × this
+      no_entry_after: "14:00"
+      max_trades_per_day: 1
+    vwap_mr:
+      band_mult: 2.0                 # VWAP ± N×SD
+      rsi_period: 14
+      rsi_overbought: 65
+      rsi_oversold: 35
+      adx_period: 14
+      adx_max_threshold: 25          # Suppress signals when ADX >= this
+      atr_period: 14
+      atr_stop_mult: 0.5             # Stop = 0.5 × ATR beyond entry
+      min_distance_pct: 0.003        # Min distance from VWAP as fraction
+      no_entry_after: "14:30"
+      max_trades_per_day: 3
+    macd_st:
+      st_daily_period: 10            # Daily Supertrend period
+      st_daily_multiplier: 3.0       # Daily Supertrend multiplier
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      ema_trend_period: 50           # 50-EMA trend filter
+      st_intraday_period: 10         # Intraday Supertrend (for stop)
+      st_intraday_multiplier: 2.0
+      atr_period: 14
+      atr_target_mult: 2.5           # Target = entry ± 2.5×ATR
+      exit_mode: "supertrend_trail"  # "fixed" or "supertrend_trail"
+      no_entry_after: "14:00"
+      max_trades_per_day: 2
 
 # Token automation — daily Zerodha token refresh
 token_automation:

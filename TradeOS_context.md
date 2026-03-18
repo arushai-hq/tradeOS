@@ -49,7 +49,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | `migrations/003_futures_backtest_tables.sql` | backtest_futures_candles (with tradingsymbol + expiry for per-contract intraday) + backtest_futures_metadata tables. |
 
 **Strategy (current):** S1 Intraday Momentum — EMA9/21 crossover + VWAP + RSI + volume ratio. **DEPRECATED** — negative expectancy confirmed via backtester across all parameter combinations. Kept running for infrastructure validation only.
-**Strategy (in development):** S1v2/S1v3 killed on both equities and futures. Three new index futures strategies designed: ORB (Opening Range Breakout), VWAP Mean Reversion, MACD+Supertrend. Implementation pending CC010.
+**Strategy (in development):** S1v2/S1v3 killed on both equities and futures. Three new index futures strategies implemented (CC010): ORB (Opening Range Breakout), VWAP Mean Reversion, MACD+Supertrend. Code: `tools/futures_strategies.py`. Config: `config/settings.yaml` under `futures.strategies.{orb,vwap_mr,macd_st}`. Tests: 33 in `tests/unit/test_futures_strategies.py`.
 **Watchlist:** 50 NIFTY 50 stocks in `config/settings.yaml` (expanded 2026-03-16)
 **Candle interval:** 15 minutes | **Trade window:** 09:15–15:00 IST | **Hard exit:** 15:00 IST
 
@@ -87,9 +87,9 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | Active strategy | S1 (deprecated — infrastructure validation only). S1v2 (killed). S1v3 (killed). No viable intraday equity strategy found. |
 | Futures pivot | **Decision locked.** NIFTY + BANKNIFTY index futures. Backtest-first approach — validate S1v2/S1v3 on 18 months of futures data before building trading engine. |
 | Futures data | **COMPLETE.** 21,145 candles. NIFTY + BANKNIFTY. Day (374 continuous, 18mo), 15min (1,325 near-month, ~53 days), 5min (3,975 near-month, ~53 days). Dual-mode download: day=continuous=True, intraday=per-contract. |
-| Futures backtester | **OPERATIONAL.** Lot-based sizer, futures charges, near-month filter, IST timezone fix, signal diagnostics. 690 tests. |
+| Futures backtester | **OPERATIONAL.** Lot-based sizer, futures charges, near-month filter, IST timezone fix, signal diagnostics. 723 tests. |
 | S1v2/S1v3 on futures | **KILLED.** Zero signals across 8 runs (NIFTY+BANKNIFTY × S1v2+S1v3 × 5min+15min). Root cause: multi-stock scanner architecture incompatible with single-instrument index futures. ADX filter blocks 90% (S1v2), time window + panic detection too strict (S1v3). |
-| New strategies | **PENDING CC010.** Three index futures strategies designed: ORB (Opening Range Breakout), VWAP Mean Reversion, MACD+Supertrend (blueprint 2.10). All in new `tools/futures_strategies.py` — zero dependency on equity backtester. |
+| New strategies | **IMPLEMENTED (CC010).** Three index futures strategies: ORB, VWAP MR, MACD+Supertrend. Self-contained indicators (8 functions). Wired into futures backtester with diagnostic wrappers. 33 tests. Config in `futures.strategies.{orb,vwap_mr,macd_st}`. |
 | Cron issue | Token cron did not fire on 2026-03-18 morning. Manual run succeeded. Debug deferred. |
 | NIFTY lot size | 65 (Jan 2026). BANKNIFTY lot size: 30 (Jan 2026). |
 | NIFTY margin (NRML) | ~₹1.77L per lot. MIS: ~₹88K per lot. |
@@ -222,6 +222,7 @@ Engine modules live under `core/` (ASPS Pattern B structure):
 | 2026-03-17 | TradeOS-04 CC002 | Futures backtester: FuturesChargeCalculator (Zerodha MIS rates), FuturesPositionSizer (lot-based 3-layer), FuturesCapitalTracker (margin-based), FuturesBacktestEngine (single-instrument, S1v2/S1v3, 3 exit modes). CLI: `tradeos futures backtest run/compare/optimize/show`. 31 tests. 690 tests total. Bug fix: `compute_atr` was imported from wrong module. | Futures backtester ready. Next: VPS deploy + run backtests. |
 | 2026-03-18 | TradeOS-04 (Part 1) | Futures data infra (CC001+CC004). 21,145 candles downloaded. Futures backtester (CC002). Near-month filter + timezone + interval fixes (CC005-CC007). Signal diagnostics (CC008-CC009). | Data + backtester operational. |
 | 2026-03-18 | TradeOS-04 (Part 2) | S1v2/S1v3 killed on futures (8 runs, 0 signals). Blueprint review (30 strategies). Three new strategies designed: ORB, VWAP MR, MACD/Supertrend. CC010 prompt ready. | Strategy pivot — multi-stock → single-instrument. |
+| 2026-03-18 | TradeOS-04 CC010 | Three index futures strategies implemented: ORB (Opening Range Breakout), VWAP MR (VWAP Mean Reversion), MACD+Supertrend (multi-TF). 8 self-contained indicator functions. Wired into futures backtester (3 process_day methods, 3 diagnostic wrappers, daily candle loader). Config for all 3. 33 new tests. 723 total. | Strategies ready for backtesting on VPS. |
 
 ---
 
@@ -248,4 +249,4 @@ These rules apply to every TradeOS session regardless of context window or sessi
 
 ## 11. Last Updated
 
-**2026-03-18** — TradeOS-04 complete. Futures data + backtester operational. S1v2/S1v3 killed on futures. Three new strategies designed (ORB, VWAP MR, MACD/Supertrend). CC010 ready for execution. 15 decisions (D26-D40). 10 CC prompts (CC001-CC010). Tests: 690.
+**2026-03-18** — TradeOS-04 CC010 complete. Three index futures strategies implemented: ORB, VWAP MR, MACD+Supertrend. 8 self-contained indicators, 33 new tests. Total: 723 tests. Ready for VPS backtesting.

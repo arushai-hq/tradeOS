@@ -9,12 +9,15 @@ Repo: `arushai-hq/tradeOS` | Phase 1: S1 Intraday Momentum | Mode: `paper`
 - S1: DEPRECATED. Negative expectancy. Do not build new features on S1 signal logic.
 - S1v2 (Trend Pullback): IN DEVELOPMENT. Spec: docs/strategy_specs/strategy_spec_s1v2_s1v3.md
 - S1v3 (Mean Reversion): IN DEVELOPMENT. Spec: docs/strategy_specs/strategy_spec_s1v2_s1v3.md
+- ORB (Opening Range Breakout): IN DEVELOPMENT. Index futures only. Code: tools/futures_strategies.py
+- VWAP MR (VWAP Mean Reversion): IN DEVELOPMENT. Index futures only. Code: tools/futures_strategies.py
+- MACD ST (MACD + Supertrend): IN DEVELOPMENT. Index futures, multi-timeframe. Code: tools/futures_strategies.py
 - When implementing S1v2/S1v3, always reference the spec file for exact signal flow, parameters, and exit rules.
 
 ## Commands
 
 ```bash
-tradeos test -x -q               # Run tests (690 passing)
+tradeos test -x -q               # Run tests (723 passing)
 tradeos start                    # Start trading in tmux
 tradeos stop                     # Graceful shutdown
 tradeos preflight                # Pre-market health check
