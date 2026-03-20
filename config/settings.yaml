@@ -299,10 +299,10 @@ futures:
       bb_std: 2.0
       panic_atr_multiplier: 1.5    # Index panic moves smaller than single stocks
     orb:
-      range_minutes: 15              # 15 = 09:30 end, 30 = 09:45 end
+      range_minutes: 30              # 15 = 09:30 end, 30 = 09:45 end (was 15)
       min_range_pct: 0.0015          # Skip if range < 0.15% of price
-      max_range_pct: 0.006           # Skip if range > 0.60% of price
-      volume_ratio_min: 1.2          # Breakout vol / SMA(20)
+      max_range_pct: 0.008           # Skip if range > 0.80% of price (was 0.006)
+      volume_ratio_min: 1.5          # Breakout vol / SMA(20) (was 1.2)
       stop_mode: "range_end"         # "range_end" or "midpoint"
       target_multiplier: 1.5         # Target = range_width × this
       no_entry_after: "14:00"
